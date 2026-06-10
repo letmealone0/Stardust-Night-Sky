@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
+  <title>星尘夜空 | 穿梭星空</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+      user-select: none;
+    }
+    body {
+      overflow: hidden;
+      background: #010108;
+      font-family: 'Inter', 'Poppins', 'Segoe UI', system-ui, sans-serif;
+      cursor: none;
+    }
+    canvas {
+      display: block;
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+    }
+
+    /* 自定义光标 */
+    .cursor-glow {
+      position: fixed; pointer-events: none; z-index: 9999;
+      width: 32px; height: 32px; border-radius: 50%;
+      background: radial-gradient(circle,
+        rgba(255,220,140,0.55) 0%, rgba(255,180,80,0.2) 30%,
+        rgba(255,140,40,0.05) 60%, transparent 100%);
+      transform: translate(-50%,-50%);
+      transition: width 0.18s ease, height 0.18s ease, background 0.35s ease;
+      will-change: transform, left, top;
+    }
+    .cursor-glow.dragging {
+      width: 52px; height: 52px;
+      background: radial-gradient(circle,
+        rgba(255,240,180,0.75) 0%, rgba(255,200,100,0.38) 30%,
+        rgba(255,140,50,0.12) 60%, transparent 100%);
+    }
+    .cursor-glow.space-mode {
+      background: radial-gradient(circle,
+        rgba(180,210,255,0.55) 0%, rgba(120,170,240,0.2) 30%,
+        rgba(80,130,220,0.05) 60%, transparent 100%);
+    }
+    .cursor-glow.space-mode.dragging {
+      background: radial-gradient(circle,
+        rgba(200,230,255,0.75) 0%, rgba(150,200,255,0.38) 30%,
+        rgba(100,160,240,0.12) 60%, transparent 100%);
+    }
+
+    .cursor-ring {
+      position: fixed; pointer-events: none; z-index: 9998;
+      width: 26px; height: 26px; border-radius: 50%;
+      border: 1.2px solid rgba(255,210,130,0.55);
+      transform: translate(-50%,-50%);
+      animation: cursorPulse 2.4s ease-in-out infinite;
+      will-change: transform, left, top;
+    }
+    .cursor-ring.dragging {
+      width: 42px; height: 42px;
+      border-color: rgba(255,230,160,0.8); border-width: 1.8px;
+      animation: cursorPulseFast 1s ease-in-out infinite;
+    }
+    .cursor-ring.space-mode { border-color: rgba(160,200,255,0.55); }
+    .cursor-ring.space-mode.dragging { border-color: rgba(180,220,255,0.8); }
+
+    @keyframes cursorPulse {
+      0%,100% { box-shadow: 0 0 6px 1px rgba(255,200,100,0.25); }
+      50% { box-shadow: 0 0 15px 4px rgba(255,200,100,0.5); }
+    }
+    @keyframes cursorPulseFast {
+      0%,100% { box-shadow: 0 0 10px 3px rgba(255,210,120,0.5); }
+      50% { box-shadow: 0 0 24px 8px rgba(255,180,80,0.7); }
+    }
+
+    /* 提示 */
+    .toast-hint {
+      position: fixed; bottom: 28px; left: 50%; transform: translateX(-50%);
+      background: rgba(15,15,45,0.55);
+      backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+      color: rgba(230,220,255,0.85); padding: 10px 28px; border-radius: 60px;
+      font-size: 0.85rem; font-weight: 400; letter-spacing: 1.6px;
+      pointer-events: none; z-index: 100;
+      border: 1px solid rgba(180,160,255,0.25);
+      box-shadow: 0 4px 28px rgba(80,60,180,0.15);
+      transition: opacity 1.2s ease, transform 1s ease;
+    }
+    .toast-hint.fade-out {
+      opacity: 0; transform: translateX(-50%) translateY(12px);
+    }
+
+    /* 高度指示器 */
+    .altitude-indicator {
+      position: fixed; right: 20px; top: 50%; transform: translateY(-50%);
+      width: 2px; height: 160px; background: rgba(255,255,255,0.08);
+      border-radius: 2px; z-index: 100; pointer-events: none;
+      opacity: 0; transition: opacity 0.8s ease;
+    }
+    .altitude-indicator.visible { opacity: 0.5; }
+    .altitude-indicator .fill {
+      position: absolute; bottom: 0; left: 0; width: 100%; border-radius: 2px;
+      transition: height 0.3s ease, background 0.6s ease;
+      background: linear-gradient(to top, #ff9944, #ffcc88, #88bbff, #ffffff);
+    }
+    .altitude-indicator .marker {
+      position: absolute; left: -3px; width: 8px; height: 2px;
+      background: rgba(255,255,255,0.7); border-radius: 1px;
+      transition: bottom 0.3s ease;
+    }
+    .altitude-indicator .label {
+      position: absolute; right: 10px; font-size: 0.6rem;
+      color: rgba(255,255,255,0.5); letter-spacing: 1px;
+      white-space: nowrap; transform: translateY(-50%);
+    }
+    .altitude-indicator .label.top { top: 0; }
+    .altitude-indicator .label.bottom { bottom: 0; }
+    .altitude-indicator .label.mid { top: 50%; }
+
+    /* 状态标签 */
+    .status-tag {
+      position: fixed; left: 24px; top: 50%;
+      transform: translateY(-50%) translateX(-120px);
+      z-index: 100; pointer-events: none;
+      font-size: 0.75rem; letter-spacing: 3px;
+      color: rgba(200,200,240,0.6);
+      transition: transform 0.6s cubic-bezier(0.22,0.61,0.36,1),
+                  opacity 0.6s ease, color 0.8s ease;
+      writing-mode: vertical-rl; text-orientation: mixed;
+    }
+    .status-tag.show { transform: translateY(-50%) translateX(0); }
+    .status-tag.space { color: rgba(160,200,255,0.75); }
+  </style>
+</head>
+<body>
+  <div class="cursor-glow" id="cursorGlow"></div>
+  <div class="cursor-ring" id="cursorRing"></div>
+
+  <div class="toast-hint" id="hint">✦ 缓缓上移升空 · 按住拖动穿梭星海 ✦</div>
+
+  <canvas id="starCanvas"></canvas>
+
+  <div class="altitude-indicator" id="altitudeBar">
+    <div class="fill" id="altitudeFill"></div>
+    <div class="marker" id="altitudeMarker"></div>
+    <span class="label top">太空</span>
+    <span class="label mid">高空</span>
+    <span class="label bottom">地表</span>
+  </div>
+  <div class="status-tag" id="statusTag">大 气 层</div>
+
+  <script type="module" src="/src/main.js"></script>
+</body>
+</html>
