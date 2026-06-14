@@ -4,28 +4,24 @@
  */
 
 import { state } from '../core/state.js';
-import { lerp, wrap } from '../utils/math.js';
-
-/** 拖动灵敏度 */
-const DRAG_SENSITIVITY = 0.5;
-
-/** 回中速度 */
-const RETURN_SPEED = 0.035;
+import { config } from '../core/config.js';
+import { lerp, wrap, dtLerp } from '../utils/math.js';
 
 /** 相机跟随速度 */
-const FOLLOW_SPEED = 0.1;
+const FOLLOW_SPEED = config.FOLLOW_SPEED;
+const DRAG_SENSITIVITY = config.DRAG_SENSITIVITY;
 
 /**
  * 每帧更新相机位置
  */
 export function updateCamera() {
-  if (!state.isDragging) {
-    // 缓慢回中
-    state.targetCameraX = lerp(state.targetCameraX, 0, RETURN_SPEED);
-    state.targetCameraY = lerp(state.targetCameraY, 0, RETURN_SPEED);
+  if (state.cameraLocked) {
+    // 冻结模式：相机停在原位，不做任何移动
+    return;
   }
-  state.cameraX = lerp(state.cameraX, state.targetCameraX, FOLLOW_SPEED);
-  state.cameraY = lerp(state.cameraY, state.targetCameraY, FOLLOW_SPEED);
+  // 自由模式：相机平滑跟随目标位置 (帧率无关)
+  state.cameraX = dtLerp(state.cameraX, state.targetCameraX, FOLLOW_SPEED, state.dt);
+  state.cameraY = dtLerp(state.cameraY, state.targetCameraY, FOLLOW_SPEED, state.dt);
 }
 
 /**

@@ -1,20 +1,15 @@
 /**
  * 鼠标输入处理
  * 将鼠标事件转换为状态更新
+ * 点击切换相机锁定模式
  */
 
 import { state } from '../core/state.js';
 import { rand } from '../utils/math.js';
 import { applyDragDelta } from '../systems/camera.js';
 import { spawnParticles, spawnBezierParticles } from '../systems/particles.js';
-
-function canvasCoords(cx, cy, canvas) {
-  const rect = canvas.getBoundingClientRect();
-  return {
-    x: (cx - rect.left) * (state.width / rect.width),
-    y: (cy - rect.top) * (state.height / rect.height),
-  };
-}
+import { canvasCoords } from '../utils/coords.js';
+import { lastTouchTime } from './touch.js';
 
 export function onMouseMove(e, canvas) {
   state.mouseX = e.clientX;
@@ -22,7 +17,8 @@ export function onMouseMove(e, canvas) {
 
   const pos = canvasCoords(e.clientX, e.clientY, canvas);
 
-  if (state.isDragging) {
+  if (!state.cameraLocked) {
+    // 自由模式：相机跟随鼠标平移
     const dx = e.clientX - state.dragPrevX;
     const dy = e.clientY - state.dragPrevY;
     applyDragDelta(dx, dy);
@@ -31,7 +27,7 @@ export function onMouseMove(e, canvas) {
 
     // 记录拖尾点
     state.trailPoints.push({ x: pos.x, y: pos.y });
-    if (state.trailPoints.length > state.MAX_TRAIL_PTS) state.trailPoints.shift();
+    if (state.trailPoints.length > state.MAX_TRAIL_PTS) state.trailPoints.splice(0, state.trailPoints.length - state.MAX_TRAIL_PTS);
 
     // 贝塞尔平滑生成粒子
     const speed = Math.hypot(dx, dy);
@@ -48,32 +44,43 @@ export function onMouseMove(e, canvas) {
       }
     }
   } else {
+    // 冻结模式：鼠标移动不影响相机，仅轻柔粒子
     spawnParticles(pos.x, pos.y, false);
   }
 }
 
 export function onMouseDown(e, canvas) {
-  state.isDragging = true;
-  state.dragPrevX = e.clientX;
-  state.dragPrevY = e.clientY;
+  // 触摸后 300ms 内忽略 mousedown，避免双击触发
+  if (performance.now() - lastTouchTime < 300) return;
+
+  // 点击切换冻结状态
+  state.cameraLocked = !state.cameraLocked;
+
+  if (!state.cameraLocked) {
+    // 刚解冻：初始化拖拽参考点，避免首帧跳跃
+    state.dragPrevX = e.clientX;
+    state.dragPrevY = e.clientY;
+  }
+
+  // 清空轨迹
   state.trailPoints = [];
 
+  // 切换时爆发粒子（自由模式粒子更多更强）
   const pos = canvasCoords(e.clientX, e.clientY, canvas);
-  for (let i = 0; i < 12; i++) {
-    spawnParticles(pos.x + rand(-10, 10), pos.y + rand(-10, 10), true);
+  const burstCount = state.cameraLocked ? 8 : 14;
+  for (let i = 0; i < burstCount; i++) {
+    spawnParticles(pos.x + rand(-10, 10), pos.y + rand(-10, 10), !state.cameraLocked);
   }
 }
 
 export function onMouseUp() {
-  state.isDragging = false;
-  state.trailPoints = [];
+  // 不再结束拖拽 — 由点击切换控制
 }
 
 export function onMouseLeave() {
   state.mouseX = -200;
   state.mouseY = -200;
-  state.isDragging = false;
-  state.trailPoints = [];
+  // 不改变 cameraLocked，保持冻结/自由状态
 }
 
 export function onMouseEnter(e) {

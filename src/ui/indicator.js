@@ -26,9 +26,14 @@ export function updateIndicator() {
   markerEl.style.bottom = pct + '%';
 
   // 渐变颜色
-  fillEl.style.background = state.isSpaceMode
-    ? 'linear-gradient(to top, #88bbff, #ccddff, #ffffff)'
-    : 'linear-gradient(to top, #ff8844, #ffbb66, #88aadd)';
+  if (state.isSpaceMode) {
+    fillEl.style.background = 'linear-gradient(to top, #88bbff, #ccddff, #ffffff)';
+  } else if (!state.cameraLocked) {
+    // 自由移动模式：粉色渐变
+    fillEl.style.background = 'linear-gradient(to top, #ff8844, #ffbb66, #ff99cc)';
+  } else {
+    fillEl.style.background = 'linear-gradient(to top, #ff8844, #ffbb66, #88aadd)';
+  }
 
   // 状态标签
   if (state.isSpaceMode && !prevSpace) {

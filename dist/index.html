@@ -24,51 +24,53 @@
       left: 0;
       width: 100%;
       height: 100%;
+      touch-action: none;
+      will-change: transform;
     }
 
     /* 自定义光标 */
     .cursor-glow {
       position: fixed; pointer-events: none; z-index: 9999;
-      width: 32px; height: 32px; border-radius: 50%;
+      width: 52px; height: 52px; border-radius: 50%;
       background: radial-gradient(circle,
-        rgba(255,220,140,0.55) 0%, rgba(255,180,80,0.2) 30%,
-        rgba(255,140,40,0.05) 60%, transparent 100%);
+        rgba(255,240,180,0.75) 0%, rgba(255,200,100,0.38) 30%,
+        rgba(255,140,50,0.12) 60%, transparent 100%);
       transform: translate(-50%,-50%);
       transition: width 0.18s ease, height 0.18s ease, background 0.35s ease;
       will-change: transform, left, top;
     }
-    .cursor-glow.dragging {
-      width: 52px; height: 52px;
+    .cursor-glow.locked {
+      width: 32px; height: 32px;
       background: radial-gradient(circle,
-        rgba(255,240,180,0.75) 0%, rgba(255,200,100,0.38) 30%,
-        rgba(255,140,50,0.12) 60%, transparent 100%);
+        rgba(255,220,140,0.55) 0%, rgba(255,180,80,0.2) 30%,
+        rgba(255,140,40,0.05) 60%, transparent 100%);
     }
     .cursor-glow.space-mode {
-      background: radial-gradient(circle,
-        rgba(180,210,255,0.55) 0%, rgba(120,170,240,0.2) 30%,
-        rgba(80,130,220,0.05) 60%, transparent 100%);
-    }
-    .cursor-glow.space-mode.dragging {
       background: radial-gradient(circle,
         rgba(200,230,255,0.75) 0%, rgba(150,200,255,0.38) 30%,
         rgba(100,160,240,0.12) 60%, transparent 100%);
     }
+    .cursor-glow.space-mode.locked {
+      background: radial-gradient(circle,
+        rgba(180,210,255,0.55) 0%, rgba(120,170,240,0.2) 30%,
+        rgba(80,130,220,0.05) 60%, transparent 100%);
+    }
 
     .cursor-ring {
       position: fixed; pointer-events: none; z-index: 9998;
-      width: 26px; height: 26px; border-radius: 50%;
-      border: 1.2px solid rgba(255,210,130,0.55);
+      width: 42px; height: 42px; border-radius: 50%;
+      border: 1.8px solid rgba(255,230,160,0.8);
       transform: translate(-50%,-50%);
-      animation: cursorPulse 2.4s ease-in-out infinite;
+      animation: cursorPulseFast 1s ease-in-out infinite;
       will-change: transform, left, top;
     }
-    .cursor-ring.dragging {
-      width: 42px; height: 42px;
-      border-color: rgba(255,230,160,0.8); border-width: 1.8px;
-      animation: cursorPulseFast 1s ease-in-out infinite;
+    .cursor-ring.locked {
+      width: 26px; height: 26px;
+      border-color: rgba(255,210,130,0.55); border-width: 1.2px;
+      animation: cursorPulse 2.4s ease-in-out infinite;
     }
-    .cursor-ring.space-mode { border-color: rgba(160,200,255,0.55); }
-    .cursor-ring.space-mode.dragging { border-color: rgba(180,220,255,0.8); }
+    .cursor-ring.space-mode { border-color: rgba(180,220,255,0.8); }
+    .cursor-ring.space-mode.locked { border-color: rgba(160,200,255,0.55); }
 
     @keyframes cursorPulse {
       0%,100% { box-shadow: 0 0 6px 1px rgba(255,200,100,0.25); }
@@ -136,13 +138,13 @@
     .status-tag.show { transform: translateY(-50%) translateX(0); }
     .status-tag.space { color: rgba(160,200,255,0.75); }
   </style>
-  <script type="module" crossorigin src="/assets/index-gwoPVHwR.js"></script>
+  <script type="module" crossorigin src="/assets/index-haQHWFul.js"></script>
 </head>
 <body>
   <div class="cursor-glow" id="cursorGlow"></div>
   <div class="cursor-ring" id="cursorRing"></div>
 
-  <div class="toast-hint" id="hint">✦ 缓缓上移升空 · 按住拖动穿梭星海 ✦</div>
+  <div class="toast-hint" id="hint">✦ 点击开启视角移动 · 再次点击冻结画面 ✦</div>
 
   <canvas id="starCanvas"></canvas>
 

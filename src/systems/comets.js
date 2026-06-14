@@ -4,12 +4,14 @@
  */
 
 import { state } from '../core/state.js';
+import { config } from '../core/config.js';
 import { rand } from '../utils/math.js';
 import { hslToRgb } from '../utils/color.js';
 
 /** 两次彗星之间的最小间隔 (ms) */
-const MIN_COMET_INTERVAL = 4000;
-const MAX_COMET_INTERVAL = 18000;
+const MIN_COMET_INTERVAL = config.MIN_COMET_INTERVAL;
+const MAX_COMET_INTERVAL = config.MAX_COMET_INTERVAL;
+const MAX_COMETS = config.MAX_COMETS;
 
 /**
  * 创建一颗彗星
@@ -45,17 +47,18 @@ export function updateComets() {
   const minInterval = state.isSpaceMode ? MIN_COMET_INTERVAL * 0.5 : MIN_COMET_INTERVAL;
   const maxInterval = state.isSpaceMode ? MAX_COMET_INTERVAL * 0.5 : MAX_COMET_INTERVAL;
 
-  if (state.time > state.nextCometTime && state.comets.length < 3) {
+  if (state.time > state.nextCometTime && state.comets.length < MAX_COMETS) {
     state.comets.push(createComet());
     state.nextCometTime = state.time + rand(minInterval, maxInterval);
   }
 
   // 更新现有彗星
+  const dtScale = state.dt * 60;
   for (let i = state.comets.length - 1; i >= 0; i--) {
     const c = state.comets[i];
-    c.x += c.vx;
-    c.y += c.vy;
-    c.life -= (1 / 60) / c.maxLife;
+    c.x += c.vx * dtScale;
+    c.y += c.vy * dtScale;
+    c.life -= state.dt / c.maxLife;
 
     // 超出屏幕或生命结束则移除
     if (c.life <= 0 ||

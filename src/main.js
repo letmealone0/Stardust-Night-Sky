@@ -4,6 +4,7 @@
  */
 
 import { state } from './core/state.js';
+import { config } from './core/config.js';
 import { initCanvas, startLoop } from './core/canvas.js';
 
 import { updateAltitude } from './systems/altitude.js';
@@ -20,13 +21,13 @@ import {
   drawDragTrail,
 } from './systems/particles.js';
 
-import { bindMouseEvents, onMouseMove } from './input/mouse.js';
+import { bindMouseEvents } from './input/mouse.js';
 import { bindTouchEvents } from './input/touch.js';
-import { initCursor, updateCursor, setDraggingState, setSpaceMode } from './ui/cursor.js';
+import { initCursor, updateCursor, setLockedState, setSpaceMode } from './ui/cursor.js';
 import { initIndicator, updateIndicator } from './ui/indicator.js';
 import { initToast } from './ui/toast.js';
 
-import { rand, easeOut, lerp } from './utils/math.js';
+import { rand, easeOut, lerp, dtLerp } from './utils/math.js';
 import { hslToRgb } from './utils/color.js';
 
 // ==================== 初始化 ====================
@@ -45,7 +46,7 @@ function init() {
   bindMouseEvents(document.getElementById('starCanvas'));
   bindTouchEvents(document.getElementById('starCanvas'));
   window.addEventListener('blur', () => {
-    state.isDragging = false;
+    // 失焦时保持相机锁定状态不变，仅清理轨迹
     state.trailPoints = [];
   });
 
@@ -65,6 +66,17 @@ function init() {
 
   updateCursor(-100, -100);
 
+  // 检测 reduced-motion 偏好
+  const motionMQ = window.matchMedia('(prefers-reduced-motion: reduce)');
+  state.reducedMotion = motionMQ.matches;
+  motionMQ.addEventListener('change', (e) => {
+    state.reducedMotion = e.matches;
+    if (e.matches) {
+      state.trailPoints = [];
+      state.comets.length = 0;
+    }
+  });
+
   // 启动渲染循环
   startLoop(renderFrame);
 }
@@ -73,9 +85,9 @@ function init() {
 
 function renderFrame(ts, ctx, canvas) {
   // ---- 更新阶段 ----
-  // 平滑鼠标坐标
-  state.smoothMouseX = lerp(state.smoothMouseX, state.mouseX, 0.1);
-  state.smoothMouseY = lerp(state.smoothMouseY, state.mouseY, 0.1);
+  // 平滑鼠标坐标 (帧率无关)
+  state.smoothMouseX = dtLerp(state.smoothMouseX, state.mouseX, config.MOUSE_SMOOTH_SPEED, state.dt);
+  state.smoothMouseY = dtLerp(state.smoothMouseY, state.mouseY, config.MOUSE_SMOOTH_SPEED, state.dt);
 
   updateAltitude();
   updateCamera();
@@ -83,7 +95,7 @@ function renderFrame(ts, ctx, canvas) {
   updateComets();
 
   // 同步光标 DOM 状态
-  setDraggingState(state.isDragging);
+  setLockedState(state.cameraLocked);
   setSpaceMode(state.isSpaceMode);
   updateIndicator();
 
@@ -124,6 +136,40 @@ function renderFrame(ts, ctx, canvas) {
 
   // 11. 太空拖拽速度线
   drawSpeedLines(ctx);
+
+  // 12. 暗角叠加
+  drawVignette(ctx);
+}
+
+// ==================== 暗角效果 ====================
+
+function drawVignette(ctx) {
+  const w = state.width;
+  const h = state.height;
+  const cx = w / 2;
+  const cy = h / 2;
+  const maxR = Math.hypot(w, h) / 2;
+
+  // 暗角 — 径向渐变增强
+  const vignette = ctx.createRadialGradient(cx, cy, maxR * 0.4, cx, cy, maxR);
+  vignette.addColorStop(0, 'rgba(0,0,0,0)');
+  vignette.addColorStop(0.5, 'rgba(0,0,0,0)');
+  vignette.addColorStop(0.85, 'rgba(0,0,0,0.06)');
+  vignette.addColorStop(1, `rgba(0,0,0,${config.VIGNETTE_MAX_ALPHA})`);
+
+  ctx.save();
+  ctx.fillStyle = vignette;
+  ctx.fillRect(0, 0, w, h);
+
+  // 色温偏移 — 底部暖琥珀 + 顶部冷蓝
+  const tempGrad = ctx.createLinearGradient(0, h, 0, 0);
+  tempGrad.addColorStop(0, 'rgba(40,20,0,0.08)');
+  tempGrad.addColorStop(0.5, 'rgba(0,0,0,0)');
+  tempGrad.addColorStop(1, 'rgba(0,10,30,0.08)');
+  ctx.fillStyle = tempGrad;
+  ctx.fillRect(0, 0, w, h);
+
+  ctx.restore();
 }
 
 // ==================== 鼠标微光 ====================
@@ -131,7 +177,7 @@ function renderFrame(ts, ctx, canvas) {
 function drawMouseGlow(ctx) {
   if (state.smoothMouseX <= 0 || state.smoothMouseY <= 0) return;
 
-  const r = state.isDragging ? 70 : 38;
+  const r = !state.cameraLocked ? config.MOUSE_GLOW_R_FREE : config.MOUSE_GLOW_R_LOCKED;
   const glow = ctx.createRadialGradient(
     state.smoothMouseX, state.smoothMouseY, 0,
     state.smoothMouseX, state.smoothMouseY, r,
@@ -139,10 +185,10 @@ function drawMouseGlow(ctx) {
 
   if (state.isSpaceMode) {
     glow.addColorStop(0,
-      state.isDragging ? 'rgba(180,210,255,0.2)' : 'rgba(150,180,240,0.07)');
+      !state.cameraLocked ? 'rgba(180,210,255,0.2)' : 'rgba(150,180,240,0.07)');
   } else {
     glow.addColorStop(0,
-      state.isDragging ? 'rgba(255,220,140,0.2)' : 'rgba(200,180,240,0.07)');
+      !state.cameraLocked ? 'rgba(255,220,140,0.2)' : 'rgba(200,180,240,0.07)');
   }
   glow.addColorStop(1, 'rgba(0,0,0,0)');
 
@@ -155,7 +201,7 @@ function drawMouseGlow(ctx) {
 // ==================== 太空拖拽速度线 ====================
 
 function drawSpeedLines(ctx) {
-  if (!state.isDragging || !state.isSpaceMode || state.trailPoints.length < 2) return;
+  if (state.cameraLocked || !state.isSpaceMode || state.trailPoints.length < 2) return;
 
   const last = state.trailPoints[state.trailPoints.length - 1];
   const prev = state.trailPoints[Math.max(0, state.trailPoints.length - 3)];
@@ -188,5 +234,17 @@ document.addEventListener('mousemove', (e) => {
   updateCursor(e.clientX, e.clientY);
 }, { passive: true });
 
-// ==================== 启动 ====================
-init();
+// ==================== 启动 (带错误边界) ====================
+try {
+  init();
+} catch (err) {
+  console.error('[星尘夜空] 初始化失败:', err);
+  // 出错时至少显示黑色画布
+  document.body.style.background = '#010108';
+  document.body.style.cursor = 'default';
+  const hintEl = document.getElementById('hint');
+  if (hintEl) {
+    hintEl.textContent = '初始化失败，请刷新页面';
+    hintEl.style.opacity = '1';
+  }
+}

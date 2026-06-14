@@ -13,10 +13,15 @@ let nebulaCanvas = null;
  * 初始化星云
  */
 export function initNebula(w, h) {
+  // 释放旧离屏 canvas 让 GC 回收
+  if (nebulaCanvas) { nebulaCanvas.width = 0; nebulaCanvas = null; }
+
+  const dpr = Math.min(state.dpr || 1, 2);
   nebulaCanvas = document.createElement('canvas');
-  nebulaCanvas.width = w;
-  nebulaCanvas.height = h;
+  nebulaCanvas.width = w * dpr;
+  nebulaCanvas.height = h * dpr;
   const nCtx = nebulaCanvas.getContext('2d');
+  nCtx.scale(dpr, dpr);
 
   const nebulae = [
     { x: w * 0.3, y: h * 0.4, rx: w * 0.5, ry: h * 0.35, hue: 260, a: 0.06 },
@@ -47,6 +52,7 @@ export function drawNebula(ctx, alpha) {
   const ox = wrap(-state.cameraX * 0.003, state.width);
   const oy = wrap(-state.cameraY * 0.003, state.height);
   ctx.drawImage(nebulaCanvas,
+    0, 0, nebulaCanvas.width, nebulaCanvas.height,
     ox - state.width * 0.1, oy - state.height * 0.1,
     state.width * 1.2, state.height * 1.2);
   ctx.restore();

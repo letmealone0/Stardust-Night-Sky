@@ -14,16 +14,21 @@ let planetSize = 0;
  * 初始化行星 offscreen canvas
  */
 export function initPlanet(w, h) {
+  // 释放旧离屏 canvas 让 GC 回收
+  if (planetCanvas) { planetCanvas.width = 0; planetCanvas = null; }
+
+  const dpr = Math.min(state.dpr || 1, 2);
   planetSize = Math.min(w, h) * 0.22;
   const size = planetSize;
   const pad = size * 0.4; // 光晕边距
 
   planetCanvas = document.createElement('canvas');
-  planetCanvas.width = size + pad * 2;
-  planetCanvas.height = size + pad * 2;
+  planetCanvas.width = (size + pad * 2) * dpr;
+  planetCanvas.height = (size + pad * 2) * dpr;
   const pCtx = planetCanvas.getContext('2d');
-  const cx = planetCanvas.width / 2;
-  const cy = planetCanvas.height / 2;
+  pCtx.scale(dpr, dpr);
+  const cx = (size + pad * 2) / 2;
+  const cy = (size + pad * 2) / 2;
   const r = size / 2;
 
   // ---- 外层大气光晕 ----
@@ -112,8 +117,18 @@ export function drawPlanet(ctx) {
   const px = wrap(baseX - state.cameraX * 0.02, w + planetSize) - planetSize * 0.3;
   const py = wrap(baseY - state.cameraY * 0.015, h + planetSize) - planetSize * 0.3;
 
+  const cx = px + planetSize * 0.7;
+  const cy = py + planetSize * 0.7;
+
+  // 缓慢旋转 + 呼吸效果
+  const rotation = state.time * 0.0001;
+  const breath = Math.sin(state.time * 0.0005) * 0.01 + 1.01;
+
   ctx.save();
   ctx.globalAlpha = alpha;
-  ctx.drawImage(planetCanvas, px, py, planetSize * 1.4, planetSize * 1.4);
+  ctx.translate(cx, cy);
+  ctx.rotate(rotation);
+  ctx.scale(breath, breath);
+  ctx.drawImage(planetCanvas, -planetSize * 0.7, -planetSize * 0.7, planetSize * 1.4, planetSize * 1.4);
   ctx.restore();
 }

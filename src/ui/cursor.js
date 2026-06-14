@@ -20,10 +20,10 @@ export function updateCursor(x, y) {
   ringEl.style.top = y + 'px';
 }
 
-export function setDraggingState(active) {
+export function setLockedState(locked) {
   if (!glowEl || !ringEl) return;
-  glowEl.classList.toggle('dragging', active);
-  ringEl.classList.toggle('dragging', active);
+  glowEl.classList.toggle('locked', locked);
+  ringEl.classList.toggle('locked', locked);
 }
 
 export function setSpaceMode(space) {

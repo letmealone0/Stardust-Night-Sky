@@ -20,14 +20,26 @@ class StarField {
   init(w, h) {
     this.stars = [];
     for (let i = 0; i < this.count; i++) {
+      // 10-15% 的星星为特殊色调（蓝白/暖黄/青蓝）
+      let hue = rand(this.hueRange[0], this.hueRange[1]);
+      const specialRoll = Math.random();
+      if (specialRoll < 0.05) hue = rand(200, 220);        // 蓝白炽星
+      else if (specialRoll < 0.08) hue = rand(170, 190);    // 青蓝星
+      else if (specialRoll < 0.12) hue = rand(40, 50);      // 暖黄星
+
+      // 5-8 颗超亮锚点星
+      const isAnchor = i < 6;
+
       this.stars.push({
         wx: Math.random() * w,
         wy: Math.random() * h,
-        r: rand(this.sizeRange[0], this.sizeRange[1]),
-        baseAlpha: rand(this.alphaRange[0], this.alphaRange[1]),
+        r: rand(this.sizeRange[0], this.sizeRange[1]) * (isAnchor ? 1.8 : 1),
+        baseAlpha: isAnchor ? rand(0.8, 1.0) : rand(this.alphaRange[0], this.alphaRange[1]),
+        sat: rand(0.1, 0.6),   // 随机饱和度
+        lum: rand(0.5, 0.9),   // 随机基础亮度
         twinkleSpeed: rand(0.4, 2),
         twinklePhase: rand(0, Math.PI * 2),
-        hue: rand(this.hueRange[0], this.hueRange[1]),
+        hue,
       });
     }
   }
@@ -36,12 +48,25 @@ class StarField {
     const t = state.time;
     for (const s of this.stars) {
       const sc = worldToScreen(s.wx, s.wy, depthMul);
-      const twinkle = 0.5 + 0.5 * Math.sin(t * 0.002 * s.twinkleSpeed + s.twinklePhase);
+      const twinkle = state.reducedMotion ? 0.5 : (0.5 + 0.5 * Math.sin(t * 0.002 * s.twinkleSpeed + s.twinklePhase));
       const alpha = s.baseAlpha * (0.55 + 0.45 * twinkle) * alphaMul;
-      const col = hslToRgb(s.hue, 0.35, 0.65 + 0.3 * twinkle);
+      const col = hslToRgb(s.hue, s.sat || 0.35, s.lum + 0.3 * twinkle);
+      const r = s.r * (0.75 + 0.25 * twinkle);
+
+      // 亮星添加柔光晕
+      if (s.baseAlpha > 0.6 && alpha > 0.35) {
+        const glowGrad = ctx.createRadialGradient(sc.x, sc.y, 0, sc.x, sc.y, r * 3);
+        glowGrad.addColorStop(0, `rgba(${col.r},${col.g},${col.b},${alpha * 0.25})`);
+        glowGrad.addColorStop(1, 'rgba(0,0,0,0)');
+        ctx.fillStyle = glowGrad;
+        ctx.beginPath();
+        ctx.arc(sc.x, sc.y, r * 3, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
       ctx.beginPath();
       ctx.fillStyle = `rgba(${col.r},${col.g},${col.b},${alpha})`;
-      ctx.arc(sc.x, sc.y, s.r * (0.75 + 0.25 * twinkle), 0, Math.PI * 2);
+      ctx.arc(sc.x, sc.y, r, 0, Math.PI * 2);
       ctx.fill();
     }
   }

@@ -7,31 +7,38 @@
  */
 
 import { state } from '../core/state.js';
-import { lerp } from '../utils/math.js';
+import { config } from '../core/config.js';
+import { lerp, dtLerp } from '../utils/math.js';
 
 /** 太空阈值 */
-const SPACE_THRESHOLD = 0.82;
+const SPACE_THRESHOLD = config.SPACE_THRESHOLD;
 
-/** 非线性映射指数 (>1 压缩高处，扩展低处) */
-const ALTITUDE_POWER = 2.5;
+/** 非线性映射指数 */
+const ALTITUDE_POWER = config.ALTITUDE_POWER;
+
+/** 高度过渡速度 */
+const ALTITUDE_LERP = config.ALTITUDE_LERP;
+
+/** spaceFactor 过渡起点 */
+const SPACE_TRANSITION_START = config.SPACE_TRANSITION_START;
 
 /**
  * 每帧更新海拔
  */
 export function updateAltitude() {
-  if (state.mouseY > 0) {
-    // 线性归一化
+  if (!state.cameraLocked && state.mouseY > 0) {
+    // 自由模式：根据鼠标 Y 更新高度
     const raw = 1 - state.mouseY / state.height;
-    // 非线性映射：让中低空占据更大的鼠标行程
     state.targetAltitude = Math.pow(Math.max(0, Math.min(1, raw)), ALTITUDE_POWER);
   }
+  // 冻结模式：targetAltitude 保持不变，画面高度锁定
 
-  // 缓慢平滑过渡 (lerp 0.015 — 比原来的 0.06 慢很多)
-  state.altitude = lerp(state.altitude, state.targetAltitude, 0.015);
+  // 缓慢平滑过渡 (帧率无关)
+  state.altitude = dtLerp(state.altitude, state.targetAltitude, ALTITUDE_LERP, state.dt);
 
   // 太空模式
   state.isSpaceMode = state.altitude > SPACE_THRESHOLD;
-  const rawFactor = (state.altitude - 0.7) / (1 - 0.7); // 从 0.7 开始过渡
+  const rawFactor = (state.altitude - SPACE_TRANSITION_START) / (1 - SPACE_TRANSITION_START);
   state.spaceFactor = Math.max(0, Math.min(1, rawFactor));
 }
 
@@ -39,8 +46,8 @@ export function updateAltitude() {
  * 获取当前海拔对应的区域名称
  */
 export function getAltitudeZone() {
-  if (state.altitude > 0.82) return 'space';
-  if (state.altitude > 0.45) return 'high';
-  if (state.altitude > 0.15) return 'atmosphere';
+  if (state.altitude > config.ZONE_SPACE) return 'space';
+  if (state.altitude > config.ZONE_HIGH) return 'high';
+  if (state.altitude > config.ZONE_ATMOSPHERE) return 'atmosphere';
   return 'ground';
 }

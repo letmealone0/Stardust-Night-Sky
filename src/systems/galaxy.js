@@ -13,9 +13,15 @@ let galaxyCanvas = null;
  * 初始化银河 offscreen canvas
  */
 export function initGalaxy(w, h) {
+  // 释放旧离屏 canvas 让 GC 回收
+  if (galaxyCanvas) { galaxyCanvas.width = 0; galaxyCanvas = null; }
+
+  const dpr = Math.min(state.dpr || 1, 2); // 限制最大 DPR 以节省内存
+  const scale = 2 * dpr;
+  const maxDim = 4096;
   galaxyCanvas = document.createElement('canvas');
-  galaxyCanvas.width = w * 2;
-  galaxyCanvas.height = h * 2;
+  galaxyCanvas.width = Math.min(w * scale, maxDim);
+  galaxyCanvas.height = Math.min(h * scale, maxDim);
   const gCtx = galaxyCanvas.getContext('2d');
   const gw = galaxyCanvas.width;
   const gh = galaxyCanvas.height;
@@ -64,8 +70,11 @@ export function drawGalaxy(ctx, alpha) {
   ctx.globalAlpha = alpha;
   const ox = wrap(-state.cameraX * 0.005, state.width);
   const oy = wrap(-state.cameraY * 0.003 + state.height * 0.05, state.height);
+  const drawScale = Math.min(galaxyCanvas.width / (state.width * 2), galaxyCanvas.height / (state.height * 2));
+  const dw = galaxyCanvas.width / drawScale;
+  const dh = galaxyCanvas.height / drawScale;
   ctx.drawImage(galaxyCanvas,
     0, 0, galaxyCanvas.width, galaxyCanvas.height,
-    -ox, -oy, state.width * 2, state.height * 2);
+    -ox, -oy, dw, dh);
   ctx.restore();
 }
