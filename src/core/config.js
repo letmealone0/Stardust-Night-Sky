@@ -1,70 +1,82 @@
 /**
- * 集中化配置 — 所有可调参数
- * 所有模块通过 import { config } 读取配置
+ * 深空探索 - 全局配置
+ * 集中管理所有可调参数
  */
 
 export const config = {
-  // ---- 粒子系统 ----
-  MAX_PARTICLES: 500,
-  MAX_TRAIL_PTS: 40,
-
-  // 鼠标引力
-  MOUSE_GRAVITY_R_FREE: 240,   // 自由模式粒子引力半径
-  MOUSE_GRAVITY_R_LOCKED: 130, // 冻结模式粒子引力半径
-  MOUSE_GRAVITY_FORCE_FREE: 0.06,
-  MOUSE_GRAVITY_FORCE_LOCKED: 0.02,
-  GRAVITY_DAMPING: 0.97,
-
-  // 星座连线
-  CONNECT_DIST: 80,            // 连线最大距离
-  CONNECT_MIN_LIFE: 0.15,      // 低于此生命值不参与连线
-
-  // 粒子寿命 (秒)
-  PARTICLE_LIFE_FREE: [0.5, 1.4],
-  PARTICLE_LIFE_INTENSE: [1.0, 2.2],
-  PARTICLE_SIZE_FREE: [1.5, 5.0],
-  PARTICLE_SIZE_INTENSE: [2.5, 7.5],
-
   // ---- 相机系统 ----
-  DRAG_SENSITIVITY: 0.5,
-  FOLLOW_SPEED: 0.1,
-  MOUSE_SMOOTH_SPEED: 0.1,
+  camera: {
+    fov: 75,
+    near: 0.1,
+    far: 10000,
+    startPosition: { x: 0, y: 0, z: 100 },
+  },
 
-  // ---- 高度系统 ----
-  SPACE_THRESHOLD: 0.82,       // 太空模式阈值
-  ALTITUDE_POWER: 2.5,         // 非线性映射指数
-  ALTITUDE_LERP: 0.015,        // 高度过渡速度
-  SPACE_TRANSITION_START: 0.7, // spaceFactor 过渡起点
+  // ---- 玩家控制 ----
+  player: {
+    moveSpeed: 50,           // 基础移动速度
+    sprintMultiplier: 2.5,   // 冲刺倍数
+    mouseSensitivity: 0.002, // 鼠标灵敏度
+    damping: 0.05,           // 移动阻尼
+  },
 
-  // 区域阈值
-  ZONE_SPACE: 0.82,
-  ZONE_HIGH: 0.45,
-  ZONE_ATMOSPHERE: 0.15,
+  // ---- 星空背景 ----
+  stars: {
+    count: 8000,             // 星星数量
+    minSize: 0.1,            // 最小尺寸
+    maxSize: 0.5,            // 最大尺寸
+    spread: 5000,            // 分布范围
+    layers: [
+      { count: 4000, depth: 0.2, size: [0.1, 0.2] },
+      { count: 2500, depth: 0.5, size: [0.15, 0.3] },
+      { count: 1500, depth: 1.0, size: [0.2, 0.5] },
+    ],
+  },
 
-  // ---- 大气系统 ----
-  ATMOSPHERE_FADE_ALTITUDE: 0.35, // 大气完全消失的海拔
-  HORIZON_GLOW_START: 0.78,       // 地平线暖光起始位置 (屏幕比例)
+  // ---- 行星系统 ----
+  planets: {
+    count: 8,                // 行星数量
+    minRadius: 5,            // 最小半径
+    maxRadius: 30,           // 最大半径
+    spread: 3000,            // 分布范围
+    atmosphereScale: 1.2,    // 大气层缩放
+  },
 
-  // ---- 彗星系统 ----
-  MAX_COMETS: 3,
-  MIN_COMET_INTERVAL: 4000,
-  MAX_COMET_INTERVAL: 18000,
+  // ---- 星云效果 ----
+  nebula: {
+    count: 3,                // 星云数量
+    scale: 500,              // 星云大小
+    opacity: 0.15,           // 透明度
+    colors: [
+      { r: 0.2, g: 0.1, b: 0.5 },  // 紫色
+      { r: 0.1, g: 0.3, b: 0.6 },  // 蓝色
+      { r: 0.5, g: 0.1, b: 0.2 },  // 红色
+    ],
+  },
 
-  // ---- 鼠标辉光 (main.js) ----
-  MOUSE_GLOW_R_FREE: 70,
-  MOUSE_GLOW_R_LOCKED: 38,
+  // ---- 后处理效果 ----
+  postprocessing: {
+    bloom: {
+      strength: 1.5,         // 辉光强度
+      radius: 0.4,           // 辉光半径
+      threshold: 0.2,        // 辉光阈值
+    },
+    vignette: {
+      offset: 0.5,           // 暗角偏移
+      darkness: 0.5,         // 暗角深度
+    },
+  },
 
-  // ---- 背景星空 ----
-  STAR_LAYERS: [
-    { count: 180, alpha: [0.08, 0.22], size: [0.3, 0.9], hue: [30, 270], depth: 0.15 },
-    { count: 130, alpha: [0.15, 0.5], size: [0.4, 1.1], hue: [30, 280], depth: 0.4 },
-    { count: 70,  alpha: [0.3, 1.2],  size: [0.5, 1.4], hue: [30, 290], depth: 0.85 },
-  ],
-  SPACE_STARS_COUNT: 500,
-  SPACE_NEAR_STARS_COUNT: 150,
-  SPACE_STARS_DEPTH: 0.5,
-  SPACE_NEAR_DEPTH: 0.7,
+  // ---- 渲染器 ----
+  renderer: {
+    antialias: true,
+    alpha: false,
+    powerPreference: 'high-performance',
+  },
 
-  // ---- 视觉效果 ----
-  VIGNETTE_MAX_ALPHA: 0.45,
+  // ---- 性能优化 ----
+  performance: {
+    maxFPS: 60,              // 最大帧率
+    lodDistances: [100, 500, 1000], // LOD 距离
+  },
 };

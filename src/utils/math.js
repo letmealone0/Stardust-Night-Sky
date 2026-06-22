@@ -2,54 +2,102 @@
  * 数学工具函数
  */
 
-export function rand(min, max) {
-  return min + Math.random() * (max - min);
-}
-
-export function randInt(min, max) {
-  return Math.floor(rand(min, max + 1));
-}
-
-export function lerp(a, b, t) {
-  return a + (b - a) * t;
+/**
+ * 线性插值
+ */
+export function lerp(start, end, t) {
+  return start + (end - start) * t;
 }
 
 /**
- * 帧率无关的平滑过渡 (指数衰减)
- * @param {number} a 当前值
- * @param {number} b 目标值
- * @param {number} frameRate 60fps 时的 lerp 速率 (0~1)
- * @param {number} dt delta time (秒)
- * @returns {number} 下一帧的值
+ * 限制范围
  */
-export function dtLerp(a, b, frameRate, dt) {
-  const rate = -60 * Math.log(1 - frameRate);
-  return lerp(a, b, 1 - Math.exp(-rate * dt));
-}
-
-export function dist(x1, y1, x2, y2) {
-  return Math.hypot(x2 - x1, y2 - y1);
-}
-
-export function wrap(v, max) {
-  return ((v % max) + max) % max;
-}
-
-export function easeOut(t) {
-  return t >= 1 ? 1 : 1 - Math.pow(2, -10 * t);
+export function clamp(value, min, max) {
+  return Math.min(Math.max(value, min), max);
 }
 
 /**
- * 二次贝塞尔插值
- * @param {{x:number,y:number}} p0
- * @param {{x:number,y:number}} p1
- * @param {{x:number,y:number}} p2
- * @param {number} t 0~1
+ * 平滑插值
  */
-export function quadraticBezier(p0, p1, p2, t) {
-  const u = 1 - t;
-  return {
-    x: u * u * p0.x + 2 * u * t * p1.x + t * t * p2.x,
-    y: u * u * p0.y + 2 * u * t * p1.y + t * t * p2.y,
+export function smoothstep(edge0, edge1, x) {
+  const t = clamp((x - edge0) / (edge1 - edge0), 0, 1);
+  return t * t * (3 - 2 * t);
+}
+
+/**
+ * 角度转弧度
+ */
+export function degToRad(degrees) {
+  return degrees * (Math.PI / 180);
+}
+
+/**
+ * 弧度转角度
+ */
+export function radToDeg(radians) {
+  return radians * (180 / Math.PI);
+}
+
+/**
+ * 距离计算
+ */
+export function distance(x1, y1, z1, x2, y2, z2) {
+  const dx = x2 - x1;
+  const dy = y2 - y1;
+  const dz = z2 - z1;
+  return Math.sqrt(dx * dx + dy * dy + dz * dz);
+}
+
+/**
+ * 噪声函数（简单 Perlin 噪声）
+ */
+export function noise(x, y, z) {
+  const p = new Uint8Array(512);
+  for (let i = 0; i < 256; i++) p[i] = i;
+  for (let i = 255; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [p[i], p[j]] = [p[j], p[i]];
+  }
+  for (let i = 0; i < 256; i++) p[i + 256] = p[i];
+
+  const fade = (t) => t * t * t * (t * (t * 6 - 15) + 10);
+  const grad = (hash, x, y, z) => {
+    const h = hash & 15;
+    const u = h < 8 ? x : y;
+    const v = h < 4 ? y : h === 12 || h === 14 ? x : z;
+    return ((h & 1) === 0 ? u : -u) + ((h & 2) === 0 ? v : -v);
   };
+
+  const X = Math.floor(x) & 255;
+  const Y = Math.floor(y) & 255;
+  const Z = Math.floor(z) & 255;
+
+  x -= Math.floor(x);
+  y -= Math.floor(y);
+  z -= Math.floor(z);
+
+  const u = fade(x);
+  const v = fade(y);
+  const w = fade(z);
+
+  const A = p[X] + Y;
+  const AA = p[A] + Z;
+  const AB = p[A + 1] + Z;
+  const B = p[X + 1] + Y;
+  const BA = p[B] + Z;
+  const BB = p[B + 1] + Z;
+
+  return lerp(
+    lerp(
+      lerp(grad(p[AA], x, y, z), grad(p[BA], x - 1, y, z), u),
+      lerp(grad(p[AB], x, y - 1, z), grad(p[BB], x - 1, y - 1, z), u),
+      v
+    ),
+    lerp(
+      lerp(grad(p[AA + 1], x, y, z - 1), grad(p[BA + 1], x - 1, y, z - 1), u),
+      lerp(grad(p[AB + 1], x, y - 1, z - 1), grad(p[BB + 1], x - 1, y - 1, z - 1), u),
+      v
+    ),
+    w
+  );
 }
