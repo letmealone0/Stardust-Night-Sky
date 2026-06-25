@@ -38,13 +38,13 @@ export class Engine {
    * 初始化引擎
    */
   async init() {
-    // 创建场景
-    this.scene = new SceneManager();
-    await this.scene.init();
-
     // 创建相机
     this.camera = new CameraController();
     this.camera.init();
+
+    // 创建场景（传递相机引用）
+    this.scene = new SceneManager();
+    await this.scene.init(this.camera.camera);
 
     // 创建渲染器
     this.renderer = new RendererManager();
@@ -160,7 +160,7 @@ export class Engine {
 
     // 更新系统
     this.player.update(delta);
-    this.scene.update(delta, elapsed);
+    this.scene.update(delta, elapsed, this.player.getSpeed());
     this.hud.update(delta);
 
     // 更新 HUD 信息

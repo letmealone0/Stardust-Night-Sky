@@ -57,13 +57,13 @@ export const config = {
   // ---- 后处理效果 ----
   postprocessing: {
     bloom: {
-      strength: 1.5,         // 辉光强度
-      radius: 0.4,           // 辉光半径
-      threshold: 0.2,        // 辉光阈值
+      strength: 0.8,         // 辉光强度（降低避免闪烁）
+      radius: 0.3,           // 辉光半径
+      threshold: 0.6,        // 辉光阈值（提高避免闪烁）
     },
     vignette: {
       offset: 0.5,           // 暗角偏移
-      darkness: 0.5,         // 暗角深度
+      darkness: 0.3,         // 暗角深度（降低）
     },
   },
 

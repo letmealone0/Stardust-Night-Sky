@@ -8,6 +8,7 @@ import { config } from './config.js';
 import { StarField } from '../objects/stars.js';
 import { PlanetSystem } from '../objects/planets.js';
 import { NebulaSystem } from '../objects/nebula.js';
+import { SpeedLines } from '../objects/speedlines.js';
 
 export class SceneManager {
   constructor() {
@@ -16,13 +17,14 @@ export class SceneManager {
       stars: null,
       planets: null,
       nebula: null,
+      speedLines: null,
     };
   }
 
   /**
    * 初始化场景
    */
-  async init() {
+  async init(camera) {
     // 创建场景
     this.scene = new THREE.Scene();
     this.scene.background = new THREE.Color(0x000005);
@@ -40,6 +42,10 @@ export class SceneManager {
     this.objects.nebula = new NebulaSystem();
     this.objects.nebula.init(this.scene);
 
+    // 创建速度线
+    this.objects.speedLines = new SpeedLines();
+    this.objects.speedLines.init(this.scene, camera);
+
     // 添加环境光
     const ambientLight = new THREE.AmbientLight(0x111122, 0.5);
     this.scene.add(ambientLight);
@@ -55,10 +61,11 @@ export class SceneManager {
   /**
    * 更新场景
    */
-  update(delta, elapsed) {
+  update(delta, elapsed, speed = 0) {
     this.objects.stars.update(delta, elapsed);
     this.objects.planets.update(delta, elapsed);
     this.objects.nebula.update(delta, elapsed);
+    this.objects.speedLines.update(delta, speed);
   }
 
   /**
@@ -68,5 +75,6 @@ export class SceneManager {
     this.objects.stars.dispose();
     this.objects.planets.dispose();
     this.objects.nebula.dispose();
+    this.objects.speedLines.dispose();
   }
 }

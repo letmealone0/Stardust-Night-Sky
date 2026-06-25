@@ -104,7 +104,7 @@ export class PlanetSystem {
         break;
       case 'lava':
         color = new THREE.Color(0.5, 0.2, 0.1);
-        emissive = new THREE.Color(0.3, 0.1, 0.05);
+        emissive = new THREE.Color(0.1, 0.04, 0.02);
         roughness = 0.6;
         metalness = 0.0;
         break;

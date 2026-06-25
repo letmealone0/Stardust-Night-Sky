@@ -48,14 +48,38 @@ export class PlayerController {
    * 绑定键盘事件
    */
   bindKeyboardEvents() {
-    document.addEventListener('keydown', (e) => this.onKeyDown(e));
-    document.addEventListener('keyup', (e) => this.onKeyUp(e));
+    // 在 window 级别拦截，防止浏览器行为
+    window.addEventListener('keydown', (e) => {
+      // 彻底拦截 Ctrl/Meta 组合键
+      if (e.ctrlKey || e.metaKey) {
+        e.preventDefault();
+        e.stopPropagation();
+        e.returnValue = false;
+        return false;
+      }
+      this.onKeyDown(e);
+    }, { capture: true });
+    
+    window.addEventListener('keyup', (e) => this.onKeyUp(e));
+    
+    // 额外拦截 beforeunload 防止 Ctrl+W
+    window.addEventListener('beforeunload', (e) => {
+      if (this.sprint) {
+        e.preventDefault();
+        e.returnValue = '';
+      }
+    });
   }
 
   /**
    * 键盘按下
    */
   onKeyDown(event) {
+    // 阻止空格和Shift默认行为
+    if (['Space', 'ShiftLeft', 'ShiftRight'].includes(event.code)) {
+      event.preventDefault();
+    }
+    
     switch (event.code) {
       case 'KeyW':
       case 'ArrowUp':
