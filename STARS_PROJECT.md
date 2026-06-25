@@ -24,15 +24,44 @@
 
 ## 1. 快速上手
 
+### 本地开发
+
 ```bash
 cd d:\code_with_AI\web_test\stars-project
-npm install          # 首次
+npm install          # 首次：根据 package.json 安装依赖
 npm run dev          # → http://localhost:3000
-npm run build        # → dist/（静态部署）
+npm run build        # → dist/（生产构建）
 npm run preview      # → 预览构建
 ```
 
 构建产物 `dist/` 可部署到 Vercel / Netlify / GitHub Pages。
+
+### 从 Git 仓库重建
+
+本仓库 **不提交** `dist/` 和 `node_modules/`，clone 后只需两步即可运行：
+
+```bash
+git clone <仓库地址>
+cd stars-project
+npm install          # 生成 node_modules/
+npm run dev          # 启动开发服务器，浏览器自动打开
+```
+
+如需生产构建：
+
+```bash
+npm run build        # 生成 dist/（纯静态文件，可直接部署）
+npm run preview      # 本地预览构建结果
+```
+
+### 为什么 dist/ 和 node_modules/ 不提交 Git
+
+| 目录 | 不提交原因 |
+|------|-----------|
+| `node_modules/` | npm 依赖（数百 MB），可通过 `package.json` + `npm install` 完整重建 |
+| `dist/` | Vite 构建产物，由 `npm run build` 自动生成，内容可由源码 100% 还原 |
+
+`.gitignore` 已配置排除这两个目录。提交源码和 `package.json` 即可保证任何人能在本地重建完整的网页。
 
 ---
 
