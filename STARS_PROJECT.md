@@ -1,74 +1,54 @@
-# 星尘夜空 (Stardust Night Sky) — 项目文档
+# 深空探索 (Deep Space Explorer) — 项目文档
 
-> **项目**: `stars-project/` · **版本**: v5.1 · **最后更新**: 2026-06-22
+> **项目**: `stars-project/` · **版本**: v5.2 · **最后更新**: 2026-06-25
 >
-> **v5.0 重大更新**: 从 2D Canvas 迁移到 Three.js 3D 引擎，实现第一人称深空探索体验。
-> WASD 移动 + 鼠标控制视角，支持冲刺、上下移动，8颗行星、8000+星星、体积星云。
->
-> **v5.1 更新**: 修复多项 bug，禁用后处理解决闪烁问题，添加速度线系统。
+> **一句话描述**: 基于 Three.js 3D 引擎的第一人称深空探索体验，WASD 移动 + 鼠标视角，
+> 可探索 8 颗程序化行星、银河系背景、体积星云和宇宙尘埃。
 
 ---
 
 ## 目录
 
-1. [项目概述](#1-项目概述)
+1. [快速上手](#1-快速上手)
 2. [操作说明](#2-操作说明)
 3. [技术栈](#3-技术栈)
-4. [启动与构建](#4-启动与构建)
-5. [项目结构](#5-项目结构)
+4. [项目结构](#4-项目结构)
+5. [架构流程](#5-架构流程)
 6. [模块说明](#6-模块说明)
 7. [配置参数](#7-配置参数)
-8. [已知问题](#8-已知问题)
-9. [后续开发指南](#9-后续开发指南)
+8. [已知问题与限制](#8-已知问题与限制)
+9. [开发指南](#9-开发指南)
 10. [版本历史](#10-版本历史)
 
 ---
 
-## 1. 项目概述
+## 1. 快速上手
 
-### v5.0 3D 版本特性
+```bash
+cd d:\code_with_AI\web_test\stars-project
+npm install          # 首次
+npm run dev          # → http://localhost:3000
+npm run build        # → dist/（静态部署）
+npm run preview      # → 预览构建
+```
 
-- **3D 渲染**: Three.js WebGL 渲染器，支持 60fps 流畅体验
-- **第一人称控制**: WASD 移动 + 鼠标视角，类似 FPS 游戏操作
-- **深空场景**: 8000+ 星星、8 颗行星（含大气层和行星环）、3 个星云
-- **后处理效果**: 辉光（Bloom）、暗角、色差
-- **无边界探索**: 自由飞行，无空间限制
-- **模块化架构**: 易于扩展和维护
+构建产物 `dist/` 可部署到 Vercel / Netlify / GitHub Pages。
 
 ---
 
 ## 2. 操作说明
 
-### 基础操作
-
 | 按键 | 功能 |
 |------|------|
-| **W** | 向前移动 |
-| **S** | 向后移动 |
-| **A** | 向左移动 |
-| **D** | 向右移动 |
-| **空格** | 向上移动 |
-| **Shift** | 向下移动 |
-| **Ctrl** | 冲刺（2.5倍速度） |
-| **鼠标移动** | 控制视角方向 |
-| **点击屏幕** | 锁定/解锁鼠标 |
+| **W / S** | 前进 / 后退 |
+| **A / D** | 左移 / 右移 |
+| **空格** | 上升 |
+| **Shift** | 冲刺（2.5× 速度） |
+| **Ctrl** | 下降 |
+| **鼠标** | 控制视角 |
+| **点击 / ESC** | 锁定 / 解锁鼠标 |
 
-### 操作提示
-
-1. **首次进入**: 会看到加载画面，加载完成后点击屏幕锁定鼠标
-2. **锁定鼠标**: 鼠标被锁定后，移动鼠标控制视角，WASD 控制移动
-3. **解锁鼠标**: 再次点击屏幕或按 ESC 解锁鼠标
-4. **探索宇宙**: 使用 WASD 在太空中自由飞行，探索行星和星云
-5. **冲刺**: 按住 Ctrl 键可以加速移动
-
-### HUD 信息
-
-屏幕左上角显示：
-- **FPS**: 当前帧率
-- **速度**: 当前移动速度
-- **位置**: 当前坐标位置
-
-屏幕底部显示操作提示。
+> **首次进入**：加载完成后点击屏幕锁定鼠标，WASD 移动，Shift 冲刺。
 
 ---
 
@@ -79,296 +59,279 @@
 | **渲染引擎** | Three.js v0.184.0 |
 | **构建工具** | Vite 6.x |
 | **语言** | JavaScript (ES Modules) |
-| **渲染模式** | 直接渲染（已禁用后处理以解决闪烁问题） |
+| **后处理** | EffectComposer (Bloom + OutputPass) |
+| **色调映射** | ACES Filmic ToneMapping |
+| **模块数** | 31 个（构建产物 ~143 KB gzip） |
 
 ---
 
-## 4. 启动与构建
-
-> 项目根目录: `d:\code_with_AI\web_test\stars-project`
-
-```bash
-# 进入项目目录
-cd d:\code_with_AI\web_test\stars-project
-
-# 安装依赖（首次）
-npm install
-
-# 启动开发服务器
-npm run dev
-# → 浏览器访问 http://localhost:3000
-
-# 生产构建
-npm run build
-
-# 预览生产构建
-npm run preview
-```
-
-### 部署
-
-构建后 `dist/` 文件夹为纯静态文件，可部署到：
-- Vercel
-- Netlify
-- GitHub Pages
-
----
-
-## 5. 项目结构
+## 4. 项目结构
 
 ```
 stars-project/
-├── index.html                  # 入口 HTML（加载画面 + Three.js 画布）
+├── index.html                  # 入口 HTML
 ├── package.json                # 依赖：three, vite
-├── vite.config.js              # Vite 配置
+├── vite.config.js              # Vite 配置（port: 3000）
 │
 ├── src/
-│   ├── main.js                 # 主入口：初始化引擎，启动渲染循环
+│   ├── main.js                 # 入口：初始化 Engine，启动循环
 │   │
 │   ├── core/
-│   │   ├── engine.js           # 引擎核心：管理所有子系统
-│   │   ├── scene.js            # 场景管理：创建 3D 对象
-│   │   ├── camera.js           # 相机系统：PerspectiveCamera
-│   │   ├── renderer.js         # 渲染器：WebGLRenderer
-│   │   └── config.js           # 全局配置：所有可调参数
+│   │   ├── engine.js           # 引擎核心：子系统初始化 + 渲染循环
+│   │   ├── scene.js            # 场景管理：创建/销毁所有 3D 对象
+│   │   ├── camera.js           # PerspectiveCamera 封装
+│   │   ├── renderer.js         # WebGLRenderer 封装
+│   │   └── config.js           # 全局配置（所有可调参数）
 │   │
 │   ├── controls/
-│   │   ├── player.js           # 玩家控制：WASD + 鼠标视角
-│   │   └── input.js            # 输入管理：键盘鼠标事件
+│   │   ├── player.js           # 玩家控制器（WASD + PointerLock）
+│   │   └── input.js            # [废弃] 已合并到 player.js
 │   │
 │   ├── objects/
-│   │   ├── stars.js            # 星空背景：8000+ 星星，多层视差
-│   │   ├── planets.js          # 行星系统：8 颗行星，含大气层和行星环
-│   │   ├── nebula.js           # 星云效果：体积感云团，脉冲动画
-│   │   └── speedlines.js       # 速度线：跟随相机方向，增强飞行感
+│   │   ├── stars.js            # 星空 + 银河系 + 亮星闪烁
+│   │   ├── planets.js          # 行星（纹理/大气层/环/LOD/公转）
+│   │   ├── nebula.js           # 星云（几何合并 Shader 云团）
+│   │   ├── speedlines.js       # 速度线（LineSegments 渐变线段）
+│   │   └── cosmicdust.js       # 宇宙尘埃（2000 粒子漂浮）
 │   │
 │   ├── postprocessing/
-│   │   └── composer.js         # 后处理：辉光、暗角、色差
+│   │   └── composer.js         # EffectComposer（Bloom + OutputPass）
 │   │
 │   ├── ui/
-│   │   └── hud.js              # HUD 界面：准星、FPS、速度、位置
+│   │   └── hud.js              # HUD（准星/FPS/速度/位置/消息）
 │   │
 │   └── utils/
-│       ├── math.js             # 数学工具：插值、噪声、距离
-│       └── random.js           # 随机生成：范围、颜色、向量
-│
-├── docs/
-│   ├── ARCHITECTURE.md         # 架构文档
-│   └── CHANGELOG.md            # 更新日志
+│       ├── math.js             # 数学工具（lerp/clamp/noise）
+│       └── random.js           # 随机工具（range/color/vector3）
 │
 └── dist/                       # 构建输出
 ```
 
 ---
 
+## 5. 架构流程
+
+```
+main.js
+  └─ new Engine()
+       ├─ CameraController  ─→  PerspectiveCamera
+       ├─ SceneManager
+       │    ├─ StarField         (8000 星 + 银河盘 + 亮星)
+       │    ├─ PlanetSystem      (8 行星, LOD, 相机距离驱动)
+       │    ├─ NebulaSystem      (3 星云, 合并几何)
+       │    ├─ SpeedLines        (相机子对象, 跟随视角)
+       │    └─ CosmicDust        (2000 粒子)
+       ├─ RendererManager    ─→  WebGLRenderer
+       ├─ PlayerController   ─→  PointerLockControls + 键盘
+       ├─ PostProcessing     ─→  EffectComposer
+       │    ├─ RenderPass
+       │    ├─ UnrealBloomPass
+       │    └─ OutputPass (toneMapping + sRGB)
+       └─ HUD                   (DOM 元素覆盖层)
+
+渲染循环 (engine.animate):
+  player.update(delta)
+  → scene.update(delta, elapsed, speed)
+  → hud.update(delta)
+  → postprocessing.render()
+```
+
+**关键初始化顺序**: Camera → Scene (接收 camera) → Renderer → Player → PostProcessing → HUD
+
+---
+
 ## 6. 模块说明
 
-### 核心系统 (core/)
+### core/engine.js
+- `init()`: 按顺序创建所有子系统，校验 config
+- `animate()`: 渲染循环（`setAnimationLoop`），FPS 统计，HUD 更新
+- `onResize()`: rAF 节流防抖
 
-#### engine.js
-- 初始化所有子系统
-- 管理渲染循环
-- 协调各模块更新
-- 处理窗口事件
+### core/scene.js
+- `init(camera)`: 逐个初始化对象，失败不阻断整体（try-catch 优雅降级）
+- `update(delta, elapsed, speed)`: 转发给所有子对象
+- `dispose()`: 从场景 `remove` + 释放 GPU 资源
 
-#### scene.js
-- 创建 Three.js 场景
-- 管理星空、行星、星云
-- 添加光照
+### controls/player.js
+- PointerLock 鼠标锁定/解锁
+- WASD + 箭头键 + Space/Shift/Ctrl 移动
+- **Shift = 冲刺, Ctrl = 下降**
+- Capture 阶段拦截所有 Ctrl 组合键（防浏览器快捷键）
+- `beforeunload` 兜底防 Ctrl+W
 
-#### camera.js
-- 创建透视相机
-- 管理相机参数
+### objects/stars.js
+- 3 层星空（4000 + 2500 + 1500 颗，Points 渲染）
+- OBAFGKM 光谱颜色分布
+- 银河螺旋盘（4000 星点，密集中心）
+- 50 颗亮星独立频率/相位闪烁
 
-#### renderer.js
-- 创建 WebGL 渲染器
-- 配置渲染参数
-- 处理画布大小
+### objects/planets.js
+- 8 颗行星：岩石 / 气态 / 冰 / 熔岩
+- Canvas 2D 程序化纹理（陨石坑、条纹、裂纹、熔岩流）
+- Rayleigh + Mie 散射大气层 Shader
+- **LOD 系统**：64 / 32 / 16 段，距离 0 / 300 / 800 切换
+- 自转 + 公转动画
 
-#### config.js
-- 集中管理所有可调参数
-- 相机、玩家、星空、行星、后处理配置
+### objects/nebula.js
+- 3 个星云，每个 6-12 个云团
+- **几何合并**：单个星云 → 单个 mesh（3 draw call 替代 24-48）
+- 自定义 Shader（边缘发光 + 中心高亮）
+- 脉冲缩放 + 缓慢自转
 
-### 控制系统 (controls/)
+### objects/speedlines.js
+- 300 条线段（`LineSegments`），白→蓝渐变
+- 相机子对象（跟随视角旋转）
+- 速度驱动透明度和显示
 
-#### player.js
-- WASD 移动（前后左右上下）
-- 鼠标视角控制（PointerLockControls）
-- Ctrl 冲刺
-- 移动阻尼
+### objects/cosmicdust.js
+- 2000 粒子球壳分布
+- 正弦漂移动画
+- 脉冲透明度（0.1 ~ 0.2）
 
-### 3D 对象 (objects/)
+### postprocessing/composer.js
+- `RenderPass → UnrealBloomPass → OutputPass`
+- ACESFilmic toneMapping（修复闪烁的核心）
 
-#### stars.js
-- 多层星空（InstancedMesh 优化）
-- 闪烁动画
-- 亮星效果
-
-#### planets.js
-- 程序化行星生成
-- 大气层 Shader
-- 行星环
-- 自转和公转动画
-
-#### nebula.js
-- 体积感云团
-- 自定义 Shader
-- 脉冲动画
-
-#### speedlines.js
-- 作为相机子对象，跟随视角旋转
-- 圆柱形分布在相机前方
-- 根据速度调整透明度和大小
-- 粒子向相机方向移动，模拟飞行穿过
-
-### 后处理 (postprocessing/)
-
-#### composer.js
-- UnrealBloomPass（辉光）
-- 暗角效果
-- 色差效果
-
-### UI (ui/)
-
-#### hud.js
-- 准星
-- FPS 显示
-- 速度显示
-- 位置显示
-- 消息提示
-- 操作提示
+### ui/hud.js
+- DOM 元素覆盖层（准星/FPS/速度/位置/消息/操作提示）
+- SVG 十字准星，等宽字体 HUD
 
 ---
 
 ## 7. 配置参数
 
-所有可调参数在 `src/core/config.js` 中：
+所有可调参数在 `src/core/config.js`：
 
 ```javascript
 {
   camera: {
-    fov: 75,              // 视野角度
-    near: 0.1,            // 近裁剪面
-    far: 10000,           // 远裁剪面
-    startPosition: { x: 0, y: 0, z: 100 }  // 初始位置
+    fov: 75,                        // 视野角度
+    near: 0.1,                      // 近裁剪面
+    far: 10000,                     // 远裁剪面
+    startPosition: { x:0, y:0, z:100 }
   },
   player: {
-    moveSpeed: 50,        // 移动速度
-    sprintMultiplier: 2.5, // 冲刺倍数
-    damping: 0.05         // 移动阻尼
+    moveSpeed: 50,                  // 基础移动速度
+    sprintMultiplier: 2.5,          // 冲刺倍数
+    mouseSensitivity: 0.002,        // 鼠标灵敏度
+    damping: 0.05                   // 移动阻尼
   },
   stars: {
-    count: 8000,          // 星星数量
-    spread: 5000          // 分布范围
+    count: 8000,                    // 总星星数
+    spread: 5000,                   // 分布半径
+    layers: [
+      { count: 4000, depth: 0.2, size: [0.1, 0.2] },
+      { count: 2500, depth: 0.5, size: [0.15, 0.3] },
+      { count: 1500, depth: 1.0, size: [0.2, 0.5] },
+    ]
   },
   planets: {
-    count: 8,             // 行星数量
-    minRadius: 5,         // 最小半径
-    maxRadius: 30         // 最大半径
+    count: 8,                       // 行星数
+    minRadius: 5, maxRadius: 30,    // 半径范围
+    spread: 3000,                   // 分布范围
+    atmosphereScale: 1.2            // 大气层缩放
+  },
+  nebula: {
+    count: 3,                       // 星云数
+    scale: 500,                     // 大小
+    opacity: 0.15,                  // 透明度
+    colors: [ /* 紫/蓝/红 */ ]
   },
   postprocessing: {
     bloom: {
-      strength: 1.5,      // 辉光强度
-      radius: 0.4,        // 辉光半径
-      threshold: 0.2      // 辉光阈值
+      strength: 0.5,                // 辉光强度
+      radius: 0.3,                  // 辉光半径
+      threshold: 0.8                // 辉光阈值
     }
+  },
+  speedLines: {
+    count: 300,                     // 线段数
+    minRadius: 1.5, maxRadius: 13.5,// 分布半径
+    minLength: 10, maxLength: 50,   // 线段长度
+    speedThreshold: 2,              // 显示速度阈值
+    opacityTarget: 0.7              // 最大透明度
   }
 }
 ```
 
 ---
 
-## 8. 已知问题
+## 8. 已知问题与限制
 
-### 严重问题
+### 已修复（v5.2）
 
-| 问题 | 描述 | 状态 |
-|------|------|------|
-| **Ctrl 组合键闪退** | 连续按方向键加 Ctrl 时，浏览器会执行 Ctrl+W 等快捷键导致页面关闭 | 未完全修复 |
-| **速度线效果不佳** | 速度线生成位置和方向不自然，转动视角时跟随效果差 | 待改善 |
+| 问题 | 修复 |
+|------|------|
+| `window.engine` 永远 null | 移入 `init()` 赋值 |
+| 零方向向量 normalize → NaN | `lengthSq() > 0` 检查 |
+| `noise()` 每次重建置换表 | 模块级常量 |
+| `dispose()` 未 scene.remove | 传入 scene 参数 |
+| 后处理黑白闪烁 | 添加 OutputPass + ACESFilmic |
+| Ctrl+方向键闪退 | Shift 改为冲刺键，Ctrl 仅做下降 |
 
-### 已修复问题
+### 当前限制
 
-| 问题 | 修复方案 |
-|------|----------|
-| 球体边缘黑白框闪烁 | 禁用后处理（EffectComposer），改为直接渲染 |
-| 单按 Ctrl 闪退 | 在 window 级别拦截 keydown 事件，阻止 Ctrl 组合键默认行为 |
-| 速度线不跟随视角 | 速度线改为相机子对象（camera.add），自动跟随旋转 |
-
-### Ctrl 问题详细说明
-
-浏览器会拦截以下 Ctrl 组合键：
-- `Ctrl + W` → 关闭标签页
-- `Ctrl + N` → 新窗口
-- `Ctrl + T` → 新标签页
-- `Ctrl + R` → 刷新页面
-
-当前已通过 `event.preventDefault()` 和 `event.stopPropagation()` 拦截，但部分浏览器仍可能执行默认行为。
-
-**临时解决方案**：
-1. 避免快速连续按 Ctrl + 方向键
-2. 使用单按 Ctrl 冲刺，松开后再按方向键
-
-### 后处理闪烁问题
-
-启用 EffectComposer 后处理时，行星和星云边缘会出现黑白框闪烁。当前已禁用后处理，使用直接渲染模式。
-
-**原因分析**：
-- 可能是 UnrealBloomPass 的阈值设置问题
-- 也可能是自定义 Shader 与后处理不兼容
-
-**待解决**：
-- [ ] 调试后处理管线，找到闪烁原因
-- [ ] 重新启用辉光效果
-
-### 添加新功能的步骤
-
-1. 在对应的目录创建新模块（objects/、postprocessing/、ui/）
-2. 如需可调参数，添加到 `src/core/config.js`
-3. 在 `src/core/engine.js` 中初始化和更新
-4. 在 `src/core/scene.js` 中添加到场景
-
-### 可扩展方向
-
-- [ ] 行星交互（靠近、着陆）
-- [ ] 音效/背景音乐
-- [ ] 保存位置/进度
-- [ ] 更多天体类型（黑洞、虫洞）
-- [ ] 传送系统
-- [ ] 任务系统
+| 限制 | 说明 |
+|------|------|
+| Ctrl 组合键 | 已三重防护（capture + preventDefault + beforeunload），但仍非 100% 阻断 |
+| Bloom 强度 | 提高后有性能开销，当前 0.5 / 阈值 0.8 为平衡点 |
 
 ---
 
-## 9. 后续开发指南
+## 9. 开发指南
 
-### 添加新功能的步骤
+### 添加新 3D 对象
 
-1. 在对应的目录创建新模块（objects/、postprocessing/、ui/）
-2. 如需可调参数，添加到 `src/core/config.js`
-3. 在 `src/core/engine.js` 中初始化和更新
-4. 在 `src/core/scene.js` 中添加到场景
+1. `src/objects/xxx.js` 创建模块
+2. `src/core/config.js` 添加可调参数
+3. `src/core/scene.js` — `init()` 中创建，`update()` 中转发，`dispose()` 中清理
+
+### 性能优化备忘
+
+- draw call 目标 < 100（当前约 15-20）
+- 行星用 LOD（64/32/16 自动切换）
+- 粒子用 `Points` 而非 `Mesh`
+- 几何合并用 `mergeBufferGeometries`
+- 重复对象用 `InstancedMesh`
+- 所有 `dispose()` 必须从 scene 移除 + 释放 GPU 资源
+
+### 后处理配置注意事项
+
+- **必须有 OutputPass** 作为链的最后一环（负责 toneMapping + sRGB）
+- renderer 设置 `ACESFilmicToneMapping`
+- `emissiveIntensity > 1` 的材质会触发 Bloom（可用 `toneMapped: false` 排除）
+- 如果出现黑白闪烁，优先检查 OutputPass 是否存在
+
+### 关键设计决策
+
+| 决策 | 原因 |
+|------|------|
+| 冲刺用 Shift 而非 Ctrl | 浏览器 Ctrl+W 无法完全拦截 |
+| Bloom 强度 0.5 / 阈值 0.8 | 过高导致闪烁，过低无效果 |
+| 行星 LOD 三级（0/300/800） | 平衡视觉质量与性能 |
+| Nebula 几何合并 | draw call 从 24-48 降至 3 |
+| 速度线用 LineSegments | Points 效果差，线段更有速度感 |
 
 ### 可扩展方向
 
-- [ ] 行星交互（靠近、着陆）
-- [ ] 音效/背景音乐
-- [ ] 保存位置/进度
-- [ ] 更多天体类型（黑洞、虫洞）
+- [ ] 行星交互（靠近着陆）
+- [ ] 音效 / 背景音乐
+- [ ] 位置保存 / 进度系统
+- [ ] 更多天体（黑洞、虫洞、小行星带）
 - [ ] 传送系统
 - [ ] 任务系统
-- [ ] 修复后处理闪烁问题，重新启用辉光效果
-- [ ] 优化速度线效果
 
 ---
 
 ## 10. 版本历史
 
-| 版本 | 日期 | 变更 |
-|------|------|------|
+| 版本 | 日期 | 核心变更 |
+|------|------|----------|
 | v1.0 | 2026-06 | 初始单文件 HTML，基础粒子拖尾 |
-| v2.0 | 2026-06 | 添加自定义光标、三层视差星空、星云、additive blending |
-| v3.0 | 2026-06 | 添加相机平移、海拔系统、银河带、太空模式、UI 指示器 |
+| v2.0 | 2026-06 | 自定义光标、三层视差星空、星云、additive blending |
+| v3.0 | 2026-06 | 相机平移、海拔系统、银河带、太空模式、UI 指示器 |
 | v4.0 | 2026-06-10 | 迁移到 Vite 模块化架构、行星天体、流星彗星、贝塞尔拖尾 |
 | v4.1 | 2026-06-14 | 性能优化（空间哈希、辉光缓存、dt 帧率无关）；视觉增强 |
-| v5.0 | 2026-06-22 | 迁移到 Three.js 3D 引擎；第一人称控制（WASD+鼠标）；8颗行星、8000+星星、体积星云；无边界探索 |
-| **v5.1** | **2026-06-22** | **修复 Ctrl 闪退问题（window 级别拦截）；禁用后处理解决闪烁；添加速度线系统（相机子对象）；降低辉光参数；阻止控制键默认行为** |
+| v5.0 | 2026-06-22 | 迁移到 Three.js 3D；第一人称控制；8行星、8000+星星、体积星云；无边界探索 |
+| v5.1 | 2026-06-22 | 修复 Ctrl 闪退；禁用后处理解决闪烁；添加速度线系统 |
+| v5.2 | 2026-06-25 | **Bug 修复**（7项）：window.engine null、方向 NaN、noise 置换表、dispose 清理等；**性能**（4项）：Planet LOD、Nebula 几何合并、Resize 节流、setAnimationLoop；**画面**（8项）：Bloom 管线重启用、LineSegments 速度线、OBAFGKM 星色、银河盘、程序化纹理、Rayleigh 大气层、宇宙尘埃、独立亮星闪烁；**代码质量**（4项）：配置校验、输入合并、参数化、优雅降级 |

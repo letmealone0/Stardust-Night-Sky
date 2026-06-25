@@ -1,110 +1,122 @@
-/**
- * 速度线系统
- * 作为相机子对象，自动跟随视角旋转
- */
-
 import * as THREE from 'three';
+import { config } from '../core/config.js';
 
 export class SpeedLines {
   constructor() {
     this.group = new THREE.Group();
-    this.particleCount = 150;
+    this.cfg = config.speedLines;
+    this.lineCount = this.cfg.count;
     this.geometry = null;
     this.material = null;
-    this.points = null;
+    this.lineSegments = null;
     this.positions = null;
+    this.colors = null;
     this.speed = 0;
     this.camera = null;
   }
 
-  /**
-   * 初始化速度线 - 添加到相机
-   */
   init(scene, camera) {
     this.camera = camera;
-    
-    this.geometry = new THREE.BufferGeometry();
-    this.positions = new Float32Array(this.particleCount * 3);
 
-    for (let i = 0; i < this.particleCount; i++) {
-      this.resetParticle(i);
+    // 每个速度线是一条线段（2 个顶点），总顶点数 = lineCount * 2
+    const vertexCount = this.lineCount * 2;
+    this.positions = new Float32Array(vertexCount * 3);
+    this.colors = new Float32Array(vertexCount * 3);
+
+    for (let i = 0; i < this.lineCount; i++) {
+      this.resetLine(i);
     }
 
+    this.geometry = new THREE.BufferGeometry();
     this.geometry.setAttribute('position', new THREE.BufferAttribute(this.positions, 3));
+    this.geometry.setAttribute('color', new THREE.BufferAttribute(this.colors, 3));
 
-    this.material = new THREE.PointsMaterial({
-      size: 0.3,
-      color: 0x88aaff,
+    this.material = new THREE.LineBasicMaterial({
+      vertexColors: true,
       transparent: true,
       opacity: 0,
       blending: THREE.AdditiveBlending,
       depthWrite: false,
-      sizeAttenuation: true,
+      linewidth: 1,
     });
 
-    this.points = new THREE.Points(this.geometry, this.material);
-    
-    // 作为相机子对象，自动跟随相机旋转
-    this.camera.add(this.points);
-    
-    console.log('[SpeedLines] 速度线系统初始化完成');
+    this.lineSegments = new THREE.LineSegments(this.geometry, this.material);
+    this.camera.add(this.lineSegments);
+
+    console.log('[SpeedLines] 速度线系统初始化完成（LineSegments）');
   }
 
-  /**
-   * 重置粒子 - 在相机局部坐标系前方
-   */
-  resetParticle(i) {
-    const i3 = i * 3;
-    
-    // 圆柱形分布在相机前方（局部坐标系：-Z 是前方）
+  resetLine(i) {
+    const i2 = i * 2;
+    const i3_0 = i2 * 3;
+    const i3_1 = (i2 + 1) * 3;
+
     const angle = Math.random() * Math.PI * 2;
-    const radius = 2 + Math.random() * 15;
-    const z = -(20 + Math.random() * 80); // 前方 20-100 单位
-    
-    this.positions[i3] = Math.cos(angle) * radius;
-    this.positions[i3 + 1] = Math.sin(angle) * radius;
-    this.positions[i3 + 2] = z;
+    const radius = this.cfg.minRadius + Math.random() * (this.cfg.maxRadius - this.cfg.minRadius);
+
+    const x = Math.cos(angle) * radius;
+    const y = Math.sin(angle) * radius;
+
+    const length = this.cfg.minLength + Math.random() * (this.cfg.maxLength - this.cfg.minLength);
+    const zNear = Math.abs(this.cfg.zEnd);
+    const zFar = Math.abs(this.cfg.zStart);
+    const zStart = -(zNear + Math.random() * (zFar - zNear));
+    const zEnd = zStart + length;
+
+    // 起点
+    this.positions[i3_0] = x;
+    this.positions[i3_0 + 1] = y;
+    this.positions[i3_0 + 2] = zStart;
+
+    // 终点
+    this.positions[i3_1] = x;
+    this.positions[i3_1 + 1] = y;
+    this.positions[i3_1 + 2] = zEnd;
+
+    // 颜色渐变：起点偏蓝 → 终点偏白
+    const brightness = 0.7 + Math.random() * 0.3;
+    const blueShift = Math.random() * 0.3;
+
+    this.colors[i3_0] = 0.4 + blueShift;
+    this.colors[i3_0 + 1] = 0.5 + blueShift * 0.5;
+    this.colors[i3_0 + 2] = 1.0;
+
+    this.colors[i3_1] = 0.7 + brightness * 0.3;
+    this.colors[i3_1 + 1] = 0.8 + brightness * 0.2;
+    this.colors[i3_1 + 2] = 1.0;
   }
 
-  /**
-   * 更新速度线
-   */
   update(delta, speed) {
     this.speed = speed;
-    
-    // 根据速度调整透明度
-    const targetOpacity = speed > 3 ? Math.min(speed / 15, 0.8) : 0;
-    this.material.opacity += (targetOpacity - this.material.opacity) * 0.15;
-    
-    // 根据速度调整大小
-    this.material.size = 0.3 + speed * 0.02;
-    
-    if (speed < 2) {
-      return;
-    }
-    
-    // 移动粒子（向相机靠近，模拟飞行）
-    for (let i = 0; i < this.particleCount; i++) {
-      const i3 = i * 3;
-      
-      // 向相机方向移动（Z 正方向）
-      this.positions[i3 + 2] += speed * delta * 8;
-      
-      // 如果飞过相机（Z > 5），重置到前方
-      if (this.positions[i3 + 2] > 5) {
-        this.resetParticle(i);
+
+    const targetOpacity = speed > this.cfg.speedThreshold ? Math.min(speed / 20, this.cfg.opacityTarget) : 0;
+    this.material.opacity += (targetOpacity - this.material.opacity) * this.cfg.opacitySpeed;
+
+    if (speed < this.cfg.speedThreshold) return;
+
+    for (let i = 0; i < this.lineCount; i++) {
+      const i2 = i * 2;
+      const i3_0 = i2 * 3;
+      const i3_1 = (i2 + 1) * 3;
+
+      const move = speed * delta * this.cfg.moveFactor;
+      this.positions[i3_0 + 2] += move;
+      this.positions[i3_1 + 2] += move;
+
+      if (this.positions[i3_0 + 2] > 5) {
+        this.resetLine(i);
       }
     }
-    
+
     this.geometry.attributes.position.needsUpdate = true;
+    this.geometry.attributes.color.needsUpdate = true;
   }
 
-  /**
-   * 销毁速度线
-   */
   dispose() {
-    this.camera.remove(this.points);
-    this.geometry.dispose();
-    this.material.dispose();
+    if (this.camera && this.lineSegments) {
+      this.camera.remove(this.lineSegments);
+    }
+    if (this.geometry) this.geometry.dispose();
+    if (this.material) this.material.dispose();
   }
 }

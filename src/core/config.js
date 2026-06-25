@@ -74,9 +74,24 @@ export const config = {
     powerPreference: 'high-performance',
   },
 
+  // ---- 速度线 ----
+  speedLines: {
+    count: 300,              // 数量
+    minRadius: 1.5,          // 最小分布半径
+    maxRadius: 13.5,         // 最大分布半径
+    minLength: 10,           // 最短线长
+    maxLength: 50,           // 最长线长
+    zStart: -85,             // 起始 Z 距离
+    zEnd: -15,               // 结束 Z 距离
+    speedThreshold: 2,       // 显示阈值
+    opacityTarget: 0.7,      // 最大透明度
+    opacitySpeed: 0.15,      // 透明度过渡速度
+    moveFactor: 10,          // 移动速度系数
+  },
+
   // ---- 性能优化 ----
   performance: {
     maxFPS: 60,              // 最大帧率
-    lodDistances: [100, 500, 1000], // LOD 距离
+    lodDistances: [0, 300, 800], // LOD 距离阈值
   },
 };

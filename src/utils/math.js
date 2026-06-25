@@ -48,26 +48,30 @@ export function distance(x1, y1, z1, x2, y2, z2) {
   return Math.sqrt(dx * dx + dy * dy + dz * dz);
 }
 
+// 预生成的置换表（模块级常量，避免每次调用重新生成）
+const _perm = new Uint8Array(512);
+{
+  for (let i = 0; i < 256; i++) _perm[i] = i;
+  for (let i = 255; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [_perm[i], _perm[j]] = [_perm[j], _perm[i]];
+  }
+  for (let i = 0; i < 256; i++) _perm[i + 256] = _perm[i];
+}
+
+const _fade = (t) => t * t * t * (t * (t * 6 - 15) + 10);
+
+const _grad = (hash, x, y, z) => {
+  const h = hash & 15;
+  const u = h < 8 ? x : y;
+  const v = h < 4 ? y : h === 12 || h === 14 ? x : z;
+  return ((h & 1) === 0 ? u : -u) + ((h & 2) === 0 ? v : -v);
+};
+
 /**
  * 噪声函数（简单 Perlin 噪声）
  */
 export function noise(x, y, z) {
-  const p = new Uint8Array(512);
-  for (let i = 0; i < 256; i++) p[i] = i;
-  for (let i = 255; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [p[i], p[j]] = [p[j], p[i]];
-  }
-  for (let i = 0; i < 256; i++) p[i + 256] = p[i];
-
-  const fade = (t) => t * t * t * (t * (t * 6 - 15) + 10);
-  const grad = (hash, x, y, z) => {
-    const h = hash & 15;
-    const u = h < 8 ? x : y;
-    const v = h < 4 ? y : h === 12 || h === 14 ? x : z;
-    return ((h & 1) === 0 ? u : -u) + ((h & 2) === 0 ? v : -v);
-  };
-
   const X = Math.floor(x) & 255;
   const Y = Math.floor(y) & 255;
   const Z = Math.floor(z) & 255;
@@ -76,26 +80,26 @@ export function noise(x, y, z) {
   y -= Math.floor(y);
   z -= Math.floor(z);
 
-  const u = fade(x);
-  const v = fade(y);
-  const w = fade(z);
+  const u = _fade(x);
+  const v = _fade(y);
+  const w = _fade(z);
 
-  const A = p[X] + Y;
-  const AA = p[A] + Z;
-  const AB = p[A + 1] + Z;
-  const B = p[X + 1] + Y;
-  const BA = p[B] + Z;
-  const BB = p[B + 1] + Z;
+  const A = _perm[X] + Y;
+  const AA = _perm[A] + Z;
+  const AB = _perm[A + 1] + Z;
+  const B = _perm[X + 1] + Y;
+  const BA = _perm[B] + Z;
+  const BB = _perm[B + 1] + Z;
 
   return lerp(
     lerp(
-      lerp(grad(p[AA], x, y, z), grad(p[BA], x - 1, y, z), u),
-      lerp(grad(p[AB], x, y - 1, z), grad(p[BB], x - 1, y - 1, z), u),
+      lerp(_grad(_perm[AA], x, y, z), _grad(_perm[BA], x - 1, y, z), u),
+      lerp(_grad(_perm[AB], x, y - 1, z), _grad(_perm[BB], x - 1, y - 1, z), u),
       v
     ),
     lerp(
-      lerp(grad(p[AA + 1], x, y, z - 1), grad(p[BA + 1], x - 1, y, z - 1), u),
-      lerp(grad(p[AB + 1], x, y - 1, z - 1), grad(p[BB + 1], x - 1, y - 1, z - 1), u),
+      lerp(_grad(_perm[AA + 1], x, y, z - 1), _grad(_perm[BA + 1], x - 1, y, z - 1), u),
+      lerp(_grad(_perm[AB + 1], x, y - 1, z - 1), _grad(_perm[BB + 1], x - 1, y - 1, z - 1), u),
       v
     ),
     w

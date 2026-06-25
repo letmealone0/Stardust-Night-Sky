@@ -9,6 +9,7 @@ import { StarField } from '../objects/stars.js';
 import { PlanetSystem } from '../objects/planets.js';
 import { NebulaSystem } from '../objects/nebula.js';
 import { SpeedLines } from '../objects/speedlines.js';
+import { CosmicDust } from '../objects/cosmicdust.js';
 
 export class SceneManager {
   constructor() {
@@ -18,6 +19,7 @@ export class SceneManager {
       planets: null,
       nebula: null,
       speedLines: null,
+      cosmicDust: null,
     };
   }
 
@@ -25,32 +27,40 @@ export class SceneManager {
    * 初始化场景
    */
   async init(camera) {
-    // 创建场景
     this.scene = new THREE.Scene();
     this.scene.background = new THREE.Color(0x000005);
     this.scene.fog = new THREE.FogExp2(0x000005, 0.00015);
 
-    // 创建星空
-    this.objects.stars = new StarField();
-    this.objects.stars.init(this.scene);
+    // 逐个初始化，失败不阻断整体流程
+    try {
+      this.objects.stars = new StarField();
+      this.objects.stars.init(this.scene);
+    } catch (e) { console.warn('[Scene] 星空初始化失败:', e); }
 
-    // 创建行星
-    this.objects.planets = new PlanetSystem();
-    this.objects.planets.init(this.scene);
+    try {
+      this.objects.planets = new PlanetSystem();
+      this.objects.planets.init(this.scene);
+      this.objects.planets.setCamera(camera);
+    } catch (e) { console.warn('[Scene] 行星初始化失败:', e); }
 
-    // 创建星云
-    this.objects.nebula = new NebulaSystem();
-    this.objects.nebula.init(this.scene);
+    try {
+      this.objects.nebula = new NebulaSystem();
+      this.objects.nebula.init(this.scene);
+    } catch (e) { console.warn('[Scene] 星云初始化失败:', e); }
 
-    // 创建速度线
-    this.objects.speedLines = new SpeedLines();
-    this.objects.speedLines.init(this.scene, camera);
+    try {
+      this.objects.speedLines = new SpeedLines();
+      this.objects.speedLines.init(this.scene, camera);
+    } catch (e) { console.warn('[Scene] 速度线初始化失败:', e); }
 
-    // 添加环境光
+    try {
+      this.objects.cosmicDust = new CosmicDust();
+      this.objects.cosmicDust.init(this.scene);
+    } catch (e) { console.warn('[Scene] 宇宙尘埃初始化失败:', e); }
+
     const ambientLight = new THREE.AmbientLight(0x111122, 0.5);
     this.scene.add(ambientLight);
 
-    // 添加点光源（模拟远处恒星）
     const pointLight = new THREE.PointLight(0xffeedd, 1, 2000);
     pointLight.position.set(100, 50, 100);
     this.scene.add(pointLight);
@@ -66,15 +76,17 @@ export class SceneManager {
     this.objects.planets.update(delta, elapsed);
     this.objects.nebula.update(delta, elapsed);
     this.objects.speedLines.update(delta, speed);
+    this.objects.cosmicDust.update(delta, elapsed);
   }
 
   /**
    * 销毁场景
    */
   dispose() {
-    this.objects.stars.dispose();
-    this.objects.planets.dispose();
-    this.objects.nebula.dispose();
+    this.objects.stars.dispose(this.scene);
+    this.objects.planets.dispose(this.scene);
+    this.objects.nebula.dispose(this.scene);
     this.objects.speedLines.dispose();
+    this.objects.cosmicDust.dispose(this.scene);
   }
 }

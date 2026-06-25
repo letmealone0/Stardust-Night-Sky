@@ -1,11 +1,62 @@
-/**
- * 星云系统
- * 体积感星云效果
- */
-
 import * as THREE from 'three';
 import { config } from '../core/config.js';
 import { randomRange, randomVector3 } from '../utils/random.js';
+
+function mergeBufferGeometries(geometries) {
+  let totalVerts = 0;
+  const attrBuckets = {};
+  let hasIndex = false;
+  let totalIdx = 0;
+
+  for (const g of geometries) {
+    const pos = g.getAttribute('position');
+    if (!pos) continue;
+    totalVerts += pos.count;
+    if (g.index) {
+      hasIndex = true;
+      totalIdx += g.index.count;
+    }
+    for (const key of Object.keys(g.attributes)) {
+      if (!attrBuckets[key]) attrBuckets[key] = [];
+      attrBuckets[key].push(g.attributes[key]);
+    }
+  }
+
+  const merged = new THREE.BufferGeometry();
+  for (const [key, arr] of Object.entries(attrBuckets)) {
+    const first = arr[0];
+    const itemSize = first.itemSize;
+    const data = new Float32Array(totalVerts * itemSize);
+    let offset = 0;
+    for (const attr of arr) {
+      data.set(attr.array, offset);
+      offset += attr.array.length;
+    }
+    merged.setAttribute(key, new THREE.BufferAttribute(data, itemSize));
+  }
+
+  if (hasIndex) {
+    const indices = [];
+    let vertOffset = 0;
+    for (const g of geometries) {
+      const pos = g.getAttribute('position');
+      const idx = g.index;
+      if (idx) {
+        for (let k = 0; k < idx.count; k++) {
+          indices.push(idx.array[k] + vertOffset);
+        }
+      } else {
+        for (let k = 0; k < pos.count; k++) {
+          indices.push(k + vertOffset);
+        }
+      }
+      vertOffset += pos.count;
+    }
+    merged.setIndex(indices);
+  }
+
+  return merged;
+}
 
 export class NebulaSystem {
   constructor() {
@@ -13,9 +64,6 @@ export class NebulaSystem {
     this.group = new THREE.Group();
   }
 
-  /**
-   * 初始化星云系统
-   */
   init(scene) {
     const { count, scale, opacity, colors } = config.nebula;
 
@@ -30,48 +78,12 @@ export class NebulaSystem {
     console.log('[NebulaSystem] 星云系统初始化完成');
   }
 
-  /**
-   * 创建单个星云
-   */
   createNebula(scale, position, color, opacity) {
     const group = new THREE.Group();
     group.position.copy(position);
 
-    // 创建多个云团
-    const cloudCount = 8 + Math.floor(Math.random() * 8);
-
-    for (let i = 0; i < cloudCount; i++) {
-      const cloud = this.createCloud(scale, color, opacity);
-      cloud.position.set(
-        randomRange(-scale * 0.3, scale * 0.3),
-        randomRange(-scale * 0.2, scale * 0.2),
-        randomRange(-scale * 0.3, scale * 0.3)
-      );
-      cloud.rotation.set(
-        Math.random() * Math.PI,
-        Math.random() * Math.PI,
-        Math.random() * Math.PI
-      );
-      group.add(cloud);
-    }
-
-    group.userData = {
-      rotationSpeed: randomRange(0.0001, 0.0005),
-      pulseSpeed: randomRange(0.1, 0.3),
-      pulsePhase: Math.random() * Math.PI * 2,
-    };
-
-    this.nebulae.push(group);
-    return group;
-  }
-
-  /**
-   * 创建单个云团
-   */
-  createCloud(scale, color, opacity) {
-    // 使用自定义 Shader 创建体积感
-    const geometry = new THREE.SphereGeometry(scale * 0.15, 16, 16);
-
+    const cloudCount = 6 + Math.floor(Math.random() * 6);
+    const geoRef = new THREE.SphereGeometry(scale * 0.15, 8, 8);
     const material = new THREE.ShaderMaterial({
       uniforms: {
         uTime: { value: 0 },
@@ -83,24 +95,22 @@ export class NebulaSystem {
         varying vec3 vNormal;
         varying vec3 vPosition;
         varying vec2 vUv;
-        
+
         uniform float uTime;
         uniform float uScale;
-        
-        // 简单噪声函数
+
         float noise(vec3 p) {
           return fract(sin(dot(p, vec3(12.9898, 78.233, 45.164))) * 43758.5453);
         }
-        
+
         void main() {
           vNormal = normalize(normalMatrix * normal);
           vUv = uv;
-          
-          // 顶点动画
+
           vec3 pos = position;
           float n = noise(pos * 0.5 + uTime * 0.1);
           pos += normal * n * uScale * 0.02;
-          
+
           vPosition = (modelViewMatrix * vec4(pos, 1.0)).xyz;
           gl_Position = projectionMatrix * modelViewMatrix * vec4(pos, 1.0);
         }
@@ -109,24 +119,21 @@ export class NebulaSystem {
         varying vec3 vNormal;
         varying vec3 vPosition;
         varying vec2 vUv;
-        
+
         uniform vec3 uColor;
         uniform float uOpacity;
         uniform float uTime;
-        
+
         void main() {
-          // 边缘发光效果
           float intensity = pow(0.7 - dot(vNormal, vec3(0.0, 0.0, 1.0)), 2.0);
-          
-          // 中心更亮
+
           float center = 1.0 - length(vUv - 0.5) * 2.0;
           center = max(0.0, center);
           center = pow(center, 1.5);
-          
-          // 最终颜色
+
           vec3 finalColor = uColor * (intensity + center * 0.5);
           float finalOpacity = uOpacity * (intensity * 0.5 + center * 0.5);
-          
+
           gl_FragColor = vec4(finalColor, finalOpacity);
         }
       `,
@@ -136,41 +143,65 @@ export class NebulaSystem {
       depthWrite: false,
     });
 
-    return new THREE.Mesh(geometry, material);
+    const geometries = [];
+    for (let i = 0; i < cloudCount; i++) {
+      const geo = geoRef.clone();
+      const mat4 = new THREE.Matrix4().compose(
+        new THREE.Vector3(
+          randomRange(-scale * 0.3, scale * 0.3),
+          randomRange(-scale * 0.2, scale * 0.2),
+          randomRange(-scale * 0.3, scale * 0.3)
+        ),
+        new THREE.Quaternion().setFromEuler(
+          new THREE.Euler(Math.random() * Math.PI, Math.random() * Math.PI, Math.random() * Math.PI)
+        ),
+        new THREE.Vector3(1, 1, 1)
+      );
+      geo.applyMatrix4(mat4);
+      geometries.push(geo);
+    }
+    geoRef.dispose();
+
+    const mergedGeo = mergeBufferGeometries(geometries);
+    geometries.forEach(g => g.dispose());
+
+    const mesh = new THREE.Mesh(mergedGeo, material);
+    group.add(mesh);
+
+    group.userData = {
+      rotationSpeed: randomRange(0.0001, 0.0005),
+      pulseSpeed: randomRange(0.1, 0.3),
+      pulsePhase: Math.random() * Math.PI * 2,
+      material,
+    };
+
+    this.nebulae.push(group);
+    return group;
   }
 
-  /**
-   * 更新星云系统
-   */
   update(delta, elapsed) {
     this.nebulae.forEach((nebula) => {
       const data = nebula.userData;
 
-      // 缓慢旋转
       nebula.rotation.y += data.rotationSpeed;
 
-      // 脉冲效果
       const pulse = Math.sin(elapsed * data.pulseSpeed + data.pulsePhase) * 0.1 + 1.0;
       nebula.scale.setScalar(pulse);
 
-      // 更新子云团的 Shader 时间
-      nebula.children.forEach((cloud) => {
-        if (cloud.material.uniforms) {
-          cloud.material.uniforms.uTime.value = elapsed;
-        }
-      });
+      if (data.material && data.material.uniforms) {
+        data.material.uniforms.uTime.value = elapsed;
+      }
     });
   }
 
-  /**
-   * 销毁星云系统
-   */
-  dispose() {
+  dispose(scene) {
+    scene.remove(this.group);
     this.nebulae.forEach((nebula) => {
-      nebula.children.forEach((cloud) => {
-        cloud.geometry.dispose();
-        cloud.material.dispose();
+      nebula.children.forEach((child) => {
+        if (child.geometry) child.geometry.dispose();
+        if (child.material) child.material.dispose();
       });
     });
+    this.nebulae = [];
   }
 }

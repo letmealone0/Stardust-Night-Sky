@@ -9,7 +9,6 @@ import { SceneManager } from './scene.js';
 import { CameraController } from './camera.js';
 import { RendererManager } from './renderer.js';
 import { PlayerController } from '../controls/player.js';
-import { InputManager } from '../controls/input.js';
 import { PostProcessingManager } from '../postprocessing/composer.js';
 import { HUD } from '../ui/hud.js';
 
@@ -24,7 +23,6 @@ export class Engine {
     this.camera = null;
     this.renderer = null;
     this.player = null;
-    this.input = null;
     this.postprocessing = null;
     this.hud = null;
 
@@ -38,6 +36,9 @@ export class Engine {
    * 初始化引擎
    */
   async init() {
+    // 校验配置
+    this.validateConfig();
+
     // 创建相机
     this.camera = new CameraController();
     this.camera.init();
@@ -49,10 +50,6 @@ export class Engine {
     // 创建渲染器
     this.renderer = new RendererManager();
     this.renderer.init();
-
-    // 创建输入管理
-    this.input = new InputManager();
-    this.input.init();
 
     // 创建玩家控制
     this.player = new PlayerController(
@@ -80,11 +77,41 @@ export class Engine {
   }
 
   /**
+   * 校验运行时配置
+   */
+  validateConfig() {
+    const { camera, player, planets, performance } = config;
+    if (camera.fov < 10 || camera.fov > 150) {
+      console.warn('[Config] fov 范围异常，已重置为 75');
+      camera.fov = 75;
+    }
+    if (player.moveSpeed <= 0) {
+      console.warn('[Config] moveSpeed 必须 > 0，已重置为 50');
+      player.moveSpeed = 50;
+    }
+    if (planets.count < 1) {
+      console.warn('[Config] planets.count 必须 > 0，已重置为 8');
+      planets.count = 8;
+    }
+    if (performance.maxFPS < 30 || performance.maxFPS > 144) {
+      console.warn('[Config] maxFPS 超出范围，已重置为 60');
+      performance.maxFPS = 60;
+    }
+  }
+
+  /**
    * 绑定事件
    */
   bindEvents() {
-    // 窗口大小变化
-    window.addEventListener('resize', () => this.onResize());
+    // 窗口大小变化（rAF 节流）
+    let resizeTimeout = null;
+    window.addEventListener('resize', () => {
+      if (resizeTimeout) return;
+      resizeTimeout = requestAnimationFrame(() => {
+        this.onResize();
+        resizeTimeout = null;
+      });
+    });
 
     // 锁定/解锁鼠标
     document.addEventListener('click', () => {
@@ -95,7 +122,7 @@ export class Engine {
 
     this.player.controls.addEventListener('lock', () => {
       this.isPaused = false;
-      this.hud.showMessage('已锁定鼠标 - WASD移动，鼠标控制视角');
+      this.hud.showMessage('已锁定鼠标 - WASD移动 Shift冲刺 Ctrl下降 空格上升');
     });
 
     this.player.controls.addEventListener('unlock', () => {
@@ -114,12 +141,12 @@ export class Engine {
   }
 
   /**
-   * 启动渲染循环
+   * 启动渲染循环（使用 setAnimationLoop，自动处理 WebXR 和清理）
    */
   start() {
     this.isRunning = true;
     this.lastFPSTime = performance.now();
-    this.animate();
+    this.renderer.renderer.setAnimationLoop(() => this.animate());
     console.log('[Engine] 渲染循环已启动');
   }
 
@@ -128,6 +155,9 @@ export class Engine {
    */
   stop() {
     this.isRunning = false;
+    if (this.renderer && this.renderer.renderer) {
+      this.renderer.renderer.setAnimationLoop(null);
+    }
     console.log('[Engine] 渲染循环已停止');
   }
 
@@ -136,8 +166,6 @@ export class Engine {
    */
   animate() {
     if (!this.isRunning) return;
-
-    requestAnimationFrame(() => this.animate());
 
     const delta = this.clock.getDelta();
     const elapsed = this.clock.getElapsedTime();

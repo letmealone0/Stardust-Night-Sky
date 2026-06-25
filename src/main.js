@@ -51,6 +51,9 @@ async function init() {
     engine.start();
     updateLoadingProgress(100);
 
+    // 导出引擎实例到控制台（便于调试）
+    window.engine = engine;
+
     // 隐藏加载画面
     setTimeout(() => {
       hideLoading();
@@ -108,5 +111,4 @@ if (document.readyState === 'loading') {
 // 页面卸载时清理
 window.addEventListener('beforeunload', cleanup);
 
-// 导出引擎实例（用于调试）
-window.engine = engine;
+

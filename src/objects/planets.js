@@ -11,6 +11,7 @@ export class PlanetSystem {
   constructor() {
     this.planets = [];
     this.group = new THREE.Group();
+    this.camera = null;
   }
 
   /**
@@ -36,21 +37,39 @@ export class PlanetSystem {
   }
 
   /**
+   * 设置相机引用（用于 LOD）
+   */
+  setCamera(camera) {
+    this.camera = camera;
+  }
+
+  /**
    * 创建单个行星
    */
   createPlanet(radius, position, index) {
     const group = new THREE.Group();
     group.position.copy(position);
 
-    // 行星本体
-    const geometry = new THREE.SphereGeometry(radius, 64, 64);
+    // 行星本体（LOD：远距离使用低面数）
     const material = this.createPlanetMaterial(radius, index);
-    const mesh = new THREE.Mesh(geometry, material);
-    group.add(mesh);
+    const lod = new THREE.LOD();
+    const geoHigh = new THREE.SphereGeometry(radius, 64, 64);
+    const geoMed  = new THREE.SphereGeometry(radius, 32, 32);
+    const geoLow  = new THREE.SphereGeometry(radius, 16, 16);
+    lod.addLevel(new THREE.Mesh(geoHigh, material), 0);
+    lod.addLevel(new THREE.Mesh(geoMed, material), 300);
+    lod.addLevel(new THREE.Mesh(geoLow, material), 800);
+    group.add(lod);
 
-    // 大气层
-    const atmosphere = this.createAtmosphere(radius);
-    group.add(atmosphere);
+    // 大气层（带 LOD）
+    const atmLod = new THREE.LOD();
+    const atmHigh = this.createAtmosphere(radius, 64);
+    const atmMed  = this.createAtmosphere(radius, 32);
+    const atmLow  = this.createAtmosphere(radius, 16);
+    atmLod.addLevel(atmHigh, 0);
+    atmLod.addLevel(atmMed, 300);
+    atmLod.addLevel(atmLow, 800);
+    group.add(atmLod);
 
     // 行星环（随机）
     if (Math.random() > 0.6) {
@@ -62,6 +81,8 @@ export class PlanetSystem {
     group.userData = {
       index,
       radius,
+      lod,
+      atmLod,
       rotationSpeed: randomRange(0.001, 0.01),
       orbitSpeed: randomRange(0.0001, 0.001),
       orbitRadius: position.length(),
@@ -76,42 +97,173 @@ export class PlanetSystem {
   /**
    * 创建行星材质
    */
+  /**
+   * 生成程序化行星纹理（Canvas 2D）
+   */
+  generatePlanetTexture(type, seed) {
+    const canvas = document.createElement('canvas');
+    canvas.width = 512;
+    canvas.height = 256;
+    const ctx = canvas.getContext('2d');
+
+    const rng = () => {
+      seed = (seed * 16807 + 0) % 2147483647;
+      return (seed & 0x7fffffff) / 0x7fffffff;
+    };
+
+    switch (type) {
+      case 'rocky': {
+        // 岩石纹理：噪点+陨石坑
+        const baseColor = `hsl(${20 + rng() * 15}, ${20 + rng() * 20}%, ${30 + rng() * 20}%)`;
+        ctx.fillStyle = baseColor;
+        ctx.fillRect(0, 0, 512, 256);
+        for (let i = 0; i < 300; i++) {
+          const x = rng() * 512, y = rng() * 256;
+          const r = 1 + rng() * 8;
+          const bright = 40 + rng() * 30;
+          ctx.fillStyle = `hsl(${20 + rng() * 10}, 10%, ${bright}%)`;
+          ctx.beginPath();
+          ctx.arc(x, y, r, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        for (let i = 0; i < 20; i++) {
+          const x = rng() * 512, y = rng() * 256;
+          const r = 5 + rng() * 15;
+          ctx.fillStyle = `hsl(0, 0%, ${10 + rng() * 15}%)`;
+          ctx.beginPath();
+          ctx.arc(x, y, r, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.fillStyle = `hsl(0, 0%, ${25 + rng() * 10}%)`;
+          ctx.beginPath();
+          ctx.arc(x + r * 0.3, y - r * 0.3, r * 0.6, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        break;
+      }
+      case 'gas': {
+        // 气态行星：水平条纹
+        const hueBase = 30 + rng() * 30;
+        for (let y = 0; y < 256; y++) {
+          const band = Math.sin(y * 0.1 + rng() * 2) * 0.5 + 0.5;
+          const hue = hueBase + band * 20 + Math.sin(y * 0.05) * 10;
+          const sat = 30 + band * 30;
+          const lit = 40 + band * 30;
+          ctx.fillStyle = `hsl(${hue}, ${sat}%, ${lit}%)`;
+          ctx.fillRect(0, y, 512, 1);
+        }
+        for (let i = 0; i < 20; i++) {
+          const y = rng() * 256;
+          ctx.fillStyle = `hsla(${hueBase + 40}, 50%, 50%, 0.2)`;
+          ctx.fillRect(0, y, 512, 2 + rng() * 5);
+        }
+        break;
+      }
+      case 'ice': {
+        // 冰行星：裂纹纹理
+        const baseLight = 60 + rng() * 30;
+        for (let y = 0; y < 256; y++) {
+          for (let x = 0; x < 512; x++) {
+            const n = Math.sin(x * 0.02 + y * 0.03) * Math.cos(y * 0.01 - x * 0.015) * 0.5 + 0.5;
+            const v = baseLight + n * 20;
+            ctx.fillStyle = `hsl(210, ${10 + n * 20}%, ${v}%)`;
+            ctx.fillRect(x, y, 1, 1);
+          }
+        }
+        // 裂纹
+        for (let i = 0; i < 30; i++) {
+          ctx.strokeStyle = `hsla(220, 30%, 80%, ${0.3 + rng() * 0.4})`;
+          ctx.lineWidth = 0.5 + rng() * 1.5;
+          ctx.beginPath();
+          let cx = rng() * 512, cy = rng() * 256;
+          ctx.moveTo(cx, cy);
+          for (let j = 0; j < 10; j++) {
+            cx += (rng() - 0.5) * 30;
+            cy += (rng() - 0.5) * 15;
+            ctx.lineTo(cx, cy);
+          }
+          ctx.stroke();
+        }
+        break;
+      }
+      case 'lava': {
+        // 熔岩行星：暗底色+亮色裂缝
+        ctx.fillStyle = '#1a0a05';
+        ctx.fillRect(0, 0, 512, 256);
+        for (let i = 0; i < 100; i++) {
+          const cx = rng() * 512, cy = rng() * 256;
+          const r = 5 + rng() * 25;
+          const gradient = ctx.createRadialGradient(cx, cy, 0, cx, cy, r);
+          gradient.addColorStop(0, `hsla(20, 100%, ${40 + rng() * 40}%, ${0.3 + rng() * 0.4})`);
+          gradient.addColorStop(1, 'hsla(20, 100%, 30%, 0)');
+          ctx.fillStyle = gradient;
+          ctx.beginPath();
+          ctx.arc(cx, cy, r, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        ctx.strokeStyle = 'hsla(30, 100%, 50%, 0.6)';
+        ctx.lineWidth = 1 + rng() * 3;
+        for (let i = 0; i < 15; i++) {
+          ctx.beginPath();
+          let cx = rng() * 512, cy = rng() * 256;
+          ctx.moveTo(cx, cy);
+          for (let j = 0; j < 20; j++) {
+            cx += (rng() - 0.5) * 20;
+            cy += (rng() - 0.5) * 15;
+            ctx.lineTo(cx, cy);
+          }
+          ctx.stroke();
+        }
+        break;
+      }
+    }
+
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.wrapS = THREE.RepeatWrapping;
+    texture.wrapT = THREE.RepeatWrapping;
+    texture.repeat.set(1, 1);
+    return texture;
+  }
+
   createPlanetMaterial(radius, index) {
-    // 不同类型的行星
     const types = ['rocky', 'gas', 'ice', 'lava'];
     const type = types[index % types.length];
 
-    let color, emissive, roughness, metalness;
+    let color, emissive, roughness, metalness, map;
 
     switch (type) {
       case 'rocky':
-        color = new THREE.Color(0.4, 0.35, 0.3);
+        color = new THREE.Color(0.5, 0.42, 0.35);
         emissive = new THREE.Color(0.02, 0.02, 0.03);
         roughness = 0.8;
         metalness = 0.1;
+        map = this.generatePlanetTexture(type, index * 12345 + 999);
         break;
       case 'gas':
-        color = new THREE.Color(0.6, 0.5, 0.3);
+        color = new THREE.Color(0.7, 0.6, 0.4);
         emissive = new THREE.Color(0.05, 0.03, 0.01);
         roughness = 0.3;
         metalness = 0.0;
+        map = this.generatePlanetTexture(type, index * 54321 + 777);
         break;
       case 'ice':
-        color = new THREE.Color(0.7, 0.8, 0.9);
+        color = new THREE.Color(0.8, 0.85, 1.0);
         emissive = new THREE.Color(0.02, 0.03, 0.05);
         roughness = 0.2;
         metalness = 0.3;
+        map = this.generatePlanetTexture(type, index * 98765 + 555);
         break;
       case 'lava':
-        color = new THREE.Color(0.5, 0.2, 0.1);
-        emissive = new THREE.Color(0.1, 0.04, 0.02);
+        color = new THREE.Color(0.6, 0.25, 0.1);
+        emissive = new THREE.Color(0.2, 0.08, 0.02);
         roughness = 0.6;
         metalness = 0.0;
+        map = this.generatePlanetTexture(type, index * 24680 + 333);
         break;
     }
 
     return new THREE.MeshStandardMaterial({
       color,
+      map,
       emissive,
       roughness,
       metalness,
@@ -122,28 +274,47 @@ export class PlanetSystem {
   /**
    * 创建大气层
    */
-  createAtmosphere(radius) {
+  createAtmosphere(radius, segments = 64) {
     const atmosphereRadius = radius * config.planets.atmosphereScale;
-    const geometry = new THREE.SphereGeometry(atmosphereRadius, 64, 64);
+    const geometry = new THREE.SphereGeometry(atmosphereRadius, segments, segments);
 
-    // 自定义大气层 Shader
+    // 基于 Rayleigh 散射的大气层 Shader
     const material = new THREE.ShaderMaterial({
+      uniforms: {
+        uSunDir: { value: new THREE.Vector3(0.5, 0.3, 0.8).normalize() },
+      },
       vertexShader: `
         varying vec3 vNormal;
-        varying vec3 vPosition;
+        varying vec3 vWorldPos;
         void main() {
           vNormal = normalize(normalMatrix * normal);
-          vPosition = (modelViewMatrix * vec4(position, 1.0)).xyz;
+          vec4 worldPos = modelMatrix * vec4(position, 1.0);
+          vWorldPos = worldPos.xyz;
           gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
         }
       `,
       fragmentShader: `
         varying vec3 vNormal;
-        varying vec3 vPosition;
+        varying vec3 vWorldPos;
+
+        uniform vec3 uSunDir;
+
         void main() {
-          float intensity = pow(0.65 - dot(vNormal, vec3(0.0, 0.0, 1.0)), 2.5);
-          vec3 color = vec3(0.3, 0.6, 1.0);
-          gl_FragColor = vec4(color, intensity * 0.6);
+          vec3 viewDir = normalize(cameraPosition - vWorldPos);
+          float rim = 1.0 - max(0.0, dot(viewDir, vNormal));
+          float intensity = pow(rim, 3.0);
+
+          // Rayleigh 散射：蓝光散射更强
+          float cosTheta = dot(viewDir, uSunDir);
+          float phase = 0.75 * (1.0 + cosTheta * cosTheta);
+
+          vec3 rayleighColor = vec3(0.2, 0.45, 1.0);
+          vec3 mieColor = vec3(0.6, 0.5, 0.7);
+
+          vec3 color = mix(rayleighColor, mieColor, intensity * 0.5) * phase;
+          float alpha = intensity * 0.5 * (0.6 + 0.4 * phase);
+
+          gl_FragColor = vec4(color, alpha);
         }
       `,
       blending: THREE.AdditiveBlending,
@@ -203,8 +374,20 @@ export class PlanetSystem {
     this.planets.forEach((planet) => {
       const data = planet.userData;
 
-      // 自转
-      planet.children[0].rotation.y += data.rotationSpeed;
+      // 自转（遍历 LOD levels 的所有子网格）
+      if (data.lod) {
+        for (let i = 0; i < data.lod.levels.length; i++) {
+          const mesh = data.lod.levels[i].object;
+          if (mesh) mesh.rotation.y += data.rotationSpeed;
+        }
+      }
+
+      // 更新 LOD（基于相机距离）
+      if (this.camera) {
+        const dist = planet.position.distanceTo(this.camera.position);
+        data.lod.update(this.camera);
+        data.atmLod.update(this.camera);
+      }
 
       // 公转
       data.orbitAngle += data.orbitSpeed;
@@ -223,15 +406,28 @@ export class PlanetSystem {
   /**
    * 销毁行星系统
    */
-  dispose() {
+  dispose(scene) {
+    scene.remove(this.group);
     this.planets.forEach((planet) => {
       planet.children.forEach((child) => {
-        if (child.geometry) child.geometry.dispose();
-        if (child.material) {
-          if (child.material.map) child.material.map.dispose();
-          child.material.dispose();
+        if (child.isLOD) {
+          child.levels.forEach((level) => {
+            const mesh = level.object;
+            if (mesh.geometry) mesh.geometry.dispose();
+            if (mesh.material) {
+              if (mesh.material.map) mesh.material.map.dispose();
+              mesh.material.dispose();
+            }
+          });
+        } else {
+          if (child.geometry) child.geometry.dispose();
+          if (child.material) {
+            if (child.material.map) child.material.map.dispose();
+            child.material.dispose();
+          }
         }
       });
     });
+    this.planets = [];
   }
 }

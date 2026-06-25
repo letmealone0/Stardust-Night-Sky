@@ -127,7 +127,7 @@ export class HUD {
       pointerEvents: 'none',
       textAlign: 'center',
     });
-    hint.innerHTML = 'WASD 移动 | 鼠标 视角 | 空格 上升 | Shift 下降 | Ctrl 冲刺';
+    hint.innerHTML = 'WASD 移动 | 鼠标 视角 | 空格 上升 | Ctrl 下降 | Shift 冲刺';
     document.body.appendChild(hint);
     this.elements.hint = hint;
   }

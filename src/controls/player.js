@@ -30,6 +30,9 @@ export class PlayerController {
     this.moveSpeed = config.player.moveSpeed;
     this.sprintMultiplier = config.player.sprintMultiplier;
     this.damping = config.player.damping;
+
+    // Ctrl 防误触
+    this._ctrlPressed = false;
   }
 
   /**
@@ -48,23 +51,26 @@ export class PlayerController {
    * 绑定键盘事件
    */
   bindKeyboardEvents() {
-    // 在 window 级别拦截，防止浏览器行为
+    // 在 capture 阶段彻底杀死所有 Ctrl 组合键
     window.addEventListener('keydown', (e) => {
-      // 彻底拦截 Ctrl/Meta 组合键
       if (e.ctrlKey || e.metaKey) {
         e.preventDefault();
         e.stopPropagation();
-        e.returnValue = false;
-        return false;
       }
       this.onKeyDown(e);
     }, { capture: true });
-    
-    window.addEventListener('keyup', (e) => this.onKeyUp(e));
-    
-    // 额外拦截 beforeunload 防止 Ctrl+W
+
+    window.addEventListener('keyup', (e) => {
+      if (e.ctrlKey || e.metaKey) {
+        e.preventDefault();
+        e.stopPropagation();
+      }
+      this.onKeyUp(e);
+    }, { capture: true });
+
+    // beforeunload 作为兜底：防止 Ctrl+W 关闭页面
     window.addEventListener('beforeunload', (e) => {
-      if (this.sprint) {
+      if (this._ctrlPressed) {
         e.preventDefault();
         e.returnValue = '';
       }
@@ -75,9 +81,14 @@ export class PlayerController {
    * 键盘按下
    */
   onKeyDown(event) {
-    // 阻止空格和Shift默认行为
-    if (['Space', 'ShiftLeft', 'ShiftRight'].includes(event.code)) {
+    // 阻止默认行为
+    if (['Space', 'ShiftLeft', 'ShiftRight', 'ControlLeft', 'ControlRight'].includes(event.code)) {
       event.preventDefault();
+    }
+
+    // 追踪 Ctrl 按下状态（用于 beforeunload 兜底）
+    if (event.code === 'ControlLeft' || event.code === 'ControlRight') {
+      this._ctrlPressed = true;
     }
     
     switch (event.code) {
@@ -102,11 +113,11 @@ export class PlayerController {
         break;
       case 'ShiftLeft':
       case 'ShiftRight':
-        this.moveDown = true;
+        this.sprint = true;
         break;
       case 'ControlLeft':
       case 'ControlRight':
-        this.sprint = true;
+        this.moveDown = true;
         break;
     }
   }
@@ -137,11 +148,12 @@ export class PlayerController {
         break;
       case 'ShiftLeft':
       case 'ShiftRight':
-        this.moveDown = false;
+        this.sprint = false;
         break;
       case 'ControlLeft':
       case 'ControlRight':
-        this.sprint = false;
+        this.moveDown = false;
+        this._ctrlPressed = false;
         break;
     }
   }
@@ -156,7 +168,7 @@ export class PlayerController {
     this.direction.z = Number(this.moveForward) - Number(this.moveBackward);
     this.direction.x = Number(this.moveRight) - Number(this.moveLeft);
     this.direction.y = Number(this.moveUp) - Number(this.moveDown);
-    this.direction.normalize();
+    if (this.direction.lengthSq() > 0) this.direction.normalize();
 
     // 计算速度
     const speed = this.sprint ? this.moveSpeed * this.sprintMultiplier : this.moveSpeed;
