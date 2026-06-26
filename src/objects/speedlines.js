@@ -84,6 +84,11 @@ export class SpeedLines {
     this.colors[i3_1] = 0.7 + brightness * 0.3;
     this.colors[i3_1 + 1] = 0.8 + brightness * 0.2;
     this.colors[i3_1 + 2] = 1.0;
+
+    // 颜色实际改变时才标记
+    if (this.geometry) {
+      this.geometry.attributes.color.needsUpdate = true;
+    }
   }
 
   update(delta, speed) {
@@ -109,7 +114,6 @@ export class SpeedLines {
     }
 
     this.geometry.attributes.position.needsUpdate = true;
-    this.geometry.attributes.color.needsUpdate = true;
   }
 
   dispose() {

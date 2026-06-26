@@ -9,6 +9,10 @@ export class HUD {
     this.messageTimeout = null;
     this.isWarpActive = false;
     this.dangerLevel = 0;
+    // 缓存 DOM 引用，避免每帧 getElementById
+    this._fpsEl = null;
+    this._speedEl = null;
+    this._posEl = null;
   }
 
   init() {
@@ -17,6 +21,13 @@ export class HUD {
     this.createMessage();
     this.createControlsHint();
     this.createDangerOverlay();
+
+    // 缓存常用 DOM 引用
+    this._fpsEl = document.getElementById('fps');
+    this._speedEl = document.getElementById('speed');
+    this._posEl = document.getElementById('position');
+    this._warpEl = document.getElementById('warp-indicator');
+
     console.log('[HUD] HUD 初始化完成');
   }
 
@@ -87,6 +98,7 @@ export class HUD {
       <div id="fps" style="color: rgba(100, 255, 150, 0.7);">FPS: --</div>
       <div id="speed" style="color: rgba(150, 200, 255, 0.8);">速度: 0.0</div>
       <div id="position" style="color: rgba(200, 200, 255, 0.6); font-size: 11px;">位置: 0, 0, 0</div>
+      <div id="warp-indicator" style="display:none; color: rgba(100, 200, 255, 0.9); font-size: 11px; letter-spacing: 3px; margin-top: 4px; text-shadow: 0 0 8px rgba(100, 200, 255, 0.5);">▶ WARP</div>
     `;
     document.body.appendChild(panel);
     this.elements.panel = panel;
@@ -135,7 +147,7 @@ export class HUD {
       border: '1px solid rgba(100, 150, 255, 0.08)',
       borderRadius: '2px',
     });
-    hint.innerHTML = 'WASD 移动 · 鼠标 视角 · 空格 上升 · Ctrl 下降 · Shift 冲刺';
+    hint.innerHTML = 'WASD 移动 · 鼠标 视角 · 空格 上升 · C 下降 · Shift 冲刺';
     document.body.appendChild(hint);
     this.elements.hint = hint;
   }
@@ -197,26 +209,21 @@ export class HUD {
   }
 
   updateFPS(fps) {
-    const fpsElement = document.getElementById('fps');
-    if (fpsElement) {
-      fpsElement.textContent = `FPS: ${fps}`;
-      // 根据 FPS 调整颜色
+    if (this._fpsEl) {
+      this._fpsEl.textContent = `FPS: ${fps}`;
       if (fps >= 50) {
-        fpsElement.style.color = 'rgba(100, 255, 150, 0.7)';
+        this._fpsEl.style.color = 'rgba(100, 255, 150, 0.7)';
       } else if (fps >= 30) {
-        fpsElement.style.color = 'rgba(255, 200, 100, 0.7)';
+        this._fpsEl.style.color = 'rgba(255, 200, 100, 0.7)';
       } else {
-        fpsElement.style.color = 'rgba(255, 100, 100, 0.7)';
+        this._fpsEl.style.color = 'rgba(255, 100, 100, 0.7)';
       }
     }
   }
 
   updateSpeed(speed) {
-    const speedElement = document.getElementById('speed');
-    if (speedElement) {
-      speedElement.textContent = `速度: ${speed.toFixed(1)}`;
-
-      // 冲刺时准星发光增强
+    if (this._speedEl) {
+      this._speedEl.textContent = `速度: ${speed.toFixed(1)}`;
       if (speed > 100) {
         this.elements.crosshair.style.filter = 'drop-shadow(0 0 12px rgba(100, 150, 255, 0.6))';
       } else {
@@ -226,9 +233,8 @@ export class HUD {
   }
 
   updatePosition(x, y, z) {
-    const positionElement = document.getElementById('position');
-    if (positionElement) {
-      positionElement.textContent = `位置: ${Math.floor(x)}, ${Math.floor(y)}, ${Math.floor(z)}`;
+    if (this._posEl) {
+      this._posEl.textContent = `位置: ${Math.floor(x)}, ${Math.floor(y)}, ${Math.floor(z)}`;
     }
   }
 
@@ -271,6 +277,15 @@ export class HUD {
       warning.style.opacity = '0';
       warning.style.animation = 'none';
       document.body.classList.remove('danger-zone');
+    }
+  }
+
+  /**
+   * 更新冲刺指示器
+   */
+  updateSprint(isSprinting) {
+    if (this._warpEl) {
+      this._warpEl.style.display = isSprinting ? 'block' : 'none';
     }
   }
 

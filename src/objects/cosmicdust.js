@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { randomRange } from '../utils/random.js';
+import { config } from '../core/config.js';
 
 export class CosmicDust {
   constructor() {
@@ -8,15 +9,18 @@ export class CosmicDust {
     this.material = null;
     this.positions = null;
     this.initialPositions = null;
-    // 预计算 sin/cos 查找表，避免每帧 6000 次三角函数调用
-    this._sinTable = null;
-    this._cosTable = null;
+    this.camera = null;
+    this._centerPos = new THREE.Vector3(); // 当前粒子系统中心
     this._phaseOffsets = null;
   }
 
+  setCamera(camera) {
+    this.camera = camera;
+    if (camera) this._centerPos.copy(camera.position);
+  }
+
   init(scene) {
-    const count = 2000;
-    const spread = 4000;
+    const { count, spread } = config.cosmicDust;
 
     this.positions = new Float32Array(count * 3);
     this.initialPositions = new Float32Array(count * 3);
@@ -75,19 +79,26 @@ export class CosmicDust {
   }
 
   update(delta, elapsed) {
+    const { recenterDistance, spread } = config.cosmicDust;
+
+    // 当相机远离中心时，重新居中粒子系统
+    if (this.camera) {
+      const dist = this.camera.position.distanceTo(this._centerPos);
+      if (dist > recenterDistance) {
+        this.recenterParticles(spread);
+      }
+    }
+
     // 缓慢的漂浮动画（使用预计算相位偏移，减少三角函数调用）
     const pos = this.geometry.attributes.position.array;
     const init = this.initialPositions;
     const phases = this._phaseOffsets;
-    const sinDrift = Math.sin(elapsed * 0.005);
-    const cosDrift = Math.cos(elapsed * 0.005);
     const et1 = elapsed * 0.01;
     const et2 = elapsed * 0.008;
     const et3 = elapsed * 0.006;
 
     for (let i = 0, i3 = 0; i < pos.length / 3; i++, i3 += 3) {
       const p = phases[i];
-      // 使用线性近似替代部分三角函数：sin(x) ≈ x 在小角度时
       const drift = 0.5 + Math.sin(et1 * 0.5 + p * 0.1) * 0.5;
       const drift10 = drift * 10;
       pos[i3]     = init[i3]     + Math.sin(et1 + p) * drift10;
@@ -98,6 +109,38 @@ export class CosmicDust {
 
     // 脉冲透明度
     this.material.opacity = 0.1 + Math.sin(elapsed * 0.02) * 0.05;
+  }
+
+  /**
+   * 重新居中粒子系统到相机位置
+   */
+  recenterParticles(spread) {
+    const camPos = this.camera.position;
+    this._centerPos.copy(camPos);
+
+    const pos = this.positions;
+    const init = this.initialPositions;
+    const count = pos.length / 3;
+
+    for (let i = 0, i3 = 0; i < count; i++, i3 += 3) {
+      const theta = Math.random() * Math.PI * 2;
+      const phi = Math.acos(2 * Math.random() - 1);
+      const r = spread * (0.2 + Math.random() * 0.8);
+
+      const x = r * Math.sin(phi) * Math.cos(theta);
+      const y = r * Math.sin(phi) * Math.sin(theta);
+      const z = r * Math.cos(phi);
+
+      // 初始位置（漂浮动画的基准点）以相机为中心
+      init[i3]     = camPos.x + x;
+      init[i3 + 1] = camPos.y + y;
+      init[i3 + 2] = camPos.z + z;
+
+      // 当前位置设为初始位置（漂浮动画会在此基础上偏移）
+      pos[i3]     = init[i3];
+      pos[i3 + 1] = init[i3 + 1];
+      pos[i3 + 2] = init[i3 + 2];
+    }
   }
 
   dispose(scene) {

@@ -29,10 +29,10 @@ export class PlayerController {
     // 配置
     this.moveSpeed = config.player.moveSpeed;
     this.sprintMultiplier = config.player.sprintMultiplier;
+    this.sprintFovBoost = config.player.sprintFovBoost || 15;
     this.damping = config.player.damping;
+    this.baseFov = config.camera.fov;
 
-    // Ctrl 防误触
-    this._ctrlPressed = false;
   }
 
   /**
@@ -51,46 +51,18 @@ export class PlayerController {
    * 绑定键盘事件
    */
   bindKeyboardEvents() {
-    // 在 capture 阶段彻底杀死所有 Ctrl 组合键
-    window.addEventListener('keydown', (e) => {
-      if (e.ctrlKey || e.metaKey) {
-        e.preventDefault();
-        e.stopPropagation();
-      }
-      this.onKeyDown(e);
-    }, { capture: true });
-
-    window.addEventListener('keyup', (e) => {
-      if (e.ctrlKey || e.metaKey) {
-        e.preventDefault();
-        e.stopPropagation();
-      }
-      this.onKeyUp(e);
-    }, { capture: true });
-
-    // beforeunload 作为兜底：防止 Ctrl+W 关闭页面
-    window.addEventListener('beforeunload', (e) => {
-      if (this._ctrlPressed) {
-        e.preventDefault();
-        e.returnValue = '';
-      }
-    });
+    window.addEventListener('keydown', (e) => this.onKeyDown(e));
+    window.addEventListener('keyup', (e) => this.onKeyUp(e));
   }
 
   /**
    * 键盘按下
    */
   onKeyDown(event) {
-    // 阻止默认行为
-    if (['Space', 'ShiftLeft', 'ShiftRight', 'ControlLeft', 'ControlRight'].includes(event.code)) {
+    if (['Space', 'ShiftLeft', 'ShiftRight'].includes(event.code)) {
       event.preventDefault();
     }
 
-    // 追踪 Ctrl 按下状态（用于 beforeunload 兜底）
-    if (event.code === 'ControlLeft' || event.code === 'ControlRight') {
-      this._ctrlPressed = true;
-    }
-    
     switch (event.code) {
       case 'KeyW':
       case 'ArrowUp':
@@ -115,8 +87,7 @@ export class PlayerController {
       case 'ShiftRight':
         this.sprint = true;
         break;
-      case 'ControlLeft':
-      case 'ControlRight':
+      case 'KeyC':
         this.moveDown = true;
         break;
     }
@@ -150,10 +121,8 @@ export class PlayerController {
       case 'ShiftRight':
         this.sprint = false;
         break;
-      case 'ControlLeft':
-      case 'ControlRight':
+      case 'KeyC':
         this.moveDown = false;
-        this._ctrlPressed = false;
         break;
     }
   }
@@ -170,29 +139,36 @@ export class PlayerController {
     this.direction.y = Number(this.moveUp) - Number(this.moveDown);
     if (this.direction.lengthSq() > 0) this.direction.normalize();
 
-    // 计算速度
+    // 计算目标速度（不含 delta，后面移动时再乘）
     const speed = this.sprint ? this.moveSpeed * this.sprintMultiplier : this.moveSpeed;
 
-    // 应用阻尼
-    this.velocity.x -= this.velocity.x * this.damping;
-    this.velocity.y -= this.velocity.y * this.damping;
-    this.velocity.z -= this.velocity.z * this.damping;
+    // 帧率无关阻尼：使用指数衰减
+    const dampFactor = Math.pow(1 - this.damping, delta * 60);
+    this.velocity.x *= dampFactor;
+    this.velocity.y *= dampFactor;
+    this.velocity.z *= dampFactor;
 
-    // 应用移动
+    // 应用移动（velocity = 方向 × 速度，不含 delta）
     if (this.moveForward || this.moveBackward) {
-      this.velocity.z -= this.direction.z * speed * delta;
+      this.velocity.z = -this.direction.z * speed;
     }
     if (this.moveLeft || this.moveRight) {
-      this.velocity.x -= this.direction.x * speed * delta;
+      this.velocity.x = -this.direction.x * speed;
     }
     if (this.moveUp || this.moveDown) {
-      this.velocity.y += this.direction.y * speed * delta;
+      this.velocity.y = this.direction.y * speed;
     }
 
-    // 移动相机
+    // 移动相机（只在这里乘一次 delta）
     this.controls.moveRight(-this.velocity.x * delta);
     this.controls.moveForward(-this.velocity.z * delta);
     this.camera.position.y += this.velocity.y * delta;
+
+    // 冲刺 FOV 效果（平滑过渡）
+    const targetFov = this.sprint ? this.baseFov + this.sprintFovBoost : this.baseFov;
+    const fovDamp = 1 - Math.pow(0.001, delta); // ~0.1 秒过渡
+    this.camera.fov += (targetFov - this.camera.fov) * fovDamp;
+    this.camera.updateProjectionMatrix();
   }
 
   /**

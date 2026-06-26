@@ -6,6 +6,7 @@
 import * as THREE from 'three';
 import { config } from '../core/config.js';
 import { randomRange, randomChoice } from '../utils/random.js';
+import { hashCoords, seededRandom } from '../utils/seededRandom.js';
 
 export class PlanetSystem {
   constructor() {
@@ -21,11 +22,15 @@ export class PlanetSystem {
     const { count, minRadius, maxRadius, spread } = config.planets;
 
     for (let i = 0; i < count; i++) {
+      // 所有行星随机生成，均匀分布在球壳内
       const radius = randomRange(minRadius, maxRadius);
+      const theta = Math.random() * Math.PI * 2;
+      const phi = Math.acos(2 * Math.random() - 1);
+      const r = spread * (0.15 + Math.random() * 0.85);
       const position = new THREE.Vector3(
-        randomRange(-spread, spread),
-        randomRange(-spread * 0.3, spread * 0.3),
-        randomRange(-spread, spread)
+        r * Math.sin(phi) * Math.cos(theta),
+        r * Math.sin(phi) * Math.sin(theta) * 0.3, // Y 轴压缩，避免太高太低
+        r * Math.cos(phi)
       );
 
       const planet = this.createPlanet(radius, position, i);
@@ -57,8 +62,8 @@ export class PlanetSystem {
     const geoMed  = new THREE.SphereGeometry(radius, 32, 32);
     const geoLow  = new THREE.SphereGeometry(radius, 16, 16);
     lod.addLevel(new THREE.Mesh(geoHigh, material), 0);
-    lod.addLevel(new THREE.Mesh(geoMed, material), 300);
-    lod.addLevel(new THREE.Mesh(geoLow, material), 800);
+    lod.addLevel(new THREE.Mesh(geoMed, material), 500);
+    lod.addLevel(new THREE.Mesh(geoLow, material), 1200);
     group.add(lod);
 
     // 大气层（带 LOD）
@@ -67,8 +72,8 @@ export class PlanetSystem {
     const atmMed  = this.createAtmosphere(radius, 32);
     const atmLow  = this.createAtmosphere(radius, 16);
     atmLod.addLevel(atmHigh, 0);
-    atmLod.addLevel(atmMed, 300);
-    atmLod.addLevel(atmLow, 800);
+    atmLod.addLevel(atmMed, 500);
+    atmLod.addLevel(atmLow, 1200);
     group.add(atmLod);
 
     // 行星环（随机）
@@ -393,8 +398,25 @@ export class PlanetSystem {
    * 更新行星系统
    */
   update(delta, elapsed) {
+    const cfg = config.planets;
     this.planets.forEach((planet) => {
       const data = planet.userData;
+
+      if (!this.camera) return;
+
+      const dist = planet.position.distanceTo(this.camera.position);
+
+      // 行星重生：离相机太远时在新位置重生
+      if (dist > cfg.respawnDistance) {
+        this.respawnPlanet(planet, cfg);
+        return; // 本帧跳过详细更新，下帧开始正常渲染
+      }
+
+      // 距离裁剪：太远的行星跳过详细更新
+      if (dist > 2000) return;
+
+      data.lod.update(this.camera);
+      data.atmLod.update(this.camera);
 
       // 自转（遍历 LOD levels 的所有子网格）
       if (data.lod) {
@@ -404,18 +426,44 @@ export class PlanetSystem {
         }
       }
 
-      // 更新 LOD（基于相机距离）
-      if (this.camera) {
-        const dist = planet.position.distanceTo(this.camera.position);
-        data.lod.update(this.camera);
-        data.atmLod.update(this.camera);
-      }
-
-      // 公转
+      // 公转（幅度加大到 30%，更易察觉）
       data.orbitAngle += data.orbitSpeed;
-      planet.position.x = data.originalPosition.x + Math.cos(data.orbitAngle) * data.orbitRadius * 0.1;
-      planet.position.z = data.originalPosition.z + Math.sin(data.orbitAngle) * data.orbitRadius * 0.1;
+      planet.position.x = data.originalPosition.x + Math.cos(data.orbitAngle) * data.orbitRadius * 0.3;
+      planet.position.z = data.originalPosition.z + Math.sin(data.orbitAngle) * data.orbitRadius * 0.3;
     });
+  }
+
+  /**
+   * 重生行星到相机附近的新位置
+   */
+  respawnPlanet(planet, cfg) {
+    const camPos = this.camera.position;
+
+    // 基于坐标的确定性随机，保证相同区域生成相同位置
+    const chunkX = Math.round(camPos.x / 1000);
+    const chunkY = Math.round(camPos.y / 1000);
+    const chunkZ = Math.round(camPos.z / 1000);
+    const seed = hashCoords(chunkX + planet.userData.index * 7919, chunkY, chunkZ);
+    const rng = seededRandom(seed);
+
+    // 在相机前方球壳内随机位置
+    const theta = rng() * Math.PI * 2;
+    const phi = Math.acos(2 * rng() - 1);
+    const r = cfg.respawnMin + rng() * (cfg.respawnMax - cfg.respawnMin);
+
+    const newPos = new THREE.Vector3(
+      camPos.x + r * Math.sin(phi) * Math.cos(theta),
+      camPos.y + r * Math.sin(phi) * Math.sin(theta) * 0.3,
+      camPos.z + r * Math.cos(phi)
+    );
+
+    planet.position.copy(newPos);
+
+    // 重置轨道数据（保留小幅公转，增加视觉动感）
+    const data = planet.userData;
+    data.originalPosition.copy(newPos);
+    data.orbitRadius = 10 + rng() * 30; // 小幅公转，不超出安全区
+    data.orbitAngle = rng() * Math.PI * 2;
   }
 
   /**

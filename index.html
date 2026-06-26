@@ -124,6 +124,12 @@
 
     body.warp-active::after {
       opacity: 1;
+      animation: warp-pulse 0.8s ease-in-out infinite alternate;
+    }
+
+    @keyframes warp-pulse {
+      0% { transform: translate(-50%, -50%) scale(1); }
+      100% { transform: translate(-50%, -50%) scale(1.05); }
     }
 
     /* 黑洞危险区域红色边框警告 */

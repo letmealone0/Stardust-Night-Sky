@@ -16,6 +16,7 @@ import { Pulsar } from '../objects/pulsar.js';
 export class SceneManager {
   constructor() {
     this.scene = null;
+    this.camera = null;
     this.objects = {
       stars: null,
       planets: null,
@@ -31,6 +32,7 @@ export class SceneManager {
    * 初始化场景
    */
   async init(camera) {
+    this.camera = camera;
     this.scene = new THREE.Scene();
     this.scene.background = new THREE.Color(0x000005);
     this.scene.fog = new THREE.FogExp2(0x000005, 0.00015);
@@ -60,16 +62,18 @@ export class SceneManager {
     try {
       this.objects.cosmicDust = new CosmicDust();
       this.objects.cosmicDust.init(this.scene);
+      this.objects.cosmicDust.setCamera(camera);
     } catch (e) { console.warn('[Scene] 宇宙尘埃初始化失败:', e); }
 
     try {
       this.objects.blackhole = new BlackHole();
-      this.objects.blackhole.init(this.scene, camera);
+      this.objects.blackhole.init(this.scene, camera, this.objects.planets);
     } catch (e) { console.warn('[Scene] 黑洞初始化失败:', e); }
 
     try {
       this.objects.pulsar = new Pulsar();
       this.objects.pulsar.init(this.scene);
+      this.objects.pulsar.setCamera(camera);
     } catch (e) { console.warn('[Scene] 脉冲星初始化失败:', e); }
 
     const ambientLight = new THREE.AmbientLight(0x111122, 0.5);
@@ -88,7 +92,7 @@ export class SceneManager {
   update(delta, elapsed, speed = 0) {
     if (this.objects.stars) this.objects.stars.update(delta, elapsed);
     if (this.objects.planets) this.objects.planets.update(delta, elapsed);
-    if (this.objects.nebula) this.objects.nebula.update(delta, elapsed);
+    if (this.objects.nebula) this.objects.nebula.update(delta, elapsed, this.camera);
     if (this.objects.speedLines) this.objects.speedLines.update(delta, speed);
     if (this.objects.cosmicDust) this.objects.cosmicDust.update(delta, elapsed);
     if (this.objects.blackhole) this.objects.blackhole.update(delta, elapsed);

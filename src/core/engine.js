@@ -176,8 +176,9 @@ export class Engine {
       this.hud.updateFPS(this.fps);
     }
 
-    // 如果暂停，只渲染场景
+    // 暂停时只更新 camera uniform（避免恢复时位置跳变），跳过重计算
     if (this.isPaused) {
+      if (this.scene.objects.nebula) this.scene.objects.nebula.update(0, elapsed, this.camera.camera);
       this.postprocessing.render();
       return;
     }
@@ -202,6 +203,7 @@ export class Engine {
 
     // 更新跃迁特效（冲刺时触发）
     this.hud.updateWarpEffect(this.player.getSpeed(), 100);
+    this.hud.updateSprint(this.player.isSprinting());
 
     // 渲染
     this.postprocessing.render();

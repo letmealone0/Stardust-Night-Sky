@@ -1,9 +1,9 @@
 # 深空探索 (Deep Space Explorer) — 项目文档
 
-> **项目**: `stars-project/` · **版本**: v6.0 · **最后更新**: 2026-06-26
+> **项目**: `stars-project/` · **版本**: v6.1 · **最后更新**: 2026-06-26
 >
 > **一句话描述**: 基于 Three.js 3D 引擎的第一人称深空探索体验，WASD 移动 + 鼠标视角，
-> 可探索 8 颗程序化行星、银河系背景、体积星云、宇宙尘埃、黑洞和脉冲星。
+> 可探索 8 颗程序化行星、银河系背景、体积光线步进星云、宇宙尘埃、黑洞（含行星吸收）和脉冲星。
 
 ---
 
@@ -72,8 +72,8 @@ npm run preview      # 本地预览构建结果
 | **W / S** | 前进 / 后退 |
 | **A / D** | 左移 / 右移 |
 | **空格** | 上升 |
-| **Shift** | 冲刺（2.5× 速度） |
-| **Ctrl** | 下降 |
+| **Shift** | 冲刺（4× 速度 + FOV 扩展 + 跃迁特效） |
+| **C** | 下降 |
 | **鼠标** | 控制视角 |
 | **点击 / ESC** | 锁定 / 解锁鼠标 |
 
@@ -149,7 +149,7 @@ main.js
        ├─ SceneManager
        │    ├─ StarField         (8000 星 + 银河盘 + 亮星 GPU 闪烁)
        │    ├─ PlanetSystem      (8 行星, LOD, 相机距离驱动)
-       │    ├─ NebulaSystem      (3 星云, 合并几何)
+       │    ├─ NebulaSystem      (4 星云, 体积 Raymarching)
        │    ├─ SpeedLines        (相机子对象, 跟随视角)
        │    ├─ CosmicDust        (2000 粒子, 预计算相位)
        │    ├─ BlackHole         (事件视界 + 吸积盘 + 喷流 + 引力)
@@ -187,10 +187,11 @@ main.js
 
 ### controls/player.js
 - PointerLock 鼠标锁定/解锁
-- WASD + 箭头键 + Space/Shift/Ctrl 移动
-- **Shift = 冲刺, Ctrl = 下降**
-- Capture 阶段拦截所有 Ctrl 组合键（防浏览器快捷键）
-- `beforeunload` 兜底防 Ctrl+W
+- WASD + 箭头键 + Space/Shift/C 移动
+- **Shift = 冲刺（4× 速度 + FOV 扩展）, C = 下降**
+- 冲刺时 FOV 平滑扩展（+15°，指数衰减过渡）
+- 帧率无关运动（速度不含 delta，移动时统一乘 delta）
+- 指数衰减阻尼（`pow(1-damp, delta*60)`）
 
 ### objects/stars.js
 - 3 层星空（4000 + 2500 + 1500 颗，Points 渲染）
@@ -206,9 +207,10 @@ main.js
 - 自转 + 公转动画
 
 ### objects/nebula.js
-- 3 个星云，每个 6-12 个云团
-- **几何合并**：单个星云 → 单个 mesh（3 draw call 替代 24-48）
-- 自定义 Shader（边缘发光 + 中心高亮）
+- **体积光线步进（Raymarching）**：立方体包围盒内逐采样点累积密度
+- FBM 噪声（2 层标准 + 1 层 turbulence）创建有机丝絮形态
+- 球形衰减 + 色彩渐变（主色 → 二次色随密度过渡）
+- 自适应步数（6-24 步），相机位置转局部空间计算
 - 脉冲缩放 + 缓慢自转
 
 ### objects/speedlines.js
@@ -221,13 +223,14 @@ main.js
 - 正弦漂移动画（**v6.0: 预计算相位偏移**）
 - 脉冲透明度（0.1 ~ 0.2）
 
-### objects/blackhole.js（v6.0 新增）
+### objects/blackhole.js（v6.0 新增，v6.1 增强）
 - 事件视界（纯黑球体）
-- 吸积盘（3000 粒子，内蓝白→中外橙黄→外暗红）
-- 双极喷流（400 粒子，脉冲透明度）
-- 外层光晕（Shader 边缘发光 + 脉动）
-- 引力拖拽效果（距离驱动，影响玩家移动）
-- 危险等级系统（HUD 红色警告联动）
+- 吸积盘（5000 粒子，内圈更密集更亮，外圈偏红暗）
+- 双极喷流（400 粒子，脉冲透明度，更长更亮）
+- 外层光晕（Shader 边缘发光 + 脉动，范围扩大）
+- 引力拖拽效果（距离驱动，影响玩家移动，范围 200/强度 80）
+- 危险等级系统（HUD 红色警告联动，危险半径 400）
+- **行星吸收系统**（v6.1 新增）：检测距离 < 80 的行星，逐渐缩小 + 颜色偏红 + 螺旋粒子流 + 最终移除
 
 ### objects/pulsar.js（v6.0 新增）
 - 中子星本体（Shader 高亮球体 + 核心发光 + 边缘光晕）
@@ -262,7 +265,8 @@ main.js
   },
   player: {
     moveSpeed: 50,                  // 基础移动速度
-    sprintMultiplier: 2.5,          // 冲刺倍数
+    sprintMultiplier: 4.0,          // 冲刺倍数（v6.1 增强）
+    sprintFovBoost: 15,             // 冲刺 FOV 增加量（v6.1 新增）
     mouseSensitivity: 0.002,        // 鼠标灵敏度
     damping: 0.05                   // 移动阻尼
   },
@@ -277,8 +281,8 @@ main.js
   },
   planets: {
     count: 8,                       // 行星数
-    minRadius: 5, maxRadius: 30,    // 半径范围
-    spread: 3000,                   // 分布范围
+    minRadius: 10, maxRadius: 60,   // 半径范围（v6.1 加大）
+    spread: 2500,                   // 分布范围（v6.1 缩小，更集中）
     atmosphereScale: 1.2            // 大气层缩放
   },
   nebula: {
@@ -301,15 +305,16 @@ main.js
     speedThreshold: 2,              // 显示速度阈值
     opacityTarget: 0.7              // 最大透明度
   },
-  blackhole: {                      // v6.0 新增
+  blackhole: {                      // v6.0 新增，v6.1 增强
     eventHorizonRadius: 15,         // 事件视界半径
     accretionInnerRadius: 25,       // 吸积盘内半径
-    accretionOuterRadius: 80,       // 吸积盘外半径
+    accretionOuterRadius: 100,      // 吸积盘外半径（v6.1 加大）
     position: { x:800, y:50, z:-600 },
-    dangerRadius: 200,              // 危险区域半径
-    pullRadius: 100,                // 引力影响半径
-    pullStrength: 50,               // 引力强度
-    jetLength: 200,                 // 喷流长度
+    dangerRadius: 400,              // 危险区域半径（v6.1 加大）
+    pullRadius: 200,                // 引力影响半径（v6.1 加大）
+    pullStrength: 80,               // 引力强度（v6.1 增强）
+    jetLength: 250,                 // 喷流长度（v6.1 加长）
+    absorbRadius: 80,               // 行星吸收半径（v6.1 新增）
   },
   pulsar: {                         // v6.0 新增
     radius: 3,                      // 半径
@@ -340,10 +345,9 @@ main.js
 
 | 限制 | 说明 |
 |------|------|
-| Ctrl 组合键 | 已三重防护（capture + preventDefault + beforeunload），但仍非 100% 阻断 |
-| Bloom 强度 | 提高后有性能开销，当前 0.8 / 阈值 0.6 为平衡点 |
-| 黑洞引力 | 仅影响玩家位置，不影响其他天体 |
 | 脉冲星光束 | 使用锥形几何模拟，非真实体积光 |
+| 星云体积渲染 | 光线步进 24 步，低端设备可能有性能压力 |
+| 行星吸收 | 仅黑洞附近触发，不支持远程引力影响 |
 
 ---
 
@@ -375,10 +379,12 @@ main.js
 
 | 决策 | 原因 |
 |------|------|
-| 冲刺用 Shift 而非 Ctrl | 浏览器 Ctrl+W 无法完全拦截 |
-| Bloom 强度 0.5 / 阈值 0.8 | 过高导致闪烁，过低无效果 |
-| 行星 LOD 三级（0/300/800） | 平衡视觉质量与性能 |
-| Nebula 几何合并 | draw call 从 24-48 降至 3 |
+| 下降用 C 而非 Ctrl | 浏览器 Ctrl+W/Ctrl+方向键无法完全拦截 |
+| 冲刺倍数 4.0 + FOV +15° | 高倍速配合视角扩展，营造星际穿越加速感 |
+| Bloom 强度 0.8 / 阈值 0.6 | 过高导致闪烁，过低无效果 |
+| 行星 LOD 三级（0/500/1200） | 配合更大行星半径，平衡视觉质量与性能 |
+| Nebula 体积 Raymarching | 24 步 FBM 噪声，替代旧版球体堆叠，真实星云形态 |
+| 黑洞行星吸收 | 距离 < 80 时触发，缩小+偏色+粒子流+移除，增强沉浸感 |
 | 速度线用 LineSegments | Points 效果差，线段更有速度感 |
 
 ### 可扩展方向
@@ -409,3 +415,4 @@ main.js
 | v5.1 | 2026-06-22 | 修复 Ctrl 闪退；禁用后处理解决闪烁；添加速度线系统 |
 | v5.2 | 2026-06-25 | **Bug 修复**（7项）：window.engine null、方向 NaN、noise 置换表、dispose 清理等；**性能**（4项）：Planet LOD、Nebula 几何合并、Resize 节流、setAnimationLoop；**画面**（8项）：Bloom 管线重启用、LineSegments 速度线、OBAFGKM 星色、银河盘、程序化纹理、Rayleigh 大气层、宇宙尘埃、独立亮星闪烁；**代码质量**（4项）：配置校验、输入合并、参数化、优雅降级 |
 | **v6.0** | **2026-06-26** | **Bug 修复**（3项）：亮星颜色衰减（GPU Shader 修复）、Scene null 安全检查、冰行星纹理性能；**性能优化**（3项）：亮星闪烁迁移到 GPU、宇宙尘埃预计算相位、冰行星 ImageData 批量写入；**新功能**（2项）：黑洞系统（事件视界/吸积盘/喷流/引力拖拽/危险区域）、脉冲星系统（中子星/双锥光束/快速旋转）；**画面增强**（3项）：跃迁特效（CSS 光晕+扫描线）、黑洞危险区域红色警告、准星脉冲动画+角标设计；**代码结构**（4项）：Camera/Player dispose 完整、toneMapping 统一管理、移除未使用 maxFPS 配置、HUD 危险等级接口 |
+| **v6.1** | **2026-06-26** | **Bug 修复**（5项）：星云坐标空间不匹配（世界/局部空间统一）、玩家移动双重 delta（帧率无关修复）、阻尼帧率相关（改指数衰减）、黑洞每帧 new Vector3（复用优化）、速度线每帧多余 color.needsUpdate；**性能优化**（5项）：HUD DOM 引用缓存、速度线颜色按需更新、暂停时 camera uniform 仍更新、行星距离裁剪（>2000 跳过）、黑洞 addScaledVector 替代 multiplyScalar；**新功能**（3项）：星云体积光线步进（Raymarching + FBM）、黑洞行星吸收系统（缩小+偏色+粒子流+移除）、冲刺 FOV 扩展效果（+15°平滑过渡）；**画面增强**（4项）：冲刺倍数 2.5→4.0、跃迁 CSS 脉冲动画、吸积盘 5000 粒子+内圈高亮、HUD 冲刺 WARP 指示器；**操控改进**（2项）：下降键 Ctrl→C（防浏览器冲突）、行星半径 5-30→10-60+近处大行星 |
