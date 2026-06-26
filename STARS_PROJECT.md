@@ -1,9 +1,9 @@
 # 深空探索 (Deep Space Explorer) — 项目文档
 
-> **项目**: `stars-project/` · **版本**: v5.2 · **最后更新**: 2026-06-25
+> **项目**: `stars-project/` · **版本**: v6.0 · **最后更新**: 2026-06-26
 >
 > **一句话描述**: 基于 Three.js 3D 引擎的第一人称深空探索体验，WASD 移动 + 鼠标视角，
-> 可探索 8 颗程序化行星、银河系背景、体积星云和宇宙尘埃。
+> 可探索 8 颗程序化行星、银河系背景、体积星云、宇宙尘埃、黑洞和脉冲星。
 
 ---
 
@@ -117,11 +117,13 @@ stars-project/
 │   │   └── input.js            # [废弃] 已合并到 player.js
 │   │
 │   ├── objects/
-│   │   ├── stars.js            # 星空 + 银河系 + 亮星闪烁
+│   │   ├── stars.js            # 星空 + 银河系 + 亮星闪烁（GPU Shader）
 │   │   ├── planets.js          # 行星（纹理/大气层/环/LOD/公转）
 │   │   ├── nebula.js           # 星云（几何合并 Shader 云团）
 │   │   ├── speedlines.js       # 速度线（LineSegments 渐变线段）
-│   │   └── cosmicdust.js       # 宇宙尘埃（2000 粒子漂浮）
+│   │   ├── cosmicdust.js       # 宇宙尘埃（2000 粒子漂浮）
+│   │   ├── blackhole.js        # 黑洞（事件视界/吸积盘/喷流/引力）
+│   │   └── pulsar.js           # 脉冲星（中子星/双锥光束/快速旋转）
 │   │
 │   ├── postprocessing/
 │   │   └── composer.js         # EffectComposer（Bloom + OutputPass）
@@ -145,11 +147,13 @@ main.js
   └─ new Engine()
        ├─ CameraController  ─→  PerspectiveCamera
        ├─ SceneManager
-       │    ├─ StarField         (8000 星 + 银河盘 + 亮星)
+       │    ├─ StarField         (8000 星 + 银河盘 + 亮星 GPU 闪烁)
        │    ├─ PlanetSystem      (8 行星, LOD, 相机距离驱动)
        │    ├─ NebulaSystem      (3 星云, 合并几何)
        │    ├─ SpeedLines        (相机子对象, 跟随视角)
-       │    └─ CosmicDust        (2000 粒子)
+       │    ├─ CosmicDust        (2000 粒子, 预计算相位)
+       │    ├─ BlackHole         (事件视界 + 吸积盘 + 喷流 + 引力)
+       │    └─ Pulsar            (中子星 + 双锥光束)
        ├─ RendererManager    ─→  WebGLRenderer
        ├─ PlayerController   ─→  PointerLockControls + 键盘
        ├─ PostProcessing     ─→  EffectComposer
@@ -192,7 +196,7 @@ main.js
 - 3 层星空（4000 + 2500 + 1500 颗，Points 渲染）
 - OBAFGKM 光谱颜色分布
 - 银河螺旋盘（4000 星点，密集中心）
-- 50 颗亮星独立频率/相位闪烁
+- 50 颗亮星独立频率/相位闪烁（**v6.0: GPU Shader 计算**）
 
 ### objects/planets.js
 - 8 颗行星：岩石 / 气态 / 冰 / 熔岩
@@ -214,8 +218,21 @@ main.js
 
 ### objects/cosmicdust.js
 - 2000 粒子球壳分布
-- 正弦漂移动画
+- 正弦漂移动画（**v6.0: 预计算相位偏移**）
 - 脉冲透明度（0.1 ~ 0.2）
+
+### objects/blackhole.js（v6.0 新增）
+- 事件视界（纯黑球体）
+- 吸积盘（3000 粒子，内蓝白→中外橙黄→外暗红）
+- 双极喷流（400 粒子，脉冲透明度）
+- 外层光晕（Shader 边缘发光 + 脉动）
+- 引力拖拽效果（距离驱动，影响玩家移动）
+- 危险等级系统（HUD 红色警告联动）
+
+### objects/pulsar.js（v6.0 新增）
+- 中子星本体（Shader 高亮球体 + 核心发光 + 边缘光晕）
+- 双锥光束（锥形几何 + Shader 脉冲衰减）
+- 快速自转（5 弧度/秒）
 
 ### postprocessing/composer.js
 - `RenderPass → UnrealBloomPass → OutputPass`
@@ -223,7 +240,11 @@ main.js
 
 ### ui/hud.js
 - DOM 元素覆盖层（准星/FPS/速度/位置/消息/操作提示）
-- SVG 十字准星，等宽字体 HUD
+- SVG 脉冲准星（外圈呼吸动画 + 角标 + 发光滤镜）
+- 跃迁特效（CSS 光晕叠加层，冲刺时触发）
+- 黑洞危险警告（红色径向渐变 + 闪烁文字）
+- FPS 颜色动态（绿/黄/红三档）
+- 扫描线覆盖层（全屏半透明条纹）
 
 ---
 
@@ -279,6 +300,23 @@ main.js
     minLength: 10, maxLength: 50,   // 线段长度
     speedThreshold: 2,              // 显示速度阈值
     opacityTarget: 0.7              // 最大透明度
+  },
+  blackhole: {                      // v6.0 新增
+    eventHorizonRadius: 15,         // 事件视界半径
+    accretionInnerRadius: 25,       // 吸积盘内半径
+    accretionOuterRadius: 80,       // 吸积盘外半径
+    position: { x:800, y:50, z:-600 },
+    dangerRadius: 200,              // 危险区域半径
+    pullRadius: 100,                // 引力影响半径
+    pullStrength: 50,               // 引力强度
+    jetLength: 200,                 // 喷流长度
+  },
+  pulsar: {                         // v6.0 新增
+    radius: 3,                      // 半径
+    beamLength: 150,                // 光束长度
+    rotationSpeed: 5,               // 旋转速度（弧度/秒）
+    position: { x:-500, y:100, z:400 },
+    color: { r:0.5, g:0.8, b:1.0 },
   }
 }
 ```
@@ -303,7 +341,9 @@ main.js
 | 限制 | 说明 |
 |------|------|
 | Ctrl 组合键 | 已三重防护（capture + preventDefault + beforeunload），但仍非 100% 阻断 |
-| Bloom 强度 | 提高后有性能开销，当前 0.5 / 阈值 0.8 为平衡点 |
+| Bloom 强度 | 提高后有性能开销，当前 0.8 / 阈值 0.6 为平衡点 |
+| 黑洞引力 | 仅影响玩家位置，不影响其他天体 |
+| 脉冲星光束 | 使用锥形几何模拟，非真实体积光 |
 
 ---
 
@@ -343,12 +383,16 @@ main.js
 
 ### 可扩展方向
 
+- [x] 黑洞天体（v6.0 已实现：事件视界/吸积盘/喷流/引力效果）
+- [x] 脉冲星（v6.0 已实现：中子星/双锥光束/快速旋转）
 - [ ] 行星交互（靠近着陆）
 - [ ] 音效 / 背景音乐
 - [ ] 位置保存 / 进度系统
-- [ ] 更多天体（黑洞、虫洞、小行星带）
-- [ ] 传送系统
-- [ ] 任务系统
+- [ ] 虫洞 / 传送系统
+- [ ] 小行星带（InstancedMesh）
+- [ ] 任务系统 / 发现记录
+- [ ] 恒星系统（多星相互绕转）
+- [ ] 彗星 / 流星雨
 
 ---
 
@@ -364,3 +408,4 @@ main.js
 | v5.0 | 2026-06-22 | 迁移到 Three.js 3D；第一人称控制；8行星、8000+星星、体积星云；无边界探索 |
 | v5.1 | 2026-06-22 | 修复 Ctrl 闪退；禁用后处理解决闪烁；添加速度线系统 |
 | v5.2 | 2026-06-25 | **Bug 修复**（7项）：window.engine null、方向 NaN、noise 置换表、dispose 清理等；**性能**（4项）：Planet LOD、Nebula 几何合并、Resize 节流、setAnimationLoop；**画面**（8项）：Bloom 管线重启用、LineSegments 速度线、OBAFGKM 星色、银河盘、程序化纹理、Rayleigh 大气层、宇宙尘埃、独立亮星闪烁；**代码质量**（4项）：配置校验、输入合并、参数化、优雅降级 |
+| **v6.0** | **2026-06-26** | **Bug 修复**（3项）：亮星颜色衰减（GPU Shader 修复）、Scene null 安全检查、冰行星纹理性能；**性能优化**（3项）：亮星闪烁迁移到 GPU、宇宙尘埃预计算相位、冰行星 ImageData 批量写入；**新功能**（2项）：黑洞系统（事件视界/吸积盘/喷流/引力拖拽/危险区域）、脉冲星系统（中子星/双锥光束/快速旋转）；**画面增强**（3项）：跃迁特效（CSS 光晕+扫描线）、黑洞危险区域红色警告、准星脉冲动画+角标设计；**代码结构**（4项）：Camera/Player dispose 完整、toneMapping 统一管理、移除未使用 maxFPS 配置、HUD 危险等级接口 |

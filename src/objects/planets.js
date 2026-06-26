@@ -159,16 +159,38 @@ export class PlanetSystem {
         break;
       }
       case 'ice': {
-        // 冰行星：裂纹纹理
+        // 冰行星：裂纹纹理（使用 ImageData 批量写入，避免逐像素 fillRect）
         const baseLight = 60 + rng() * 30;
+        const imageData = ctx.getImageData(0, 0, 512, 256);
+        const data = imageData.data;
         for (let y = 0; y < 256; y++) {
           for (let x = 0; x < 512; x++) {
             const n = Math.sin(x * 0.02 + y * 0.03) * Math.cos(y * 0.01 - x * 0.015) * 0.5 + 0.5;
             const v = baseLight + n * 20;
-            ctx.fillStyle = `hsl(210, ${10 + n * 20}%, ${v}%)`;
-            ctx.fillRect(x, y, 1, 1);
+            const s = 10 + n * 20;
+            // HSL(210, s%, v%) → RGB 近似
+            const l = v / 100;
+            const sat = s / 100;
+            const hue = 210 / 360;
+            const c = (1 - Math.abs(2 * l - 1)) * sat;
+            const x2 = c * (1 - Math.abs((hue * 6) % 2 - 1));
+            const m = l - c / 2;
+            let r, g, b;
+            const h = hue * 6;
+            if (h < 1) { r = c; g = x2; b = 0; }
+            else if (h < 2) { r = x2; g = c; b = 0; }
+            else if (h < 3) { r = 0; g = c; b = x2; }
+            else if (h < 4) { r = 0; g = x2; b = c; }
+            else if (h < 5) { r = x2; g = 0; b = c; }
+            else { r = c; g = 0; b = x2; }
+            const idx = (y * 512 + x) * 4;
+            data[idx] = Math.round((r + m) * 255);
+            data[idx + 1] = Math.round((g + m) * 255);
+            data[idx + 2] = Math.round((b + m) * 255);
+            data[idx + 3] = 255;
           }
         }
+        ctx.putImageData(imageData, 0, 0);
         // 裂纹
         for (let i = 0; i < 30; i++) {
           ctx.strokeStyle = `hsla(220, 30%, 80%, ${0.3 + rng() * 0.4})`;

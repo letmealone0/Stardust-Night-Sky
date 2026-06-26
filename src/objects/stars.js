@@ -128,28 +128,54 @@ export class StarField {
     }
 
     geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-    geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
-    geometry.userData = { phases, frequencies };
+    geometry.setAttribute('aColor', new THREE.BufferAttribute(colors, 3));
+    geometry.setAttribute('aPhase', new THREE.BufferAttribute(phases, 1));
+    geometry.setAttribute('aFrequency', new THREE.BufferAttribute(frequencies, 1));
 
-    const material = new THREE.PointsMaterial({
-      size: 1.5,
-      vertexColors: true,
+    // 使用 ShaderMaterial 将闪烁计算迁移到 GPU，避免每帧 CPU 遍历
+    const material = new THREE.ShaderMaterial({
+      uniforms: {
+        uTime: { value: 0 },
+        uSize: { value: 6.0 },
+      },
+      vertexShader: `
+        attribute vec3 aColor;
+        attribute float aPhase;
+        attribute float aFrequency;
+        uniform float uTime;
+        uniform float uSize;
+        varying vec3 vColor;
+        void main() {
+          float twinkle = 0.5 + sin(uTime * aFrequency + aPhase) * 0.5;
+          float factor = 0.7 + twinkle * 0.3;
+          vColor = aColor * factor;
+          vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
+          gl_PointSize = uSize * (300.0 / -mvPosition.z);
+          gl_Position = projectionMatrix * mvPosition;
+        }
+      `,
+      fragmentShader: `
+        varying vec3 vColor;
+        void main() {
+          float d = length(gl_PointCoord - 0.5) * 2.0;
+          float alpha = 1.0 - smoothstep(0.0, 1.0, d);
+          if (alpha < 0.01) discard;
+          gl_FragColor = vec4(vColor, alpha);
+        }
+      `,
       transparent: true,
-      opacity: 1.0,
-      sizeAttenuation: true,
-      blending: THREE.AdditiveBlending,
       depthWrite: false,
+      blending: THREE.AdditiveBlending,
     });
 
     const points = new THREE.Points(geometry, material);
     points.userData.isBrightStar = true;
-    points.userData.time = 0;
 
     scene.add(points);
     this.meshes.push(points);
     this.materials.push(material);
     this.geometries.push(geometry);
-    this.brightStars.push({ points, phases, frequencies });
+    this.brightStars.push({ points, material });
   }
 
   createMilkyWay(scene, spread) {
@@ -210,23 +236,11 @@ export class StarField {
   }
 
   update(delta, elapsed) {
-    this.brightStars.forEach(({ points, phases, frequencies }) => {
-      const geo = points.geometry;
-      if (!geo.attributes.color) return;
-
-      const colors = geo.attributes.color.array;
-      const count = geo.attributes.position.count;
-
-      for (let i = 0; i < count; i++) {
-        const i3 = i * 3;
-        const phase = phases[i];
-        const freq = frequencies[i];
-        const twinkle = 0.5 + Math.sin(elapsed * freq + phase) * 0.5;
-        colors[i3] *= 0.7 + twinkle * 0.3;
-        colors[i3 + 1] *= 0.7 + twinkle * 0.3;
-        colors[i3 + 2] *= 0.7 + twinkle * 0.3;
+    // 亮星闪烁已迁移到 GPU（ShaderMaterial），只需更新时间 uniform
+    this.brightStars.forEach(({ points, material }) => {
+      if (material.uniforms) {
+        material.uniforms.uTime.value = elapsed;
       }
-      geo.attributes.color.needsUpdate = true;
     });
   }
 

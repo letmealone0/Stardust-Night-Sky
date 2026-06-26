@@ -89,9 +89,29 @@ export const config = {
     moveFactor: 10,          // 移动速度系数
   },
 
+  // ---- 黑洞系统 ----
+  blackhole: {
+    eventHorizonRadius: 15,    // 事件视界半径
+    accretionInnerRadius: 25,  // 吸积盘内半径
+    accretionOuterRadius: 80,  // 吸积盘外半径
+    position: { x: 800, y: 50, z: -600 }, // 位置
+    dangerRadius: 200,         // 危险区域半径
+    pullRadius: 100,           // 引力影响半径
+    pullStrength: 50,          // 引力强度
+    jetLength: 200,            // 喷流长度
+  },
+
+  // ---- 脉冲星系统 ----
+  pulsar: {
+    radius: 3,                 // 半径
+    beamLength: 150,           // 光束长度
+    rotationSpeed: 5,          // 旋转速度（弧度/秒）
+    position: { x: -500, y: 100, z: 400 }, // 位置
+    color: { r: 0.5, g: 0.8, b: 1.0 },    // 颜色
+  },
+
   // ---- 性能优化 ----
   performance: {
-    maxFPS: 60,              // 最大帧率
     lodDistances: [0, 300, 800], // LOD 距离阈值
   },
 };

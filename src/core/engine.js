@@ -80,7 +80,7 @@ export class Engine {
    * 校验运行时配置
    */
   validateConfig() {
-    const { camera, player, planets, performance } = config;
+    const { camera, player, planets } = config;
     if (camera.fov < 10 || camera.fov > 150) {
       console.warn('[Config] fov 范围异常，已重置为 75');
       camera.fov = 75;
@@ -92,10 +92,6 @@ export class Engine {
     if (planets.count < 1) {
       console.warn('[Config] planets.count 必须 > 0，已重置为 8');
       planets.count = 8;
-    }
-    if (performance.maxFPS < 30 || performance.maxFPS > 144) {
-      console.warn('[Config] maxFPS 超出范围，已重置为 60');
-      performance.maxFPS = 60;
     }
   }
 
@@ -199,6 +195,14 @@ export class Engine {
       this.camera.camera.position.z
     );
 
+    // 更新黑洞危险等级
+    if (this.scene.objects.blackhole) {
+      this.hud.updateDanger(this.scene.objects.blackhole.getDangerLevel());
+    }
+
+    // 更新跃迁特效（冲刺时触发）
+    this.hud.updateWarpEffect(this.player.getSpeed(), 100);
+
     // 渲染
     this.postprocessing.render();
   }
@@ -212,5 +216,7 @@ export class Engine {
     this.renderer.dispose();
     this.postprocessing.dispose();
     this.hud.dispose();
+    this.camera.dispose();
+    this.player.dispose();
   }
 }

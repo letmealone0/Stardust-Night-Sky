@@ -39,4 +39,11 @@ export class CameraController {
   getCamera() {
     return this.camera;
   }
+
+  /**
+   * 销毁相机
+   */
+  dispose() {
+    this.camera = null;
+  }
 }

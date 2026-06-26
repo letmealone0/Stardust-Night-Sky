@@ -10,6 +10,8 @@ import { PlanetSystem } from '../objects/planets.js';
 import { NebulaSystem } from '../objects/nebula.js';
 import { SpeedLines } from '../objects/speedlines.js';
 import { CosmicDust } from '../objects/cosmicdust.js';
+import { BlackHole } from '../objects/blackhole.js';
+import { Pulsar } from '../objects/pulsar.js';
 
 export class SceneManager {
   constructor() {
@@ -20,6 +22,8 @@ export class SceneManager {
       nebula: null,
       speedLines: null,
       cosmicDust: null,
+      blackhole: null,
+      pulsar: null,
     };
   }
 
@@ -58,6 +62,16 @@ export class SceneManager {
       this.objects.cosmicDust.init(this.scene);
     } catch (e) { console.warn('[Scene] 宇宙尘埃初始化失败:', e); }
 
+    try {
+      this.objects.blackhole = new BlackHole();
+      this.objects.blackhole.init(this.scene, camera);
+    } catch (e) { console.warn('[Scene] 黑洞初始化失败:', e); }
+
+    try {
+      this.objects.pulsar = new Pulsar();
+      this.objects.pulsar.init(this.scene);
+    } catch (e) { console.warn('[Scene] 脉冲星初始化失败:', e); }
+
     const ambientLight = new THREE.AmbientLight(0x111122, 0.5);
     this.scene.add(ambientLight);
 
@@ -72,21 +86,25 @@ export class SceneManager {
    * 更新场景
    */
   update(delta, elapsed, speed = 0) {
-    this.objects.stars.update(delta, elapsed);
-    this.objects.planets.update(delta, elapsed);
-    this.objects.nebula.update(delta, elapsed);
-    this.objects.speedLines.update(delta, speed);
-    this.objects.cosmicDust.update(delta, elapsed);
+    if (this.objects.stars) this.objects.stars.update(delta, elapsed);
+    if (this.objects.planets) this.objects.planets.update(delta, elapsed);
+    if (this.objects.nebula) this.objects.nebula.update(delta, elapsed);
+    if (this.objects.speedLines) this.objects.speedLines.update(delta, speed);
+    if (this.objects.cosmicDust) this.objects.cosmicDust.update(delta, elapsed);
+    if (this.objects.blackhole) this.objects.blackhole.update(delta, elapsed);
+    if (this.objects.pulsar) this.objects.pulsar.update(delta, elapsed);
   }
 
   /**
    * 销毁场景
    */
   dispose() {
-    this.objects.stars.dispose(this.scene);
-    this.objects.planets.dispose(this.scene);
-    this.objects.nebula.dispose(this.scene);
-    this.objects.speedLines.dispose();
-    this.objects.cosmicDust.dispose(this.scene);
+    if (this.objects.stars) this.objects.stars.dispose(this.scene);
+    if (this.objects.planets) this.objects.planets.dispose(this.scene);
+    if (this.objects.nebula) this.objects.nebula.dispose(this.scene);
+    if (this.objects.speedLines) this.objects.speedLines.dispose();
+    if (this.objects.cosmicDust) this.objects.cosmicDust.dispose(this.scene);
+    if (this.objects.blackhole) this.objects.blackhole.dispose(this.scene);
+    if (this.objects.pulsar) this.objects.pulsar.dispose(this.scene);
   }
 }

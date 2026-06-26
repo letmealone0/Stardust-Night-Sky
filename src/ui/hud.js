@@ -1,46 +1,49 @@
 /**
  * HUD 系统
- * 显示准星、速度、FPS 等信息
+ * 显示准星、速度、FPS、黑洞警告、跃迁特效
  */
 
 export class HUD {
   constructor() {
     this.elements = {};
     this.messageTimeout = null;
+    this.isWarpActive = false;
+    this.dangerLevel = 0;
   }
 
-  /**
-   * 初始化 HUD
-   */
   init() {
-    // 创建准星
     this.createCrosshair();
-
-    // 创建信息面板
     this.createInfoPanel();
-
-    // 创建消息提示
     this.createMessage();
-
-    // 创建操作提示
     this.createControlsHint();
-
+    this.createDangerOverlay();
     console.log('[HUD] HUD 初始化完成');
   }
 
-  /**
-   * 创建准星
-   */
   createCrosshair() {
     const crosshair = document.createElement('div');
     crosshair.id = 'crosshair';
     crosshair.innerHTML = `
-      <svg width="24" height="24" viewBox="0 0 24 24">
-        <circle cx="12" cy="12" r="2" fill="none" stroke="rgba(255,255,255,0.5)" stroke-width="1"/>
-        <line x1="12" y1="4" x2="12" y2="8" stroke="rgba(255,255,255,0.5)" stroke-width="1"/>
-        <line x1="12" y1="16" x2="12" y2="20" stroke="rgba(255,255,255,0.5)" stroke-width="1"/>
-        <line x1="4" y1="12" x2="8" y2="12" stroke="rgba(255,255,255,0.5)" stroke-width="1"/>
-        <line x1="16" y1="12" x2="20" y2="12" stroke="rgba(255,255,255,0.5)" stroke-width="1"/>
+      <svg width="40" height="40" viewBox="0 0 40 40">
+        <!-- 外圈 - 脉冲动画 -->
+        <circle cx="20" cy="20" r="14" fill="none" stroke="rgba(100,180,255,0.15)" stroke-width="0.5">
+          <animate attributeName="r" values="14;16;14" dur="2s" repeatCount="indefinite"/>
+          <animate attributeName="opacity" values="0.15;0.3;0.15" dur="2s" repeatCount="indefinite"/>
+        </circle>
+        <!-- 内圈 -->
+        <circle cx="20" cy="20" r="8" fill="none" stroke="rgba(150,200,255,0.3)" stroke-width="0.5"/>
+        <!-- 中心点 -->
+        <circle cx="20" cy="20" r="1.5" fill="rgba(200,220,255,0.8)"/>
+        <!-- 十字线 - 断开设计 -->
+        <line x1="20" y1="5" x2="20" y2="13" stroke="rgba(150,200,255,0.5)" stroke-width="1"/>
+        <line x1="20" y1="27" x2="20" y2="35" stroke="rgba(150,200,255,0.5)" stroke-width="1"/>
+        <line x1="5" y1="20" x2="13" y2="20" stroke="rgba(150,200,255,0.5)" stroke-width="1"/>
+        <line x1="27" y1="20" x2="35" y2="20" stroke="rgba(150,200,255,0.5)" stroke-width="1"/>
+        <!-- 角标 -->
+        <path d="M 12 8 L 8 8 L 8 12" fill="none" stroke="rgba(100,150,255,0.3)" stroke-width="0.5"/>
+        <path d="M 28 8 L 32 8 L 32 12" fill="none" stroke="rgba(100,150,255,0.3)" stroke-width="0.5" transform="rotate(0)"/>
+        <path d="M 12 32 L 8 32 L 8 28" fill="none" stroke="rgba(100,150,255,0.3)" stroke-width="0.5"/>
+        <path d="M 28 32 L 32 32 L 32 28" fill="none" stroke="rgba(100,150,255,0.3)" stroke-width="0.5"/>
       </svg>
     `;
     this.applyStyles(crosshair, {
@@ -50,15 +53,13 @@ export class HUD {
       transform: 'translate(-50%, -50%)',
       zIndex: '1000',
       pointerEvents: 'none',
-      opacity: '0.6',
+      filter: 'drop-shadow(0 0 6px rgba(100, 150, 255, 0.3))',
+      transition: 'filter 0.3s ease',
     });
     document.body.appendChild(crosshair);
     this.elements.crosshair = crosshair;
   }
 
-  /**
-   * 创建信息面板
-   */
   createInfoPanel() {
     const panel = document.createElement('div');
     panel.id = 'info-panel';
@@ -69,23 +70,28 @@ export class HUD {
       color: 'rgba(150, 200, 255, 0.8)',
       fontFamily: "'JetBrains Mono', 'Fira Code', monospace",
       fontSize: '12px',
-      lineHeight: '1.6',
+      lineHeight: '1.8',
       zIndex: '1000',
       pointerEvents: 'none',
-      textShadow: '0 0 10px rgba(100, 150, 255, 0.3)',
+      padding: '12px 16px',
+      background: 'linear-gradient(135deg, rgba(10, 20, 40, 0.4), rgba(5, 10, 20, 0.2))',
+      border: '1px solid rgba(100, 150, 255, 0.15)',
+      borderRadius: '4px',
+      backdropFilter: 'blur(4px)',
+      minWidth: '180px',
     });
     panel.innerHTML = `
-      <div id="fps">FPS: --</div>
-      <div id="speed">速度: 0.0</div>
-      <div id="position">位置: 0, 0, 0</div>
+      <div style="display: flex; align-items: center; margin-bottom: 6px;">
+        <span style="color: rgba(100, 150, 255, 0.4); font-size: 9px; letter-spacing: 3px; text-transform: uppercase;">系统状态</span>
+      </div>
+      <div id="fps" style="color: rgba(100, 255, 150, 0.7);">FPS: --</div>
+      <div id="speed" style="color: rgba(150, 200, 255, 0.8);">速度: 0.0</div>
+      <div id="position" style="color: rgba(200, 200, 255, 0.6); font-size: 11px;">位置: 0, 0, 0</div>
     `;
     document.body.appendChild(panel);
     this.elements.panel = panel;
   }
 
-  /**
-   * 创建消息提示
-   */
   createMessage() {
     const message = document.createElement('div');
     message.id = 'message';
@@ -102,15 +108,14 @@ export class HUD {
       pointerEvents: 'none',
       opacity: '0',
       transition: 'opacity 0.5s ease',
-      textShadow: '0 0 20px rgba(100, 150, 255, 0.5)',
+      textShadow: '0 0 20px rgba(100, 150, 255, 0.5), 0 0 40px rgba(100, 150, 255, 0.2)',
+      textAlign: 'center',
+      maxWidth: '600px',
     });
     document.body.appendChild(message);
     this.elements.message = message;
   }
 
-  /**
-   * 创建操作提示
-   */
   createControlsHint() {
     const hint = document.createElement('div');
     hint.id = 'controls-hint';
@@ -119,22 +124,64 @@ export class HUD {
       bottom: '20px',
       left: '50%',
       transform: 'translateX(-50%)',
-      color: 'rgba(150, 180, 220, 0.6)',
+      color: 'rgba(150, 180, 220, 0.4)',
       fontFamily: "'JetBrains Mono', 'Fira Code', monospace",
-      fontSize: '11px',
-      letterSpacing: '1px',
+      fontSize: '10px',
+      letterSpacing: '2px',
       zIndex: '1000',
       pointerEvents: 'none',
       textAlign: 'center',
+      padding: '6px 16px',
+      border: '1px solid rgba(100, 150, 255, 0.08)',
+      borderRadius: '2px',
     });
-    hint.innerHTML = 'WASD 移动 | 鼠标 视角 | 空格 上升 | Ctrl 下降 | Shift 冲刺';
+    hint.innerHTML = 'WASD 移动 · 鼠标 视角 · 空格 上升 · Ctrl 下降 · Shift 冲刺';
     document.body.appendChild(hint);
     this.elements.hint = hint;
   }
 
-  /**
-   * 显示消息
-   */
+  createDangerOverlay() {
+    const danger = document.createElement('div');
+    danger.id = 'danger-overlay';
+    this.applyStyles(danger, {
+      position: 'fixed',
+      top: '0',
+      left: '0',
+      width: '100%',
+      height: '100%',
+      pointerEvents: 'none',
+      zIndex: '997',
+      opacity: '0',
+      transition: 'opacity 0.3s ease',
+      background: 'radial-gradient(ellipse at center, transparent 40%, rgba(255, 30, 30, 0.15) 100%)',
+    });
+    document.body.appendChild(danger);
+    this.elements.dangerOverlay = danger;
+
+    // 警告文字
+    const warning = document.createElement('div');
+    warning.id = 'danger-warning';
+    this.applyStyles(warning, {
+      position: 'fixed',
+      top: '15%',
+      left: '50%',
+      transform: 'translateX(-50%)',
+      color: 'rgba(255, 80, 80, 0.8)',
+      fontFamily: "'JetBrains Mono', monospace",
+      fontSize: '14px',
+      letterSpacing: '4px',
+      zIndex: '1001',
+      pointerEvents: 'none',
+      opacity: '0',
+      transition: 'opacity 0.3s ease',
+      textShadow: '0 0 20px rgba(255, 50, 50, 0.5)',
+      textTransform: 'uppercase',
+    });
+    warning.textContent = '⚠ 引力异常区域 ⚠';
+    document.body.appendChild(warning);
+    this.elements.dangerWarning = warning;
+  }
+
   showMessage(text, duration = 3000) {
     const message = this.elements.message;
     message.textContent = text;
@@ -149,29 +196,35 @@ export class HUD {
     }, duration);
   }
 
-  /**
-   * 更新 FPS
-   */
   updateFPS(fps) {
     const fpsElement = document.getElementById('fps');
     if (fpsElement) {
       fpsElement.textContent = `FPS: ${fps}`;
+      // 根据 FPS 调整颜色
+      if (fps >= 50) {
+        fpsElement.style.color = 'rgba(100, 255, 150, 0.7)';
+      } else if (fps >= 30) {
+        fpsElement.style.color = 'rgba(255, 200, 100, 0.7)';
+      } else {
+        fpsElement.style.color = 'rgba(255, 100, 100, 0.7)';
+      }
     }
   }
 
-  /**
-   * 更新速度
-   */
   updateSpeed(speed) {
     const speedElement = document.getElementById('speed');
     if (speedElement) {
       speedElement.textContent = `速度: ${speed.toFixed(1)}`;
+
+      // 冲刺时准星发光增强
+      if (speed > 100) {
+        this.elements.crosshair.style.filter = 'drop-shadow(0 0 12px rgba(100, 150, 255, 0.6))';
+      } else {
+        this.elements.crosshair.style.filter = 'drop-shadow(0 0 6px rgba(100, 150, 255, 0.3))';
+      }
     }
   }
 
-  /**
-   * 更新位置
-   */
   updatePosition(x, y, z) {
     const positionElement = document.getElementById('position');
     if (positionElement) {
@@ -180,23 +233,57 @@ export class HUD {
   }
 
   /**
-   * 更新 HUD
+   * 更新跃迁特效
    */
-  update(delta) {
-    // 这里可以添加实时更新逻辑
+  updateWarpEffect(speed, threshold) {
+    const isActive = speed > threshold;
+    if (isActive !== this.isWarpActive) {
+      this.isWarpActive = isActive;
+      if (isActive) {
+        document.body.classList.add('warp-active');
+      } else {
+        document.body.classList.remove('warp-active');
+      }
+    }
   }
 
   /**
-   * 应用样式
+   * 更新黑洞危险等级
    */
+  updateDanger(level) {
+    if (Math.abs(level - this.dangerLevel) < 0.01) return;
+    this.dangerLevel = level;
+
+    const overlay = this.elements.dangerOverlay;
+    const warning = this.elements.dangerWarning;
+
+    if (level > 0.1) {
+      overlay.style.opacity = String(level * 0.8);
+      warning.style.opacity = String(Math.min(1, level * 1.5));
+
+      // 警告文字闪烁频率随危险等级变化
+      const blinkSpeed = Math.max(0.3, 1.5 - level);
+      warning.style.animation = `danger-blink ${blinkSpeed}s ease-in-out infinite`;
+
+      document.body.classList.add('danger-zone');
+    } else {
+      overlay.style.opacity = '0';
+      warning.style.opacity = '0';
+      warning.style.animation = 'none';
+      document.body.classList.remove('danger-zone');
+    }
+  }
+
+  update(delta) {
+    // 实时更新逻辑可在此扩展
+  }
+
   applyStyles(element, styles) {
     Object.assign(element.style, styles);
   }
 
-  /**
-   * 销毁 HUD
-   */
   dispose() {
+    document.body.classList.remove('warp-active', 'danger-zone');
     Object.values(this.elements).forEach((el) => {
       if (el && el.parentNode) {
         el.parentNode.removeChild(el);

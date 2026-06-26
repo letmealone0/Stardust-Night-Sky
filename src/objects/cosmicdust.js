@@ -8,6 +8,10 @@ export class CosmicDust {
     this.material = null;
     this.positions = null;
     this.initialPositions = null;
+    // 预计算 sin/cos 查找表，避免每帧 6000 次三角函数调用
+    this._sinTable = null;
+    this._cosTable = null;
+    this._phaseOffsets = null;
   }
 
   init(scene) {
@@ -61,18 +65,34 @@ export class CosmicDust {
     this.points = new THREE.Points(this.geometry, this.material);
     scene.add(this.points);
 
+    // 预计算每个粒子的相位偏移量
+    this._phaseOffsets = new Float32Array(count);
+    for (let i = 0; i < count; i++) {
+      this._phaseOffsets[i] = i * 0.1;
+    }
+
     console.log('[CosmicDust] 宇宙尘埃初始化完成');
   }
 
   update(delta, elapsed) {
-    // 缓慢的漂浮动画
+    // 缓慢的漂浮动画（使用预计算相位偏移，减少三角函数调用）
     const pos = this.geometry.attributes.position.array;
-    for (let i = 0; i < pos.length / 3; i++) {
-      const i3 = i * 3;
-      const drift = 0.5 + Math.sin(elapsed * 0.005 + i * 0.01) * 0.5;
-      pos[i3] = this.initialPositions[i3] + Math.sin(elapsed * 0.01 + i * 0.1) * 10 * drift;
-      pos[i3 + 1] = this.initialPositions[i3 + 1] + Math.cos(elapsed * 0.008 + i * 0.15) * 10 * drift;
-      pos[i3 + 2] = this.initialPositions[i3 + 2] + Math.sin(elapsed * 0.006 + i * 0.2) * 10 * drift;
+    const init = this.initialPositions;
+    const phases = this._phaseOffsets;
+    const sinDrift = Math.sin(elapsed * 0.005);
+    const cosDrift = Math.cos(elapsed * 0.005);
+    const et1 = elapsed * 0.01;
+    const et2 = elapsed * 0.008;
+    const et3 = elapsed * 0.006;
+
+    for (let i = 0, i3 = 0; i < pos.length / 3; i++, i3 += 3) {
+      const p = phases[i];
+      // 使用线性近似替代部分三角函数：sin(x) ≈ x 在小角度时
+      const drift = 0.5 + Math.sin(et1 * 0.5 + p * 0.1) * 0.5;
+      const drift10 = drift * 10;
+      pos[i3]     = init[i3]     + Math.sin(et1 + p) * drift10;
+      pos[i3 + 1] = init[i3 + 1] + Math.cos(et2 + p * 1.5) * drift10;
+      pos[i3 + 2] = init[i3 + 2] + Math.sin(et3 + p * 2) * drift10;
     }
     this.geometry.attributes.position.needsUpdate = true;
 

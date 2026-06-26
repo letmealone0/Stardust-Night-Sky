@@ -35,9 +35,7 @@ export class PostProcessingManager {
     const outputPass = new OutputPass();
     this.composer.addPass(outputPass);
 
-    // 启用 ACESFilmic toneMapping 以获得自然的辉光
-    this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    this.renderer.toneMappingExposure = 1.0;
+    // toneMapping 已在 RendererManager 中统一设置为 ACESFilmicToneMapping
 
     console.log('[PostProcessingManager] 后处理初始化完成（EffectComposer + Bloom + OutputPass）');
   }
