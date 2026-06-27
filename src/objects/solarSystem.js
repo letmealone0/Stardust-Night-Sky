@@ -461,14 +461,14 @@ export class SolarSystem {
   /** v9.4-tmp: 行星名字标签 */
   createNameLabel(name, radius) {
     const canvas = document.createElement('canvas');
-    canvas.width = 256;
-    canvas.height = 64;
+    canvas.width = 512;
+    canvas.height = 128;
     const ctx = canvas.getContext('2d');
     ctx.fillStyle = '#ffffff';
-    ctx.font = 'bold 28px Arial';
+    ctx.font = 'bold 52px Arial';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.fillText(name, 128, 32);
+    ctx.fillText(name, 256, 64);
     
     const texture = new THREE.CanvasTexture(canvas);
     const spriteMat = new THREE.SpriteMaterial({
@@ -478,8 +478,8 @@ export class SolarSystem {
       depthTest: false,
     });
     const sprite = new THREE.Sprite(spriteMat);
-    sprite.position.y = radius * 1.5;
-    sprite.scale.set(radius * 1.5, radius * 1.5 * 0.25, 1);
+    sprite.position.y = radius * 2.0;
+    sprite.scale.set(radius * 2.5, radius * 2.5 * 0.25, 1);
     return sprite;
   }
 
