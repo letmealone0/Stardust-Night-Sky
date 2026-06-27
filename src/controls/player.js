@@ -173,9 +173,9 @@ export class PlayerController {
     // 当前速度上限
     const currentMaxSpeed = this.maxSpeed * (1 + (this.sprintMultiplier - 1) * this.sprintFactor);
 
-    // 加速度: 按键时施加, 松键时只有阻尼
+    // 加速度: 按键时施加 (负号保持v7速度方向约定: velocity.z<0=前进)
     if (hasInput) {
-      this._tmpVec.copy(this.direction).multiplyScalar(this.accel * delta);
+      this._tmpVec.copy(this.direction).multiplyScalar(-this.accel * delta);
       this.velocity.add(this._tmpVec);
       // 限速
       const vLen = this.velocity.length();
