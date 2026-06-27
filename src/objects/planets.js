@@ -42,7 +42,7 @@ export class PlanetSystem {
       const position = findValidPosition(
         existingPositions, minDist,
         new THREE.Vector3(0, 0, 0), // 中心
-        spread * 0.15, spread * 0.95,
+        3000, 5000,  // v7.1: 远离太阳系（海王星轨道6500）
         50, 0.3
       );
 
@@ -50,7 +50,7 @@ export class PlanetSystem {
         // 找不到合法位置，使用随机位置（降级）
         const theta = Math.random() * Math.PI * 2;
         const phi = Math.acos(2 * Math.random() - 1);
-        const r = spread * (0.15 + Math.random() * 0.85);
+        const r = 3000 + Math.random() * 2000; // v7.1: 远离太阳系
         position = new THREE.Vector3(
           r * Math.sin(phi) * Math.cos(theta),
           r * Math.sin(phi) * Math.sin(theta) * 0.3,

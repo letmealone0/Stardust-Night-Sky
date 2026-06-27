@@ -239,10 +239,15 @@ export class SolarSystem {
 
     // 行星网格
     const texture = this.generatePlanetTexture(pData.name);
+    // v7.1: 增加 emissive 发光，让行星在黑暗背景中更显眼
+    const baseColor = new THREE.Color(pData.color);
+    const emissiveColor = baseColor.clone().multiplyScalar(0.3);
     const material = new THREE.MeshStandardMaterial({
       map: texture,
       roughness: 0.8,
       metalness: 0.05,
+      emissive: emissiveColor,
+      emissiveIntensity: 0.2,
     });
 
     const segments = pData.radius > 20 ? 64 : 32;
@@ -441,10 +446,13 @@ export class SolarSystem {
     const moonPivot = new THREE.Group();
 
     const texture = this.generateMoonTexture(mData.name);
+    const moonColor = new THREE.Color(mData.color);
     const material = new THREE.MeshStandardMaterial({
       map: texture,
       roughness: 0.9,
       metalness: 0.05,
+      emissive: moonColor.clone().multiplyScalar(0.15),
+      emissiveIntensity: 0.15,
     });
     const geometry = new THREE.SphereGeometry(mData.radius, 16, 16);
     const mesh = new THREE.Mesh(geometry, material);

@@ -47,6 +47,14 @@ export class Engine {
     this.scene = new SceneManager();
     await this.scene.init(this.camera.camera);
 
+    // v7.1: 调试日志 — 确认太阳系状态
+    console.log('[Engine] 太阳系状态:', this.scene.objects.solarSystem ? '已加载' : '未加载');
+    if (this.scene.objects.solarSystem) {
+      console.log('[Engine] 行星数量:', this.scene.objects.solarSystem.planets.length);
+      console.log('[Engine] 太阳系位置:', this.scene.objects.solarSystem.group.position);
+    }
+    console.log('[Engine] 粒子流状态:', this.scene.objects.particleFlow ? '已加载' : '未加载');
+
     // 创建渲染器
     this.renderer = new RendererManager();
     this.renderer.init();

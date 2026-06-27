@@ -39,11 +39,11 @@ export const config = {
     count: 4,                // 额外随机行星数量（减少，太阳系已有 8 颗）
     minRadius: 40,           // 最小半径
     maxRadius: 200,          // 最大半径
-    spread: 3000,            // 分布范围
+    spread: 5000,            // 分布范围（v7.1: 加大，远离太阳系）
     atmosphereScale: 1.15,   // 大气层缩放
-    respawnDistance: 2500,   // 超出此距离重生行星
-    respawnMin: 600,         // 重生最小距离
-    respawnMax: 1800,        // 重生最大距离
+    respawnDistance: 5500,   // 超出此距离重生行星（v7.1: 加大）
+    respawnMin: 3000,        // 重生最小距离（v7.1: 远离太阳系，海王星轨道6500）
+    respawnMax: 5000,        // 重生最大距离（v7.1: 远离太阳系）
   },
 
   // ---- 太阳系 ----
@@ -90,17 +90,17 @@ export const config = {
 
   // ---- 速度线 ----
   speedLines: {
-    count: 300,              // 数量
+    count: 500,              // 数量（v7.1: 增加）
     minRadius: 1.5,          // 最小分布半径
-    maxRadius: 13.5,         // 最大分布半径
-    minLength: 10,           // 最短线长
-    maxLength: 50,           // 最长线长
+    maxRadius: 15.0,         // 最大分布半径（v7.1: 稍大）
+    minLength: 12,           // 最短线长（v7.1: 更长）
+    maxLength: 60,           // 最长线长（v7.1: 更长）
     zStart: -85,             // 起始 Z 距离
     zEnd: -15,               // 结束 Z 距离
     speedThreshold: 2,       // 显示阈值
-    opacityTarget: 0.9,      // 最大透明度（冲刺时更强）
+    opacityTarget: 1.0,      // 最大透明度（v7.1: 更亮）
     opacitySpeed: 0.2,       // 透明度过渡速度
-    moveFactor: 15,          // 移动速度系数（冲刺时线段更快）
+    moveFactor: 18,          // 移动速度系数（v7.1: 更快）
   },
 
   // ---- 黑洞系统 ----
@@ -140,7 +140,7 @@ export const config = {
 
   // ---- 全方向粒子流 ----
   particleFlow: {
-    count: 3000,               // 粒子数（跟随相机的流动粒子）
+    count: 5000,               // 粒子数（v7.1: 大幅增加，增强穿越感）
   },
 
   // ---- 性能优化 ----
