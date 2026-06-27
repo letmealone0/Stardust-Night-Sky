@@ -439,26 +439,23 @@ export class PlanetSystem {
    */
   update(delta, elapsed) {
     const cfg = config.planets;
+    if (!this.camera) return; // v9.3: 提前检查，不在循环内
+
     this.planets.forEach((planet) => {
       const data = planet.userData;
-
-      if (!this.camera) return;
-
       const dist = planet.position.distanceTo(this.camera.position);
 
       // 行星重生：离相机太远时在新位置重生
       if (dist > cfg.respawnDistance) {
         this.respawnPlanet(planet, cfg);
-        return; // 本帧跳过详细更新，下帧开始正常渲染
+        return;
       }
 
-      // 距离裁剪：太远的行星跳过详细更新（匹配更大行星）
-      if (dist > 4000) return;
-
+      // v9.3: 移除距离裁剪(原 dist>4000 会跳过远处行星的轨道更新)
       data.lod.update(this.camera);
       data.atmLod.update(this.camera);
 
-      // 自转（遍历 LOD levels 的所有子网格）
+      // 自转
       if (data.lod) {
         for (let i = 0; i < data.lod.levels.length; i++) {
           const mesh = data.lod.levels[i].object;
@@ -466,10 +463,10 @@ export class PlanetSystem {
         }
       }
 
-      // 公转（小幅 15%，大行星不宜剧烈摆动）
+      // 公转 (v9.3: 增强幅度×0.4, 原×0.15太微弱)
       data.orbitAngle += data.orbitSpeed;
-      planet.position.x = data.originalPosition.x + Math.cos(data.orbitAngle) * data.orbitRadius * 0.15;
-      planet.position.z = data.originalPosition.z + Math.sin(data.orbitAngle) * data.orbitRadius * 0.15;
+      planet.position.x = data.originalPosition.x + Math.cos(data.orbitAngle) * data.orbitRadius * 0.4;
+      planet.position.z = data.originalPosition.z + Math.sin(data.orbitAngle) * data.orbitRadius * 0.4;
     });
   }
 
