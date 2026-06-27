@@ -62,8 +62,8 @@ export class PlanetSystem {
     const geoMed  = new THREE.SphereGeometry(radius, 32, 32);
     const geoLow  = new THREE.SphereGeometry(radius, 16, 16);
     lod.addLevel(new THREE.Mesh(geoHigh, material), 0);
-    lod.addLevel(new THREE.Mesh(geoMed, material), 500);
-    lod.addLevel(new THREE.Mesh(geoLow, material), 1200);
+    lod.addLevel(new THREE.Mesh(geoMed, material), 800);
+    lod.addLevel(new THREE.Mesh(geoLow, material), 2000);
     group.add(lod);
 
     // 大气层（带 LOD）
@@ -72,8 +72,8 @@ export class PlanetSystem {
     const atmMed  = this.createAtmosphere(radius, 32);
     const atmLow  = this.createAtmosphere(radius, 16);
     atmLod.addLevel(atmHigh, 0);
-    atmLod.addLevel(atmMed, 500);
-    atmLod.addLevel(atmLow, 1200);
+    atmLod.addLevel(atmMed, 800);
+    atmLod.addLevel(atmLow, 2000);
     group.add(atmLod);
 
     // 行星环（随机）
@@ -412,8 +412,8 @@ export class PlanetSystem {
         return; // 本帧跳过详细更新，下帧开始正常渲染
       }
 
-      // 距离裁剪：太远的行星跳过详细更新
-      if (dist > 2000) return;
+      // 距离裁剪：太远的行星跳过详细更新（匹配更大行星）
+      if (dist > 4000) return;
 
       data.lod.update(this.camera);
       data.atmLod.update(this.camera);
@@ -426,10 +426,10 @@ export class PlanetSystem {
         }
       }
 
-      // 公转（幅度加大到 30%，更易察觉）
+      // 公转（小幅 15%，大行星不宜剧烈摆动）
       data.orbitAngle += data.orbitSpeed;
-      planet.position.x = data.originalPosition.x + Math.cos(data.orbitAngle) * data.orbitRadius * 0.3;
-      planet.position.z = data.originalPosition.z + Math.sin(data.orbitAngle) * data.orbitRadius * 0.3;
+      planet.position.x = data.originalPosition.x + Math.cos(data.orbitAngle) * data.orbitRadius * 0.15;
+      planet.position.z = data.originalPosition.z + Math.sin(data.orbitAngle) * data.orbitRadius * 0.15;
     });
   }
 

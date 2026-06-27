@@ -91,7 +91,7 @@ export class BlackHole {
   }
 
   createAccretionDisk(cfg) {
-    const particleCount = 5000;
+    const particleCount = 8000; // 更多粒子填充更大吸积盘
     const positions = new Float32Array(particleCount * 3);
     const colors = new Float32Array(particleCount * 3);
 
@@ -141,7 +141,7 @@ export class BlackHole {
   }
 
   createJets(cfg) {
-    const jetCount = 400;
+    const jetCount = 600; // 更多粒子填充更长喷流
     const positions = new Float32Array(jetCount * 2 * 3);
     const colors = new Float32Array(jetCount * 2 * 3);
 

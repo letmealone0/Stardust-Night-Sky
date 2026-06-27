@@ -7,7 +7,7 @@ export const config = {
   // ---- 相机系统 ----
   camera: {
     fov: 75,
-    near: 0.1,
+    near: 1,                 // 近裁剪面加大，防止靠近大行星穿模
     far: 20000,              // 加大远裁剪面，匹配扩大后的星空范围
     startPosition: { x: 0, y: 0, z: 100 },
   },
@@ -37,10 +37,10 @@ export const config = {
   // ---- 行星系统 ----
   planets: {
     count: 8,                // 行星数量
-    minRadius: 10,           // 最小半径
-    maxRadius: 60,           // 最大半径
-    spread: 3000,            // 分布范围（加大，星体更分散）
-    atmosphereScale: 1.2,    // 大气层缩放
+    minRadius: 40,           // 最小半径（加大，飞近时有存在感）
+    maxRadius: 200,          // 最大半径（巨型行星充满视野）
+    spread: 3000,            // 分布范围
+    atmosphereScale: 1.15,   // 大气层缩放（略收紧，大行星比例更协调）
     respawnDistance: 2500,   // 超出此距离重生行星
     respawnMin: 600,         // 重生最小距离
     respawnMax: 1800,        // 重生最大距离
@@ -49,7 +49,7 @@ export const config = {
   // ---- 星云效果（体积光线步进）----
   nebula: {
     count: 4,                // 星云数量
-    scale: 600,              // 体积边界盒大小
+    scale: 1200,             // 体积边界盒大小（翻倍，穿越感更强）
     opacity: 1.0,            // 基础透明度（Shader 内部控制衰减）
     colors: [
       { r: 0.3, g: 0.1, b: 0.6 },  // 深紫
@@ -57,9 +57,9 @@ export const config = {
       { r: 0.6, g: 0.15, b: 0.25 },// 暗红
       { r: 0.15, g: 0.5, b: 0.4 }, // 青绿
     ],
-    respawnDistance: 3500,   // 超出此距离重生星云（scale*6 安全余量）
-    respawnMin: 1200,        // 重生最小距离
-    respawnMax: 2500,        // 重生最大距离
+    respawnDistance: 5000,   // 超出此距离重生星云（匹配更大 scale）
+    respawnMin: 2000,        // 重生最小距离
+    respawnMax: 4000,        // 重生最大距离
   },
 
   // ---- 后处理效果 ----
@@ -99,14 +99,14 @@ export const config = {
 
   // ---- 黑洞系统 ----
   blackhole: {
-    eventHorizonRadius: 15,    // 事件视界半径
-    accretionInnerRadius: 25,  // 吸积盘内半径
-    accretionOuterRadius: 100, // 吸积盘外半径（加大）
+    eventHorizonRadius: 25,    // 事件视界半径（加大）
+    accretionInnerRadius: 40,  // 吸积盘内半径（加大）
+    accretionOuterRadius: 200, // 吸积盘外半径（加大，更壮观）
     position: { x: 800, y: 50, z: -600 }, // 位置
-    dangerRadius: 400,         // 危险区域半径（加大）
-    pullRadius: 200,           // 引力影响半径（加大）
-    pullStrength: 80,          // 引力强度（增强）
-    jetLength: 250,            // 喷流长度（加长）
+    dangerRadius: 600,         // 危险区域半径（加大）
+    pullRadius: 300,           // 引力影响半径（加大）
+    pullStrength: 80,          // 引力强度
+    jetLength: 400,            // 喷流长度（加长，更远可见）
     absorbRadius: 80,          // 行星吸收半径
     respawnDistance: 3000,     // 超出此距离重生黑洞
     respawnMin: 800,           // 重生最小距离
@@ -115,8 +115,8 @@ export const config = {
 
   // ---- 脉冲星系统 ----
   pulsar: {
-    radius: 3,                 // 半径
-    beamLength: 150,           // 光束长度
+    radius: 5,                 // 半径（加大）
+    beamLength: 300,           // 光束长度（翻倍，更远可见）
     rotationSpeed: 5,          // 旋转速度（弧度/秒）
     position: { x: -500, y: 100, z: 400 }, // 位置
     color: { r: 0.5, g: 0.8, b: 1.0 },    // 颜色
@@ -134,6 +134,6 @@ export const config = {
 
   // ---- 性能优化 ----
   performance: {
-    lodDistances: [0, 300, 800], // LOD 距离阈值
+    lodDistances: [0, 800, 2000], // LOD 距离阈值（匹配更大行星）
   },
 };

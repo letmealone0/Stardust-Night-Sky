@@ -72,6 +72,8 @@ export class Pulsar {
           uTime: { value: 0 },
           uColor: { value: new THREE.Color(cfg.color.r, cfg.color.g, cfg.color.b) },
           uDirection: { value: direction },
+          uBeamHalfLen: { value: cfg.beamLength / 2 },
+          uBeamRadius: { value: cfg.radius * 2 },
         },
         vertexShader: `
           varying vec3 vPosition;
@@ -88,14 +90,16 @@ export class Pulsar {
           uniform float uTime;
           uniform vec3 uColor;
           uniform float uDirection;
+          uniform float uBeamHalfLen;
+          uniform float uBeamRadius;
           void main() {
             // 沿光束方向的衰减
-            float t = abs(vPosition.y) / 75.0;
+            float t = abs(vPosition.y) / uBeamHalfLen;
             float beam = 1.0 - t;
             beam = pow(max(0.0, beam), 2.0);
 
             // 径向衰减
-            float radial = 1.0 - length(vPosition.xz) / 6.0;
+            float radial = 1.0 - length(vPosition.xz) / uBeamRadius;
             radial = max(0.0, radial);
 
             // 脉冲
