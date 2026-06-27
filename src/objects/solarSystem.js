@@ -38,7 +38,7 @@ const MOON_DATA = {
 };
 
 // 时间缩放：1 秒游戏时间 = 多少天
-const TIME_SCALE = 0.5; // 每秒 0.5 天，一年约 730 秒
+const TIME_SCALE = 30; // v9.3: 地球公转~12秒，肉眼可见
 
 export class SolarSystem {
   constructor() {
