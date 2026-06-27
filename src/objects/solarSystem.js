@@ -8,17 +8,16 @@ import { config } from '../core/config.js';
 import { fbm3D } from '../utils/noise.js'; // 仍用于卫星纹理生成
 import { getPlanetTextures, loadAllPlanetTextures } from './planetTextures.js';
 
-// ---- 行星数据（轨道半径、半径、公转周期、自转周期、倾角、偏心率）----
-// v8.0: 行星半径 ×1.5，轨道微扩，增强可见性
+// v9.2: 轨道+大小按真实比例修正（兼顾可玩性）
 const PLANET_DATA = [
-  { name: 'Mercury', orbitRadius: 500,   radius: 12,   orbitPeriod: 88,     rotationPeriod: 58.6,  tilt: 0.03,  eccentricity: 0.21, color: '#8c7e6d' },
-  { name: 'Venus',   orbitRadius: 800,   radius: 18,   orbitPeriod: 225,    rotationPeriod: -243,  tilt: 177.4,  eccentricity: 0.007, color: '#c8a44e' },
+  { name: 'Mercury', orbitRadius: 450,   radius: 8,    orbitPeriod: 88,     rotationPeriod: 58.6,  tilt: 0.03,  eccentricity: 0.21, color: '#8c7e6d' },
+  { name: 'Venus',   orbitRadius: 750,   radius: 17,   orbitPeriod: 225,    rotationPeriod: -243,  tilt: 177.4,  eccentricity: 0.007, color: '#c8a44e' },
   { name: 'Earth',   orbitRadius: 1100,  radius: 20,   orbitPeriod: 365,    rotationPeriod: 1,     tilt: 23.4,   eccentricity: 0.017, color: '#2b5ea7' },
-  { name: 'Mars',    orbitRadius: 1500,  radius: 15,   orbitPeriod: 687,    rotationPeriod: 1.03,  tilt: 25.2,   eccentricity: 0.093, color: '#c1440e' },
-  { name: 'Jupiter', orbitRadius: 2600,  radius: 50,   orbitPeriod: 4333,   rotationPeriod: 0.41,  tilt: 3.1,    eccentricity: 0.049, color: '#c4a46a' },
-  { name: 'Saturn',  orbitRadius: 4000,  radius: 40,   orbitPeriod: 10759,  rotationPeriod: 0.44,  tilt: 26.7,   eccentricity: 0.057, color: '#b8a060' },
-  { name: 'Uranus',  orbitRadius: 5500,  radius: 20,   orbitPeriod: 30687,  rotationPeriod: -0.72, tilt: 97.8,   eccentricity: 0.046, color: '#7ec8c8' },
-  { name: 'Neptune', orbitRadius: 7000,  radius: 19,   orbitPeriod: 60190,  rotationPeriod: 0.67,  tilt: 28.3,   eccentricity: 0.010, color: '#3d5fc4' },
+  { name: 'Mars',    orbitRadius: 1600,  radius: 11,   orbitPeriod: 687,    rotationPeriod: 1.03,  tilt: 25.2,   eccentricity: 0.093, color: '#c1440e' },
+  { name: 'Jupiter', orbitRadius: 4000,  radius: 65,   orbitPeriod: 4333,   rotationPeriod: 0.41,  tilt: 3.1,    eccentricity: 0.049, color: '#c4a46a' },
+  { name: 'Saturn',  orbitRadius: 6500,  radius: 55,   orbitPeriod: 10759,  rotationPeriod: 0.44,  tilt: 26.7,   eccentricity: 0.057, color: '#b8a060' },
+  { name: 'Uranus',  orbitRadius: 9000,  radius: 28,   orbitPeriod: 30687,  rotationPeriod: -0.72, tilt: 97.8,   eccentricity: 0.046, color: '#7ec8c8' },
+  { name: 'Neptune', orbitRadius: 12000, radius: 26,   orbitPeriod: 60190,  rotationPeriod: 0.67,  tilt: 28.3,   eccentricity: 0.010, color: '#3d5fc4' },
 ];
 
 // ---- 卫星数据 ----
@@ -363,8 +362,8 @@ export class SolarSystem {
 
   createAsteroidBelt() {
     const count = 600;
-    const innerR = 1800;  // 火星轨道（1500）之后
-    const outerR = 2300;  // 木星轨道（2600）之前
+    const innerR = 2000;  // 火星轨道(1600)之后
+    const outerR = 3500;  // 木星轨道(4000)之前
     const positions = new Float32Array(count * 3);
     const colors = new Float32Array(count * 3);
     const sizes = new Float32Array(count);
