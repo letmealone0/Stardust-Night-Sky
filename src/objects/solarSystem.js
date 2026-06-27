@@ -137,9 +137,11 @@ export class SolarSystem {
       map: tex?.map || null,
       normalMap: tex?.normalMap || null,
       roughnessMap: tex?.roughnessMap || null,
-      roughness: isGas ? 0.35 : 0.5, // v9.5: 降低粗糙度,纹理更鲜明
+      roughness: isGas ? 0.35 : 0.5,
       metalness: 0.05,
-      color: tex?.map ? 0xffffff : new THREE.Color(pData.color), // v9.5: 有纹理=白色, 无纹理=回退色
+      color: tex?.map ? 0xffffff : new THREE.Color(pData.color),
+      emissive: tex?.map ? new THREE.Color(0x111111) : new THREE.Color(0x000000),
+      emissiveIntensity: 0.6,
     };
 
     // 岩石行星: displacementMap
