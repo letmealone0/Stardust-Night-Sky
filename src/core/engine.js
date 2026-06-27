@@ -35,6 +35,8 @@ export class Engine {
     this.qualityLevel = 1.0; // 1.0 = 全画质, 0.5 = 降质
     this.warmupTime = (config.performance?.warmupSeconds || 3);
     this.warmupStartElapsed = 0;
+    // v9.5: 暂停所有天体运动
+    this.isMotionFrozen = false;
   }
 
   /**
@@ -138,6 +140,14 @@ export class Engine {
       this.isPaused = true;
       this.hud.showMessage('点击屏幕继续探索');
     });
+
+    // v9.5: P键暂停/恢复所有天体运动
+    window.addEventListener('keydown', (e) => {
+      if (e.code === 'KeyP') {
+        this.isMotionFrozen = !this.isMotionFrozen;
+        this.hud.showMessage(this.isMotionFrozen ? '⏸ 天体运动已暂停' : '▶ 天体运动已恢复');
+      }
+    });
   }
 
   /**
@@ -222,9 +232,14 @@ export class Engine {
       return;
     }
 
-    // 更新系统
-    this.player.update(delta);
-    this.scene.update(delta, elapsed, this.player.getSpeed(), this.player.getVelocity());
+    // 更新系统 (v9.5: P键暂停时传入delta=0冻结天体运动)
+    this.player.update(this.isMotionFrozen ? 0 : delta);
+    this.scene.update(
+      this.isMotionFrozen ? 0 : delta,
+      elapsed,
+      this.player.getSpeed(),
+      this.player.getVelocity()
+    );
     this.hud.update(delta);
 
     // 更新 HUD 信息

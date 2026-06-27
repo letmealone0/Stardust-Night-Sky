@@ -147,7 +147,7 @@ export class HUD {
       border: '1px solid rgba(100, 150, 255, 0.08)',
       borderRadius: '2px',
     });
-    hint.innerHTML = 'WASD 移动 · 鼠标 视角 · 空格 上升 · C 下降 · Shift 冲刺';
+    hint.innerHTML = 'WASD 移动 · 鼠标 视角 · 空格 上升 · C 下降 · Shift 冲刺 · P 暂停';
     document.body.appendChild(hint);
     this.elements.hint = hint;
   }

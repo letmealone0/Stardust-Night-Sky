@@ -139,7 +139,7 @@ export class SolarSystem {
       roughnessMap: tex?.roughnessMap || null,
       roughness: isGas ? 0.4 : 0.7,
       metalness: 0.05,
-      color: new THREE.Color(pData.color), // v9.1: 纹理缺失时颜色回退
+      color: tex?.map ? 0xffffff : new THREE.Color(pData.color), // v9.5: 有纹理=白色, 无纹理=回退色
     };
 
     // 岩石行星: displacementMap
