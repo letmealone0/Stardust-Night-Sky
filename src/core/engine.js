@@ -272,11 +272,11 @@ export class Engine {
    */
   dispose() {
     this.stop();
-    this.scene.dispose();
-    this.renderer.dispose();
-    this.postprocessing.dispose();
-    this.hud.dispose();
-    this.camera.dispose();
-    this.player.dispose();
+    if (this.scene) this.scene.dispose();
+    if (this.renderer) this.renderer.dispose();
+    if (this.postprocessing) this.postprocessing.dispose();
+    if (this.hud) this.hud.dispose();
+    if (this.camera) this.camera.dispose();
+    if (this.player) this.player.dispose();
   }
 }

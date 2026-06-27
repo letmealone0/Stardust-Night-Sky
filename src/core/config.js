@@ -8,20 +8,27 @@ export const config = {
   camera: {
     fov: 75,
     near: 1,
-    far: 200000,             // v8.6: 匹配银河尺度(粒子可达~123000单位)
-    startPosition: { x: 0, y: 20, z: 350 }, // v8.2: 水星轨道内侧，太阳系清晰可见
+    far: 200000,
+    startPosition: { x: 0, y: 30, z: 1200 }, // v9.0: 地球轨道外侧，朝向太阳
   },
 
-  // ---- 玩家控制 ----
+  // ---- 玩家控制 (v9.0: 惯性飞行系统) ----
   player: {
-    moveSpeed: 50,           // 基础移动速度
-    sprintMultiplier: 4.0,   // 冲刺倍数（增强加速感）
-    sprintFovBoost: 18,      // 冲刺时 FOV 增加量（v8.0: 增强）
-    mouseSensitivity: 0.002, // 鼠标灵敏度
-    damping: 0.05,           // 移动阻尼
-    cameraShake: true,       // v8.0: 冲刺镜头抖动
-    shakeAmplitude: 1.2,     // v8.0: 抖动幅度
-    shakeFrequency: 8.0,     // v8.0: 抖动频率 (Hz)
+    // 加速度 (单位/s²)
+    accel: 200,              // 线性加速度
+    decelDamping: 0.94,      // 松键阻尼 (每帧指数衰减, 0.94≈3秒衰减到1%)
+    // 速度上限
+    maxSpeed: 80,            // 普通模式最大速度
+    sprintMultiplier: 3.0,   // 冲刺倍数 (maxSpeed × 3 = 240)
+    // FOV
+    sprintFovBoost: 25,      // 冲刺FOV增量 (75+25=100)
+    mouseSensitivity: 0.002,
+    // 限速
+    proximitySlowdown: true, // 接近行星自动限速
+    // 镜头抖动
+    cameraShake: true,
+    shakeAmplitude: 1.5,
+    shakeFrequency: 10.0,
   },
 
   // ---- 星空背景 ----
@@ -62,11 +69,11 @@ export const config = {
 
   // ---- 太阳系 ----
   solarSystem: {
-    sunRadius: 120,          // 太阳半径
-    timeScale: 0.5,          // 时间缩放
-    sunLightIntensity: 4.0,  // 太阳点光源强度
-    sunLightRange: 20000,    // 太阳点光源范围
-    planetEmissiveIntensity: 0.6, // v8.2: 行星自发光增强
+    sunRadius: 120,
+    timeScale: 0.5,
+    sunLightIntensity: 5.0,  // v9.0: PBR材质需要更强光照
+    sunLightRange: 25000,
+    ambientIntensity: 0.05,  // v9.0: 微弱环境光防死黑
   },
 
   // ---- 星云效果（体积光线步进）----
@@ -85,17 +92,17 @@ export const config = {
   // ---- 后处理效果 ----
   postprocessing: {
     bloom: {
-      strength: 0.9,         // v8.0: 微调辉光强度
-      radius: 0.3,           // 辉光半径
-      threshold: 0.55,       // v8.0: 降低阈值，让更多物体发光
+      strength: 0.7,         // v9.0: 适中辉光，突出太阳
+      radius: 0.4,           // v9.0
+      threshold: 0.65,       // v9.0: 仅太阳/亮行星发光
     },
     vignette: {
-      offset: 0.5,           // 暗角偏移
-      darkness: 0.3,         // 暗角深度
+      offset: 0.5,
+      darkness: 0.25,        // v9.0: 轻微暗角
     },
-    motionBlur: {            // v8.0: 运动模糊（仅冲刺时）
-      strength: 0.08,        // 模糊强度
-      samples: 3,            // 采样次数
+    filmGrain: {             // v9.0: 可选胶片颗粒
+      enabled: false,
+      strength: 0.03,
     },
   },
 

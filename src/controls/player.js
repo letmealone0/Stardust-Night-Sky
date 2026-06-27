@@ -26,15 +26,16 @@ export class PlayerController {
     this.velocity = new THREE.Vector3();
     this.direction = new THREE.Vector3();
 
-    // 配置
-    this.moveSpeed = config.player.moveSpeed;
-    this.sprintMultiplier = config.player.sprintMultiplier;
-    this.sprintFovBoost = config.player.sprintFovBoost || 15;
-    this.damping = config.player.damping;
+    // v9.0: 惯性飞行配置
+    this.accel = config.player.accel || 200;
+    this.decelDamping = config.player.decelDamping || 0.94;
+    this.maxSpeed = config.player.maxSpeed || 80;
+    this.sprintMultiplier = config.player.sprintMultiplier || 3.0;
+    this.sprintFovBoost = config.player.sprintFovBoost || 25;
     this.baseFov = config.camera.fov;
 
-    // 冲刺状态（用于平滑过渡）
-    this.sprintFactor = 0; // 0=正常, 1=完全冲刺
+    this.sprintFactor = 0;
+    this._tmpVec = new THREE.Vector3();
   }
 
   /**
@@ -150,61 +151,94 @@ export class PlayerController {
   }
 
   /**
-   * 更新玩家位置
+   * v9.0: 惯性飞行 — 加速度+阻尼模型
    */
   update(delta) {
     if (!this.controls.isLocked) return;
 
-    // 计算移动方向
-    this.direction.z = Number(this.moveForward) - Number(this.moveBackward);
-    this.direction.x = Number(this.moveRight) - Number(this.moveLeft);
-    this.direction.y = Number(this.moveUp) - Number(this.moveDown);
-    if (this.direction.lengthSq() > 0) this.direction.normalize();
+    // 移动方向 (归一化)
+    this.direction.set(
+      Number(this.moveRight) - Number(this.moveLeft),
+      Number(this.moveUp) - Number(this.moveDown),
+      Number(this.moveForward) - Number(this.moveBackward)
+    );
+    const hasInput = this.direction.lengthSq() > 0;
+    if (hasInput) this.direction.normalize();
 
-    // 计算目标速度（不含 delta，后面移动时再乘）
-    const speed = this.sprint ? this.moveSpeed * this.sprintMultiplier : this.moveSpeed;
-
-    // 冲刺因子平滑过渡（ease-in-out）
+    // 冲刺因子平滑
     const sprintTarget = this.sprint ? 1.0 : 0.0;
-    const sprintSpeed = this.sprint ? 6.0 : 3.0; // 解除冲刺更快
-    this.sprintFactor += (sprintTarget - this.sprintFactor) * Math.min(1, delta * sprintSpeed);
+    const sprintRate = this.sprint ? 6.0 : 3.0;
+    this.sprintFactor += (sprintTarget - this.sprintFactor) * Math.min(1, delta * sprintRate);
 
-    // 帧率无关阻尼：使用指数衰减
-    const dampFactor = Math.pow(1 - this.damping, delta * 60);
-    this.velocity.x *= dampFactor;
-    this.velocity.y *= dampFactor;
-    this.velocity.z *= dampFactor;
+    // 当前速度上限
+    const currentMaxSpeed = this.maxSpeed * (1 + (this.sprintMultiplier - 1) * this.sprintFactor);
 
-    // 应用移动（velocity = 方向 × 速度，不含 delta）
-    if (this.moveForward || this.moveBackward) {
-      this.velocity.z = -this.direction.z * speed;
-    }
-    if (this.moveLeft || this.moveRight) {
-      this.velocity.x = -this.direction.x * speed;
-    }
-    if (this.moveUp || this.moveDown) {
-      this.velocity.y = this.direction.y * speed;
+    // 加速度: 按键时施加, 松键时只有阻尼
+    if (hasInput) {
+      this._tmpVec.copy(this.direction).multiplyScalar(this.accel * delta);
+      this.velocity.add(this._tmpVec);
+      // 限速
+      const vLen = this.velocity.length();
+      if (vLen > currentMaxSpeed) {
+        this.velocity.multiplyScalar(currentMaxSpeed / vLen);
+      }
+    } else {
+      // 松键: 指数阻尼衰减
+      this.velocity.multiplyScalar(this.decelDamping);
+      if (this.velocity.lengthSq() < 0.01) this.velocity.set(0, 0, 0);
     }
 
-    // 移动相机（只在这里乘一次 delta）
+    // v9.0: 接近行星表面自动限速
+    if (config.player.proximitySlowdown !== false) {
+      this.applyProximitySlowdown(delta, currentMaxSpeed);
+    }
+
+    // 移动相机
     this.controls.moveRight(-this.velocity.x * delta);
     this.controls.moveForward(-this.velocity.z * delta);
     this.camera.position.y += this.velocity.y * delta;
 
-    // 冲刺 FOV 效果（使用平滑的 sprintFactor）
-    const targetFov = this.baseFov + this.sprintFovBoost * this.sprintFactor;
+    // 动态FOV (速度线性映射: 75→100)
+    const speedFraction = Math.min(this.velocity.length() / currentMaxSpeed, 1.0);
+    const targetFov = this.baseFov + this.sprintFovBoost * speedFraction;
     const fovDamp = 1 - Math.pow(0.001, delta);
     this.camera.fov += (targetFov - this.camera.fov) * fovDamp;
     this.camera.updateProjectionMatrix();
 
-    // v8.0: 冲刺镜头抖动（穿越感）
-    if (config.player.cameraShake !== false && this.sprintFactor > 0.01) {
-      const shakeAmp = (config.player.shakeAmplitude || 1.2) * this.sprintFactor;
-      const shakeFreq = config.player.shakeFrequency || 8.0;
+    // 冲刺镜头抖动
+    if (config.player.cameraShake !== false && speedFraction > 0.3) {
+      const shakeAmp = (config.player.shakeAmplitude || 1.5) * speedFraction;
+      const shakeFreq = config.player.shakeFrequency || 10.0;
       const t = performance.now() * 0.001;
       this.camera.position.x += Math.sin(t * shakeFreq) * shakeAmp * delta;
       this.camera.position.y += Math.cos(t * shakeFreq * 1.3) * shakeAmp * delta * 0.7;
-      this.camera.position.z += Math.sin(t * shakeFreq * 0.7 + 0.5) * shakeAmp * delta * 0.5;
+    }
+  }
+
+  /** v9.0: 接近行星表面自动限速 */
+  applyProximitySlowdown(delta, currentMaxSpeed) {
+    // 从引擎获取行星位置（通过domElement上的引用）
+    const engine = window.engine;
+    if (!engine || !engine.scene || !engine.scene.objects.solarSystem) return;
+    const planets = engine.scene.objects.solarSystem.planets;
+    if (!planets) return;
+
+    let minDistToSurface = Infinity;
+    planets.forEach(p => {
+      const planetWorldPos = new THREE.Vector3();
+      p.group.getWorldPosition(planetWorldPos);
+      const dist = this.camera.position.distanceTo(planetWorldPos);
+      const surfDist = dist - p.data.radius;
+      if (surfDist < minDistToSurface) minDistToSurface = surfDist;
+    });
+
+    if (minDistToSurface < 500 && minDistToSurface > 0) {
+      const factor = Math.max(0.1, minDistToSurface / 500);
+      const speedLimit = currentMaxSpeed * factor;
+      const vLen = this.velocity.length();
+      if (vLen > speedLimit) {
+        this.velocity.multiplyScalar(speedLimit / vLen);
+      }
     }
   }
 

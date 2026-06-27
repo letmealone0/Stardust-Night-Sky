@@ -84,7 +84,7 @@ export class SceneManager {
 
     try {
       this.objects.solarSystem = new SolarSystem();
-      this.objects.solarSystem.init(this.scene, camera);
+      await this.objects.solarSystem.init(this.scene, camera);
       this.objects.solarSystem.setCamera(camera);
     } catch (e) { console.warn('[Scene] 太阳系初始化失败:', e); }
 
@@ -93,15 +93,11 @@ export class SceneManager {
       this.objects.particleFlow.init(this.scene, camera);
     } catch (e) { console.warn('[Scene] 粒子流初始化失败:', e); }
 
-    const ambientLight = new THREE.AmbientLight(0x111122, 0.4);
+    // v9.0: 微弱环境光 — 仅防暗部死黑，太阳是主光源
+    const ambientLight = new THREE.AmbientLight(0x111133, config.solarSystem.ambientIntensity || 0.05);
     this.scene.add(ambientLight);
 
-    // 通用补光（太阳系有独立光源，这里只提供基础照明）
-    const pointLight = new THREE.PointLight(0xffeedd, 0.3, 5000);
-    pointLight.position.set(100, 50, 100);
-    this.scene.add(pointLight);
-
-    console.log('[SceneManager] 场景初始化完成');
+    console.log('[SceneManager] v9.0 PBR场景初始化完成');
   }
 
   /**

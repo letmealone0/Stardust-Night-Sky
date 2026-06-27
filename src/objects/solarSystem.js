@@ -5,7 +5,8 @@
 
 import * as THREE from 'three';
 import { config } from '../core/config.js';
-import { noise2D, noise3D, fbm2D, fbm3D, turbulence2D } from '../utils/noise.js';
+import { fbm3D } from '../utils/noise.js'; // 仍用于卫星纹理生成
+import { getPlanetTextures, loadAllPlanetTextures } from './planetTextures.js';
 
 // ---- 行星数据（轨道半径、半径、公转周期、自转周期、倾角、偏心率）----
 // v8.0: 行星半径 ×1.5，轨道微扩，增强可见性
@@ -48,11 +49,15 @@ export class SolarSystem {
     this.sunMaterial = null;
     this.camera = null;
     this._tempVec = new THREE.Vector3();
+    this._textures = null; // v9.0: 纹理缓存
   }
 
-  init(scene, camera) {
+  async init(scene, camera) {
     this.camera = camera;
     const cfg = config.solarSystem;
+
+    // v9.0: 先加载纹理
+    this._textures = await loadAllPlanetTextures();
 
     // 太阳
     this.createSun(cfg);
@@ -62,14 +67,11 @@ export class SolarSystem {
       this.createPlanet(pData, cfg);
     });
 
-    // v8.0: 小行星带（火星与木星之间）
     this.createAsteroidBelt();
-
-    // v8.0: 太阳耀斑粒子
     this.createSunFlares(cfg);
 
     scene.add(this.group);
-    console.log('[SolarSystem] 太阳系初始化完成（太阳 + 8 行星 + 卫星 + 小行星带）');
+    console.log('[SolarSystem] v9.0 PBR纹理太阳系初始化完成');
   }
 
   setCamera(camera) {
@@ -80,194 +82,101 @@ export class SolarSystem {
 
   createSun(cfg) {
     const sunGeo = new THREE.SphereGeometry(cfg.sunRadius, 64, 64);
-    this.sunMaterial = new THREE.ShaderMaterial({
-      uniforms: {
-        uTime: { value: 0 },
-      },
-      vertexShader: `
-        varying vec2 vUv;
-        varying vec3 vNormal;
-        void main() {
-          vUv = uv;
-          vNormal = normalize(normalMatrix * normal);
-          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-        }
-      `,
-      fragmentShader: `
-        precision highp float;
-        varying vec2 vUv;
-        varying vec3 vNormal;
-        uniform float uTime;
 
-        float hash(vec2 p) {
-          return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
-        }
-        float noise(vec2 p) {
-          vec2 i = floor(p);
-          vec2 f = fract(p);
-          f = f * f * (3.0 - 2.0 * f);
-          float a = hash(i);
-          float b = hash(i + vec2(1,0));
-          float c = hash(i + vec2(0,1));
-          float d = hash(i + vec2(1,1));
-          return mix(mix(a,b,f.x), mix(c,d,f.x), f.y);
-        }
-        float fbm(vec2 p) {
-          float v = 0.0, a = 0.5;
-          for (int i = 0; i < 5; i++) {
-            v += a * noise(p); p *= 2.02; a *= 0.5;
-          }
-          return v;
-        }
-        float turbulence2D_manual(vec2 p) {
-          float v = 0.0, a = 0.5;
-          for (int i = 0; i < 5; i++) {
-            v += abs(noise(p) * 2.0 - 1.0) * a; p *= 2.02; a *= 0.5;
-          }
-          return v;
-        }
-
-        void main() {
-          vec2 uv = vUv;
-          float t = uTime * 0.05;
-
-          // 多层湍流纹理
-          float n1 = fbm(uv * 8.0 + t * 0.3);
-          float n2 = fbm(uv * 16.0 - t * 0.2 + 100.0);
-          float n3 = turbulence2D_manual(uv * 12.0 + t * 0.15);
-
-          // 基色：亮黄 → 橙色渐变
-          vec3 baseColor = mix(
-            vec3(1.0, 0.9, 0.3),
-            vec3(1.0, 0.6, 0.1),
-            n1
-          );
-
-          // 暗区（日斑区域）
-          float spots = smoothstep(0.55, 0.65, n2);
-          baseColor = mix(baseColor, vec3(0.6, 0.2, 0.05), spots * 0.5);
-
-          // 亮区（高温等离子体）
-          float bright = smoothstep(0.6, 0.8, n3);
-          baseColor = mix(baseColor, vec3(1.0, 1.0, 0.8), bright * 0.4);
-
-          // 边缘变暗（模拟球体光照）
-          float rim = dot(vNormal, vec3(0.0, 0.0, 1.0));
-          baseColor *= 0.7 + 0.3 * max(0.0, rim);
-
-          gl_FragColor = vec4(baseColor, 1.0);
-        }
-      `,
+    // v9.0: 使用真实太阳纹理 + MeshBasicMaterial (不参与光照)
+    const tex = this._textures?.get('Sun');
+    const sunTex = tex?.map || null;
+    this.sunMaterial = new THREE.MeshBasicMaterial({
+      map: sunTex,
+      color: sunTex ? 0xffffff : 0xffdd88, // 有纹理=纯白, 无纹理=备用色
     });
 
     this.sun = new THREE.Mesh(sunGeo, this.sunMaterial);
     this.group.add(this.sun);
 
-    // 太阳点光源（v8.0: 增强光照范围和强度，让行星可见）
-    const sunLight = new THREE.PointLight(0xfff5e0, cfg.sunLightIntensity || 4.0, cfg.sunLightRange || 20000);
+    // 太阳点光源 (v9.0: 场景唯一主光源)
+    const sunLight = new THREE.PointLight(0xfff5e0, cfg.sunLightIntensity || 5.0, cfg.sunLightRange || 25000);
     sunLight.position.set(0, 0, 0);
     this.group.add(sunLight);
 
-    // 太阳光晕
+    // 太阳光晕 (AdditiveBlending)
     const glowGeo = new THREE.SphereGeometry(cfg.sunRadius * 1.5, 32, 32);
     const glowMat = new THREE.ShaderMaterial({
       uniforms: {},
-      vertexShader: `
-        varying vec3 vNormal;
-        void main() {
-          vNormal = normalize(normalMatrix * normal);
-          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-        }
-      `,
-      fragmentShader: `
-        varying vec3 vNormal;
-        void main() {
-          float intensity = pow(0.65 - dot(vNormal, vec3(0,0,1)), 2.0);
-          gl_FragColor = vec4(1.0, 0.8, 0.3, intensity * 0.6);
-        }
-      `,
-      blending: THREE.AdditiveBlending,
-      side: THREE.BackSide,
-      transparent: true,
-      depthWrite: false,
+      vertexShader: `varying vec3 vNormal; void main() { vNormal = normalize(normalMatrix * normal); gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
+      fragmentShader: `varying vec3 vNormal; void main() { float intensity = pow(0.65 - dot(vNormal, vec3(0,0,1)), 2.0); gl_FragColor = vec4(1.0, 0.8, 0.3, intensity * 0.5); }`,
+      blending: THREE.AdditiveBlending, side: THREE.BackSide, transparent: true, depthWrite: false,
     });
     this.group.add(new THREE.Mesh(glowGeo, glowMat));
 
-    // 日冕（外层辉光，更大范围）
-    const coronaGeo = new THREE.SphereGeometry(cfg.sunRadius * 3, 32, 32);
-    const coronaMat = new THREE.ShaderMaterial({
-      uniforms: {
-        uTime: { value: 0 },
-      },
-      vertexShader: `
-        varying vec3 vNormal;
-        varying vec3 vWorldPos;
-        void main() {
-          vNormal = normalize(normalMatrix * normal);
-          vWorldPos = (modelMatrix * vec4(position, 1.0)).xyz;
-          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-        }
-      `,
-      fragmentShader: `
-        varying vec3 vNormal;
-        uniform float uTime;
-        void main() {
-          float rim = 1.0 - max(0.0, dot(vNormal, vec3(0,0,1)));
-          float intensity = pow(rim, 4.0);
-          // 脉动
-          float pulse = 0.8 + sin(uTime * 0.5) * 0.2;
-          // 日冕颜色：外层偏红橙
-          vec3 coronaColor = mix(vec3(1.0, 0.6, 0.2), vec3(1.0, 0.3, 0.1), rim);
-          gl_FragColor = vec4(coronaColor, intensity * 0.25 * pulse);
-        }
-      `,
-      blending: THREE.AdditiveBlending,
-      side: THREE.BackSide,
-      transparent: true,
-      depthWrite: false,
+    // 日冕
+    const coronaGeo = new THREE.SphereGeometry(cfg.sunRadius * 4, 32, 32);
+    this.coronaMaterial = new THREE.ShaderMaterial({
+      uniforms: { uTime: { value: 0 } },
+      vertexShader: `varying vec3 vNormal; void main() { vNormal = normalize(normalMatrix * normal); gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
+      fragmentShader: `varying vec3 vNormal; uniform float uTime; void main() { float rim = 1.0 - max(0.0, dot(vNormal, vec3(0,0,1))); float intensity = pow(rim, 4.0); float pulse = 0.8 + sin(uTime * 0.5) * 0.2; vec3 c = mix(vec3(1.0, 0.6, 0.2), vec3(1.0, 0.3, 0.1), rim); gl_FragColor = vec4(c, intensity * 0.2 * pulse); }`,
+      blending: THREE.AdditiveBlending, side: THREE.BackSide, transparent: true, depthWrite: false,
     });
-    this.coronaMaterial = coronaMat;
-    this.group.add(new THREE.Mesh(coronaGeo, coronaMat));
+    this.group.add(new THREE.Mesh(coronaGeo, this.coronaMaterial));
   }
 
   // ==================== 行星 ====================
 
-  createPlanet(pData, cfg) {
-    // 轨道枢轴（绕 Y 轴旋转 = 公转）
+  createPlanet(pData) {
     const orbitPivot = new THREE.Group();
-
-    // 行星组（偏移 + 倾斜）
     const planetGroup = new THREE.Group();
     planetGroup.position.x = pData.orbitRadius;
-
-    // 轴倾角（度→弧度）
     const tiltRad = (pData.tilt * Math.PI) / 180;
     planetGroup.rotation.z = tiltRad;
 
-    // v8.1: 生成颜色+凹凸+粗糙度贴图
-    const textures = this.generatePlanetTexture(pData.name);
-    const baseColor = new THREE.Color(pData.color);
-    const emissiveColor = baseColor.clone().multiplyScalar(0.5);
-    const material = new THREE.MeshStandardMaterial({
-      map: textures.map,
-      bumpMap: textures.bumpMap,
-      bumpScale: pData.radius * 0.015,
-      roughnessMap: textures.roughnessMap,
-      roughness: 0.8,
+    // v9.0: PBR材质 — 加载真实纹理
+    const tex = this._textures?.get(pData.name);
+    const isRocky = ['Mercury', 'Venus', 'Earth', 'Mars'].includes(pData.name);
+    const isGas = ['Jupiter', 'Saturn', 'Uranus', 'Neptune'].includes(pData.name);
+
+    const matOpts = {
+      map: tex?.map || null,
+      normalMap: tex?.normalMap || null,
+      roughnessMap: tex?.roughnessMap || null,
+      roughness: isGas ? 0.4 : 0.7,
       metalness: 0.05,
-      emissive: emissiveColor,
-      emissiveIntensity: cfg.planetEmissiveIntensity || 0.6,
-    });
+    };
+
+    // 岩石行星: displacementMap
+    if (isRocky && tex?.normalMap) {
+      matOpts.displacementMap = tex.normalMap; // 法线贴图兼做位移
+      matOpts.displacementScale = pData.radius * 0.02;
+    }
+
+    const material = new THREE.MeshStandardMaterial(matOpts);
 
     const segments = pData.radius > 20 ? 64 : 32;
     const geometry = new THREE.SphereGeometry(pData.radius, segments, segments);
     const mesh = new THREE.Mesh(geometry, material);
     planetGroup.add(mesh);
 
-    // 大气层（类地行星 + 气态行星）
-    if (['Venus', 'Earth', 'Mars', 'Jupiter', 'Saturn', 'Uranus', 'Neptune'].includes(pData.name)) {
-      const atm = this.createAtmosphere(pData);
-      planetGroup.add(atm);
+    // 特化行星细节
+    if (pData.name === 'Earth') {
+      // 云层球体 (独立自转)
+      if (tex?.cloudMap) {
+        const cloudGeo = new THREE.SphereGeometry(pData.radius * 1.02, 32, 32);
+        const cloudMat = new THREE.MeshStandardMaterial({
+          map: tex.cloudMap,
+          transparent: true,
+          opacity: 0.35,
+          depthWrite: false,
+          roughness: 1.0,
+          metalness: 0,
+        });
+        const cloudMesh = new THREE.Mesh(cloudGeo, cloudMat);
+        cloudMesh.userData.isCloud = true;
+        planetGroup.add(cloudMesh);
+      }
+      // 大气层菲涅尔辉光
+      this.addFresnelAtmosphere(planetGroup, pData.radius, new THREE.Color(0.3, 0.5, 1.0));
+    } else if (isGas || pData.name === 'Venus') {
+      this.addFresnelAtmosphere(planetGroup, pData.radius,
+        new THREE.Color(pData.color).multiplyScalar(0.6));
     }
 
     // 土星环
@@ -275,8 +184,6 @@ export class SolarSystem {
       const ring = this.createSaturnRing(pData.radius);
       planetGroup.add(ring);
     }
-
-    // 天王星环（较暗淡）
     if (pData.name === 'Uranus') {
       const ring = this.createUranusRing(pData.radius);
       planetGroup.add(ring);
@@ -285,7 +192,6 @@ export class SolarSystem {
     // 轨道线
     const orbitLine = this.createOrbitLine(pData.orbitRadius);
     orbitPivot.add(orbitLine);
-
     orbitPivot.add(planetGroup);
 
     // 卫星
@@ -300,15 +206,27 @@ export class SolarSystem {
     this.group.add(orbitPivot);
 
     this.planets.push({
-      group: planetGroup,
-      orbitPivot,
-      data: pData,
-      mesh,
-      material,
-      moons,
-      angle: Math.random() * Math.PI * 2, // 初始公转角
-      rotAngle: 0,
+      group: planetGroup, orbitPivot, data: pData, mesh, material, moons,
+      angle: Math.random() * Math.PI * 2, rotAngle: 0,
     });
+  }
+
+  /** v9.0: 菲涅尔大气边缘辉光 */
+  addFresnelAtmosphere(group, radius, color) {
+    const atmGeo = new THREE.SphereGeometry(radius * 1.06, 32, 32);
+    const atmMat = new THREE.ShaderMaterial({
+      uniforms: { uColor: { value: color } },
+      vertexShader: `varying vec3 vNormal; varying vec3 vWorldPos;
+        void main() { vNormal = normalize(normalMatrix * normal); vWorldPos = (modelMatrix * vec4(position,1.0)).xyz;
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }`,
+      fragmentShader: `varying vec3 vNormal; varying vec3 vWorldPos; uniform vec3 uColor;
+        void main() { vec3 viewDir = normalize(cameraPosition - vWorldPos);
+        float rim = 1.0 - max(0.0, dot(viewDir, vNormal));
+        float alpha = pow(rim, 3.0) * 0.5;
+        gl_FragColor = vec4(uColor * rim, alpha); }`,
+      blending: THREE.AdditiveBlending, side: THREE.BackSide, transparent: true, depthWrite: false,
+    });
+    group.add(new THREE.Mesh(atmGeo, atmMat));
   }
 
   createAtmosphere(pData) {
@@ -591,22 +509,15 @@ export class SolarSystem {
   // ==================== 更新 ====================
 
   update(delta, elapsed) {
-    // 太阳自转 + shader 动画
-    if (this.sun) {
-      this.sun.rotation.y += delta * 0.05;
-    }
-    if (this.sunMaterial) {
-      this.sunMaterial.uniforms.uTime.value = elapsed;
-    }
     // 日冕动画
     if (this.coronaMaterial) {
       this.coronaMaterial.uniforms.uTime.value = elapsed;
     }
-    // v8.0: 小行星带缓慢旋转
+    // 小行星带
     if (this.asteroidBelt && this.asteroidBelt.pivot) {
       this.asteroidBelt.pivot.rotation.y += delta * 0.02;
     }
-    // v8.0: 太阳耀斑脉冲
+    // 太阳耀斑
     if (this.sunFlares && this.sunFlares.material) {
       this.sunFlares.material.opacity = 0.35 + Math.sin(elapsed * 2.5) * 0.2;
     }
@@ -614,18 +525,24 @@ export class SolarSystem {
     // 行星
     this.planets.forEach((planet) => {
       const d = planet.data;
-
-      // 公转
       const orbitSpeed = (2 * Math.PI) / (d.orbitPeriod / TIME_SCALE);
       planet.angle += orbitSpeed * delta;
       planet.orbitPivot.rotation.y = planet.angle;
 
-      // 自转
       const rotSpeed = (2 * Math.PI) / (Math.abs(d.rotationPeriod) * 10);
       planet.rotAngle += rotSpeed * delta * Math.sign(d.rotationPeriod);
       planet.mesh.rotation.y = planet.rotAngle;
 
-      // 卫星公转
+      // v9.0: 地球云层独立自转
+      if (d.name === 'Earth') {
+        planet.group.children.forEach(child => {
+          if (child.userData && child.userData.isCloud) {
+            child.rotation.y += delta * 0.03;
+          }
+        });
+      }
+
+      // 卫星
       planet.moons.forEach((moon) => {
         const moonSpeed = (2 * Math.PI) / (moon.data.orbitPeriod / TIME_SCALE);
         moon.angle += moonSpeed * delta;
