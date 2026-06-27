@@ -39,7 +39,8 @@ export class SceneManager {
     this.camera = camera;
     this.scene = new THREE.Scene();
     this.scene.background = new THREE.Color(0x000005);
-    this.scene.fog = new THREE.FogExp2(0x000005, 0.00003); // v7.1: 降低雾密度，让太阳系行星可见
+    // v8.1: 线性雾 — near=3000开始衰减, far=45000完全雾化（匹配银河距离）
+    this.scene.fog = new THREE.Fog(0x000005, 3000, 45000);
 
     // 逐个初始化，失败不阻断整体流程
     try {

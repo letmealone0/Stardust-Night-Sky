@@ -9,7 +9,7 @@ export const config = {
     fov: 75,
     near: 1,
     far: 50000,              // v8.1: 更远裁剪面匹配银河距离
-    startPosition: { x: 1090, y: 30, z: 5 }, // v8.1: 地球轨道附近出发
+    startPosition: { x: 0, y: 40, z: 1150 }, // v8.1: Z轴地球轨道距离，默认视角(-Z)正对太阳
   },
 
   // ---- 玩家控制 ----
