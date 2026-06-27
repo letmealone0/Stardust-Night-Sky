@@ -7,9 +7,9 @@ export const config = {
   // ---- 相机系统 ----
   camera: {
     fov: 75,
-    near: 1,                 // 近裁剪面加大，防止靠近大行星穿模
-    far: 20000,              // 加大远裁剪面，匹配扩大后的星空范围
-    startPosition: { x: 0, y: 0, z: 100 },
+    near: 1,
+    far: 50000,              // v8.1: 更远裁剪面匹配银河距离
+    startPosition: { x: 1090, y: 30, z: 5 }, // v8.1: 地球轨道附近出发
   },
 
   // ---- 玩家控制 ----
@@ -35,16 +35,16 @@ export const config = {
       { count: 2500, depth: 0.5, size: [0.15, 0.3] },
       { count: 1500, depth: 1.0, size: [0.2, 0.5] },
     ],
-    // v8.0: 银河系背景配置
+    // v8.1: 银河系背景配置 — 远距离壮丽天幕
     galaxy: {
-      count: 12000,            // 银河粒子数（v8.0: 增加但平衡性能）
+      count: 15000,            // 银河粒子数
       armCount: 5,            // 旋臂数
       spin: 2.5,              // 螺旋紧密度
       armSpread: 0.25,        // 旋臂散开度
-      position: { x: 0, y: -3000, z: -8000 },
-      tilt: 30,               // 倾斜角度（度）
-      scale: 2.0,             // 整体缩放
-      hazeCount: 2000,        // 雾气粒子数
+      position: { x: 0, y: -12000, z: -28000 }, // v8.1: 极远处天幕
+      tilt: 55,               // v8.1: 更倾斜，横跨视野
+      scale: 6.0,             // v8.1: 大幅放大
+      hazeCount: 2500,        // 雾气粒子数
     },
   },
 

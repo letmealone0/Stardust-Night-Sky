@@ -244,13 +244,15 @@ export class SolarSystem {
     const tiltRad = (pData.tilt * Math.PI) / 180;
     planetGroup.rotation.z = tiltRad;
 
-    // 行星网格
-    const texture = this.generatePlanetTexture(pData.name);
-    // v8.0: 增强 emissive，让行星在黑暗背景中非常显眼
+    // v8.1: 生成颜色+凹凸+粗糙度贴图
+    const textures = this.generatePlanetTexture(pData.name);
     const baseColor = new THREE.Color(pData.color);
     const emissiveColor = baseColor.clone().multiplyScalar(0.5);
     const material = new THREE.MeshStandardMaterial({
-      map: texture,
+      map: textures.map,
+      bumpMap: textures.bumpMap,
+      bumpScale: pData.radius * 0.015,
+      roughnessMap: textures.roughnessMap,
       roughness: 0.8,
       metalness: 0.05,
       emissive: emissiveColor,
@@ -636,9 +638,14 @@ export class SolarSystem {
 
   // ==================== 纹理生成 ====================
 
+  /**
+   * v8.1: 生成颜色贴图 + 凹凸贴图 + 粗糙度贴图
+   */
   generatePlanetTexture(name) {
-    // v8.0: 降低纹理分辨率（512→128K像素，原1024→524K）大幅提升启动性能
     const w = 512, h = 256;
+    const bw = 256, bh = 128; // 凹凸贴图半分辨率即可
+
+    // 颜色画布
     const canvas = document.createElement('canvas');
     canvas.width = w;
     canvas.height = h;
@@ -646,34 +653,89 @@ export class SolarSystem {
     const imageData = ctx.createImageData(w, h);
     const data = imageData.data;
 
+    // 凹凸画布
+    const bumpCanvas = document.createElement('canvas');
+    bumpCanvas.width = bw;
+    bumpCanvas.height = bh;
+    const bumpCtx = bumpCanvas.getContext('2d');
+    const bumpImageData = bumpCtx.createImageData(bw, bh);
+    const bumpData = bumpImageData.data;
+
+    // 粗糙度画布（仅地球等类地行星需要）
+    const roughCanvas = document.createElement('canvas');
+    roughCanvas.width = bw;
+    roughCanvas.height = bh;
+    const roughCtx = roughCanvas.getContext('2d');
+    const roughImageData = roughCtx.createImageData(bw, bh);
+    const roughData = roughImageData.data;
+
+    const scaleX = bw / w;
+    const scaleY = bh / h;
+
     for (let y = 0; y < h; y++) {
       for (let x = 0; x < w; x++) {
         const u = x / w;
         const v = y / h;
-        // 转为球面 3D 坐标（减少极点失真）
         const lon = u * Math.PI * 2;
         const lat = v * Math.PI;
         const sx = Math.sin(lat) * Math.cos(lon);
         const sy = Math.cos(lat);
         const sz = Math.sin(lat) * Math.sin(lon);
 
-        const [r, g, b] = this.samplePlanetColor(name, u, v, sx, sy, sz);
+        const result = this.samplePlanetData(name, u, v, sx, sy, sz);
+        const [r, g, b] = result.color;
+        const height = result.height != null ? result.height : 0.5;
+        const roughness = result.roughness != null ? result.roughness : 0.7;
+
+        // 写入颜色
         const idx = (y * w + x) * 4;
         data[idx] = r;
         data[idx + 1] = g;
         data[idx + 2] = b;
         data[idx + 3] = 255;
+
+        // 写入凹凸（半分辨率）
+        const bx = Math.floor(x * scaleX);
+        const by = Math.floor(y * scaleY);
+        const bidx = (by * bw + bx) * 4;
+        const bumpVal = Math.round(height * 255);
+        bumpData[bidx] = bumpVal;
+        bumpData[bidx + 1] = bumpVal;
+        bumpData[bidx + 2] = bumpVal;
+        bumpData[bidx + 3] = 255;
+
+        // 写入粗糙度
+        const roughVal = Math.round(roughness * 255);
+        roughData[bidx] = roughVal;
+        roughData[bidx + 1] = roughVal;
+        roughData[bidx + 2] = roughVal;
+        roughData[bidx + 3] = 255;
       }
     }
 
     ctx.putImageData(imageData, 0, 0);
-    const texture = new THREE.CanvasTexture(canvas);
-    texture.wrapS = THREE.RepeatWrapping;
-    texture.wrapT = THREE.ClampToEdgeWrapping;
-    return texture;
+    bumpCtx.putImageData(bumpImageData, 0, 0);
+    roughCtx.putImageData(roughImageData, 0, 0);
+
+    const colorTex = new THREE.CanvasTexture(canvas);
+    colorTex.wrapS = THREE.RepeatWrapping;
+    colorTex.wrapT = THREE.ClampToEdgeWrapping;
+
+    const bumpTex = new THREE.CanvasTexture(bumpCanvas);
+    bumpTex.wrapS = THREE.RepeatWrapping;
+    bumpTex.wrapT = THREE.ClampToEdgeWrapping;
+
+    const roughTex = new THREE.CanvasTexture(roughCanvas);
+    roughTex.wrapS = THREE.RepeatWrapping;
+    roughTex.wrapT = THREE.ClampToEdgeWrapping;
+
+    return { map: colorTex, bumpMap: bumpTex, roughnessMap: roughTex, hasBump: true };
   }
 
-  samplePlanetColor(name, u, v, sx, sy, sz) {
+  /**
+   * v8.1: 采样行星数据（颜色 + 高度 + 粗糙度）
+   */
+  samplePlanetData(name, u, v, sx, sy, sz) {
     switch (name) {
       case 'Mercury': return this._mercury(u, v, sx, sy, sz);
       case 'Venus':   return this._venus(u, v, sx, sy, sz);
@@ -683,19 +745,23 @@ export class SolarSystem {
       case 'Saturn':  return this._saturn(u, v, sx, sy, sz);
       case 'Uranus':  return this._uranus(u, v, sx, sy, sz);
       case 'Neptune': return this._neptune(u, v, sx, sy, sz);
-      default:        return [128, 128, 128];
+      default:        return { color: [128, 128, 128], height: 0.5, roughness: 0.8 };
     }
+  }
+
+  samplePlanetColor(name, u, v, sx, sy, sz) {
+    return this.samplePlanetData(name, u, v, sx, sy, sz).color;
   }
 
   // ---- 水星：灰色，密布陨石坑 ----
   _mercury(u, v, sx, sy, sz) {
     const base = 110 + fbm3D(sx * 4, sy * 4, sz * 4, 5) * 50;
-    // 陨石坑
     const crater = fbm3D(sx * 12, sy * 12, sz * 12, 4);
     const craterEdge = Math.abs(crater - 0.5) < 0.03 ? -30 : 0;
     const craterFloor = crater > 0.6 ? -15 : 0;
     const v2 = Math.max(60, Math.min(200, base + craterEdge + craterFloor));
-    return [v2, v2 * 0.95, v2 * 0.9];
+    const h = 0.2 + (v2 / 200) * 0.5 + (Math.abs(crater - 0.5) < 0.03 ? 0.25 : 0);
+    return { color: [v2, v2 * 0.95, v2 * 0.9], height: h, roughness: 0.7 };
   }
 
   // ---- 金星：黄白色大气云纹 ----
@@ -704,124 +770,113 @@ export class SolarSystem {
     const n2 = fbm3D(sx * 6 + 20, sy * 6, sz * 6, 4);
     const swirl = fbm3D(sx * 2 + n1 * 2, sy * 2 + n2 * 2, sz * 2, 4);
     const base = 180 + swirl * 60;
-    return [
-      Math.min(255, base + 10),
-      Math.min(255, base * 0.88),
-      Math.min(255, base * 0.55),
-    ];
+    return {
+      color: [Math.min(255, base + 10), Math.min(255, base * 0.88), Math.min(255, base * 0.55)],
+      height: 0.3 + swirl * 0.5,
+      roughness: 0.4
+    };
   }
 
-  // ---- 地球：海洋 + 大陆 + 冰盖 ----
+  // ---- 地球：海洋 + 大陆 + 冰盖 + 云层 + 凹凸 ----
   _earth(u, v, sx, sy, sz) {
-    // 大陆形状（3D 噪声 → 球面映射，无极点失真）
     const continent = fbm3D(sx * 2.5, sy * 2.5, sz * 2.5, 6, 2.0, 0.55);
     const detail = fbm3D(sx * 8, sy * 8, sz * 8, 4) * 0.15;
     const height = continent + detail;
-
-    // 冰盖（靠近极地）
-    const polar = Math.abs(sy); // sy = cos(lat)，极地接近 1
+    const polar = Math.abs(sy);
     const iceCap = polar > 0.75 ? (polar - 0.75) / 0.25 : 0;
 
-    // 海洋
+    let r, g, b, roughness;
+
     if (height < 0.42) {
       const depth = (0.42 - height) / 0.42;
-      const r = 20 + depth * 10;
-      const g = 50 + (1 - depth) * 40;
-      const b = 140 + (1 - depth) * 60;
-      // 浅海区域更亮
-      if (height > 0.38) return [r + 20, g + 30, b - 20];
-      return [r, g, b];
+      r = 20 + depth * 10; g = 50 + (1 - depth) * 40; b = 140 + (1 - depth) * 60;
+      if (height > 0.38) { r += 20; g += 30; b -= 20; }
+      roughness = 0.1 + depth * 0.15;
+    } else if (height < 0.44) {
+      r = 190 + Math.random() * 20; g = 175 + Math.random() * 15; b = 120 + Math.random() * 20;
+      roughness = 0.35;
+    } else {
+      const landN = fbm3D(sx * 5 + 50, sy * 5, sz * 5, 4);
+      if (height < 0.55) { r = 40 + landN * 30; g = 80 + landN * 80; b = 25 + landN * 15; roughness = 0.55; }
+      else if (height < 0.65) { r = 100 + landN * 40; g = 85 + landN * 30; b = 50 + landN * 20; roughness = 0.65; }
+      else { const m = Math.min(255, 140 + landN * 60); r = m; g = m * 0.9; b = m * 0.8; roughness = 0.8; }
     }
 
-    // 海滩
-    if (height < 0.44) {
-      return [190 + Math.random() * 20, 175 + Math.random() * 15, 120 + Math.random() * 20];
+    if (iceCap > 0) {
+      r = Math.min(255, r + iceCap * (255 - r) * 0.8);
+      g = Math.min(255, g + iceCap * (255 - g) * 0.7);
+      b = Math.min(255, b + iceCap * (255 - b) * 0.5);
+      roughness = roughness * (1 - iceCap * 0.7);
     }
 
-    // 陆地
-    const landN = fbm3D(sx * 5 + 50, sy * 5, sz * 5, 4);
-    if (height < 0.55) {
-      // 草地/森林
-      const g = 80 + landN * 80;
-      return [40 + landN * 30, g, 25 + landN * 15];
+    // 云层叠加（白色噪点）
+    const cloud = fbm3D(sx * 6 + 42, sy * 6, sz * 6, 3);
+    if (cloud > 0.55 && height > 0.3) {
+      const ca = (cloud - 0.55) / 0.45 * 0.25;
+      r = Math.min(255, r + ca * (255 - r));
+      g = Math.min(255, g + ca * (255 - g));
+      b = Math.min(255, b + ca * (255 - b));
     }
-    if (height < 0.65) {
-      // 丘陵
-      return [100 + landN * 40, 85 + landN * 30, 50 + landN * 20];
-    }
-    // 山脉
-    const mountain = Math.min(255, 140 + landN * 60);
-    return [mountain, mountain * 0.9, mountain * 0.8];
+
+    return { color: [r, g, b], height: Math.min(1, height), roughness };
   }
 
-  // ---- 火星：红褐色 + 极冠 ----
+  // ---- 火星：红褐色 + 极冠 + 凹凸 ----
   _mars(u, v, sx, sy, sz) {
     const base = fbm3D(sx * 3, sy * 3, sz * 3, 5);
     const detail = fbm3D(sx * 10, sy * 10, sz * 10, 4) * 0.2;
     const height = base + detail;
-
     const polar = Math.abs(sy);
     if (polar > 0.82) {
-      // 极冠（白色冰）
       const ice = (polar - 0.82) / 0.18;
       const v2 = 180 + ice * 70;
-      return [v2, v2, v2 + 5];
+      return { color: [v2, v2, v2 + 5], height: 0.9, roughness: 0.08 };
     }
-
-    // 地表
     const r = 150 + height * 70;
     const g = 80 + height * 40;
     const b = 40 + height * 25;
-    // 暗区（火山平原）
     const dark = fbm3D(sx * 6 + 30, sy * 6, sz * 6, 3);
-    if (dark > 0.6) return [r * 0.7, g * 0.7, b * 0.7];
-    return [r, g, b];
+    const rough = 0.5 + height * 0.4;
+    if (dark > 0.6) return { color: [r * 0.7, g * 0.7, b * 0.7], height: height * 0.8, roughness: rough };
+    return { color: [r, g, b], height, roughness: rough };
   }
 
-  // ---- 木星：横向条带 + 大红斑 ----
+  // ---- 木星：横向条带 + 大红斑 + 凹凸 ----
   _jupiter(u, v, sx, sy, sz) {
-    const lat = sy; // -1 到 1
-    // 条带
+    const lat = sy;
     const bands = Math.sin(lat * 18) * 0.5 + 0.5;
     const bandWarp = fbm3D(sx * 4, sy * 1.5, sz * 4, 3) * 0.3;
     const bandVal = bands + bandWarp;
 
-    // 颜色映射
     let r, g, b;
-    if (bandVal > 0.6) {
-      r = 210; g = 185; b = 140; // 亮带
-    } else if (bandVal > 0.4) {
-      r = 185; g = 150; b = 100; // 中间
-    } else {
-      r = 150; g = 115; b = 75;  // 暗带
-    }
+    if (bandVal > 0.6) { r = 210; g = 185; b = 140; }
+    else if (bandVal > 0.4) { r = 185; g = 150; b = 100; }
+    else { r = 150; g = 115; b = 75; }
 
-    // 细节湍流
     const turb = fbm3D(sx * 8, sy * 3, sz * 8, 4);
-    r += (turb - 0.5) * 30;
-    g += (turb - 0.5) * 25;
-    b += (turb - 0.5) * 20;
+    r += (turb - 0.5) * 30; g += (turb - 0.5) * 25; b += (turb - 0.5) * 20;
 
-    // 大红斑（在特定经纬度附近）
     const spotU = 0.65, spotV = 0.55;
     const spotLon = (u - spotU) * 8;
     const spotLat = (v - spotV) * 16;
     const spotDist = Math.sqrt(spotLon * spotLon + spotLat * spotLat);
     if (spotDist < 1.0) {
-      const spotBlend = 1 - spotDist;
-      r = r + (190 - r) * spotBlend * 0.7;
-      g = g + (80 - g) * spotBlend * 0.6;
-      b = b + (60 - b) * spotBlend * 0.5;
+      const sb = 1 - spotDist;
+      r = r + (190 - r) * sb * 0.7;
+      g = g + (80 - g) * sb * 0.6;
+      b = b + (60 - b) * sb * 0.5;
     }
 
-    return [
-      Math.max(0, Math.min(255, r)),
-      Math.max(0, Math.min(255, g)),
-      Math.max(0, Math.min(255, b)),
-    ];
+    const height = 0.3 + bandVal * 0.5 + turb * 0.2;
+    const rough = 0.25 + Math.abs(bandVal - 0.5) * 0.3;
+
+    return {
+      color: [Math.max(0, Math.min(255, r)), Math.max(0, Math.min(255, g)), Math.max(0, Math.min(255, b))],
+      height, roughness: rough
+    };
   }
 
-  // ---- 土星：米黄色条带 ----
+  // ---- 土星：米黄色条带 + 凹凸 ----
   _saturn(u, v, sx, sy, sz) {
     const lat = sy;
     const bands = Math.sin(lat * 14) * 0.5 + 0.5;
@@ -832,31 +887,30 @@ export class SolarSystem {
     let g = 170 + bandVal * 25;
     let b = 120 + bandVal * 20;
 
-    // 细节
     const detail = fbm3D(sx * 10, sy * 4, sz * 10, 3);
-    r += (detail - 0.5) * 20;
-    g += (detail - 0.5) * 18;
-    b += (detail - 0.5) * 15;
+    r += (detail - 0.5) * 20; g += (detail - 0.5) * 18; b += (detail - 0.5) * 15;
 
-    return [
-      Math.max(0, Math.min(255, r)),
-      Math.max(0, Math.min(255, g)),
-      Math.max(0, Math.min(255, b)),
-    ];
+    const height = 0.35 + bandVal * 0.4;
+    const rough = 0.3 + Math.abs(bandVal - 0.5) * 0.25;
+
+    return {
+      color: [Math.max(0, Math.min(255, r)), Math.max(0, Math.min(255, g)), Math.max(0, Math.min(255, b))],
+      height, roughness: rough
+    };
   }
 
-  // ---- 天王星：淡蓝绿色，几乎均匀 ----
+  // ---- 天王星：淡蓝绿色 + 微凹凸 ----
   _uranus(u, v, sx, sy, sz) {
     const n = fbm3D(sx * 4, sy * 4, sz * 4, 4);
     const band = Math.sin(sy * 6) * 0.03;
-    return [
-      Math.min(255, 120 + n * 25 + band * 20),
-      Math.min(255, 195 + n * 20 + band * 15),
-      Math.min(255, 195 + n * 20 + band * 10),
-    ];
+    return {
+      color: [Math.min(255, 120 + n * 25 + band * 20), Math.min(255, 195 + n * 20 + band * 15), Math.min(255, 195 + n * 20 + band * 10)],
+      height: 0.4 + n * 0.3,
+      roughness: 0.4
+    };
   }
 
-  // ---- 海王星：深蓝色条带 ----
+  // ---- 海王星：深蓝色条带 + 凹凸 ----
   _neptune(u, v, sx, sy, sz) {
     const lat = sy;
     const bands = Math.sin(lat * 10) * 0.5 + 0.5;
@@ -866,17 +920,16 @@ export class SolarSystem {
     let g = 70 + (bands + warp) * 25;
     let b = 160 + (bands + warp) * 40;
 
-    // 暗斑
     const spot = fbm3D(sx * 6 + 40, sy * 6, sz * 6, 3);
-    if (spot > 0.65) {
-      r *= 0.7; g *= 0.7; b *= 0.85;
-    }
+    if (spot > 0.65) { r *= 0.7; g *= 0.7; b *= 0.85; }
 
-    return [
-      Math.max(0, Math.min(255, r)),
-      Math.max(0, Math.min(255, g)),
-      Math.max(0, Math.min(255, b)),
-    ];
+    const height = 0.3 + (bands + warp) * 0.4;
+    const rough = 0.3 + Math.abs(spot - 0.5) * 0.2;
+
+    return {
+      color: [Math.max(0, Math.min(255, r)), Math.max(0, Math.min(255, g)), Math.max(0, Math.min(255, b))],
+      height, roughness: rough
+    };
   }
 
   // ==================== 卫星纹理 ====================
