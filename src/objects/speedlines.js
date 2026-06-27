@@ -99,18 +99,21 @@ export class SpeedLines {
       dz = -dir.z / len;
     }
 
-    // 在垂直于移动方向的平面上随机分布
-    // 构建局部坐标系
-    const forward = new THREE.Vector3(dx, dy, dz);
-    const right = new THREE.Vector3();
-    const up = new THREE.Vector3();
+    // 构建局部坐标系（复用临时向量）
+    if (!this._tmpForward) this._tmpForward = new THREE.Vector3();
+    if (!this._tmpRight) this._tmpRight = new THREE.Vector3();
+    if (!this._tmpUp) this._tmpUp = new THREE.Vector3();
+    if (!this._tmpWorldUp) this._tmpWorldUp = new THREE.Vector3(0, 1, 0);
+    this._tmpForward.set(dx, dy, dz);
+    this._tmpRight.set(0, 0, 0);
+    this._tmpUp.set(0, 0, 0);
 
-    if (Math.abs(forward.y) > 0.99) {
-      right.set(1, 0, 0);
-      up.set(0, 0, forward.y > 0 ? -1 : 1);
+    if (Math.abs(this._tmpForward.y) > 0.99) {
+      this._tmpRight.set(1, 0, 0);
+      this._tmpUp.set(0, 0, this._tmpForward.y > 0 ? -1 : 1);
     } else {
-      right.crossVectors(forward, new THREE.Vector3(0, 1, 0)).normalize();
-      up.crossVectors(right, forward).normalize();
+      this._tmpRight.crossVectors(this._tmpForward, this._tmpWorldUp).normalize();
+      this._tmpUp.crossVectors(this._tmpRight, this._tmpForward).normalize();
     }
 
     const angle = Math.random() * Math.PI * 2;
@@ -118,9 +121,9 @@ export class SpeedLines {
     const spreadX = Math.cos(angle) * radius;
     const spreadY = Math.sin(angle) * radius;
 
-    const x = right.x * spreadX + up.x * spreadY;
-    const y = right.y * spreadX + up.y * spreadY;
-    const z = right.z * spreadX + up.z * spreadY;
+    const x = this._tmpRight.x * spreadX + this._tmpUp.x * spreadY;
+    const y = this._tmpRight.y * spreadX + this._tmpUp.y * spreadY;
+    const z = this._tmpRight.z * spreadX + this._tmpUp.z * spreadY;
 
     // 线段沿移动反方向延伸
     const length = cfg.minLength + Math.random() * (cfg.maxLength - cfg.minLength);
@@ -213,8 +216,10 @@ export class SpeedLines {
 
     if (speed < this.cfg.speedThreshold) return;
 
-    // 计算主移动方向（相机空间）
-    const dir = this._velocity.clone();
+    // 计算主移动方向（相机空间）— 复用缓存向量
+    if (!this._dirCache) this._dirCache = new THREE.Vector3();
+    this._dirCache.copy(this._velocity);
+    const dir = this._dirCache;
     if (dir.lengthSq() < 0.01) dir.set(0, 0, -1);
 
     for (let i = 0; i < this.lineCount; i++) {

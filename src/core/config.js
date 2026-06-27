@@ -8,7 +8,7 @@ export const config = {
   camera: {
     fov: 75,
     near: 1,
-    far: 50000,              // v8.1: 更远裁剪面匹配银河距离
+    far: 200000,             // v8.6: 匹配银河尺度(粒子可达~123000单位)
     startPosition: { x: 0, y: 20, z: 350 }, // v8.2: 水星轨道内侧，太阳系清晰可见
   },
 

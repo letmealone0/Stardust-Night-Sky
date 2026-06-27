@@ -95,7 +95,8 @@ export class ParticleFlow {
             vSpeedLayer = 1.0;
           }
 
-          // v8.5: 正确方向 — 按W时velocity.z=-50, -=(-50)=+50→粒子流向相机\n          vec3 velDir = length(uVelocity) > 0.1 ? normalize(uVelocity) : vec3(0.0, 0.0, 1.0);\n          float flowStrength = speedFactor * 30.0 * layerSpeed;\n          vec3 streakOffset = velDir * flowStrength * aRandom * uStreakLength;\n          pos -= streakOffset;
+          // v8.5: 按W时velocity.z=-50, -=(-50)=+50→粒子流向相机
+          vec3 velDir = length(uVelocity) > 0.1 ? normalize(uVelocity) : vec3(0.0, 0.0, 1.0);\n          float flowStrength = speedFactor * 30.0 * layerSpeed;\n          vec3 streakOffset = velDir * flowStrength * aRandom * uStreakLength;\n          pos -= streakOffset;
 
           // 静止时微小漂浮
           float t = uTime * 0.5 * layerSpeed;
@@ -189,28 +190,14 @@ export class ParticleFlow {
    */
   resetParticleAhead(i, spread, velDir) {
     const i3 = i * 3;
-    // 在前方半锥角60°内生成
-    const halfAngle = Math.PI / 3;
-    const theta = Math.random() * Math.PI * 2;
-    const phi = Math.acos(1 - Math.random() * (1 - Math.cos(halfAngle)));
     const r = spread * (0.2 + Math.random() * 0.8);
-
-    // 局部坐标：Z轴 = velDir
-    const lx = r * Math.sin(phi) * Math.cos(theta);
-    const ly = r * Math.sin(phi) * Math.sin(theta);
-    const lz = -r * Math.cos(phi); // 前方 = -Z（相机前方）
-
-    // 旋转到velDir方向
-    const up = Math.abs(velDir.y) > 0.99 
-      ? new THREE.Vector3(1, 0, 0) 
-      : new THREE.Vector3(0, 1, 0);
-    // Simplified: use velDir directly
+    // 粒子在 -v 方向生成（相机前方）
     if (velDir.lengthSq() > 0.5) {
-      const v = velDir.clone().normalize();
-      // 粒子在 -v 方向生成（相机前方）
-      this.positions[i3]     = -v.x * r + (Math.random() - 0.5) * spread * 0.6;
-      this.positions[i3 + 1] = -v.y * r + (Math.random() - 0.5) * spread * 0.6;
-      this.positions[i3 + 2] = -v.z * r + (Math.random() - 0.5) * spread * 0.6;
+      const invLen = 1 / Math.sqrt(velDir.x*velDir.x + velDir.y*velDir.y + velDir.z*velDir.z);
+      const vx = velDir.x * invLen, vy = velDir.y * invLen, vz = velDir.z * invLen;
+      this.positions[i3]     = -vx * r + (Math.random() - 0.5) * spread * 0.6;
+      this.positions[i3 + 1] = -vy * r + (Math.random() - 0.5) * spread * 0.6;
+      this.positions[i3 + 2] = -vz * r + (Math.random() - 0.5) * spread * 0.6;
     } else {
       this.resetParticle(i, spread);
     }

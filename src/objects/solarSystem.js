@@ -591,8 +591,6 @@ export class SolarSystem {
   // ==================== 更新 ====================
 
   update(delta, elapsed) {
-    const scaledDelta = delta * TIME_SCALE;
-
     // 太阳自转 + shader 动画
     if (this.sun) {
       this.sun.rotation.y += delta * 0.05;
