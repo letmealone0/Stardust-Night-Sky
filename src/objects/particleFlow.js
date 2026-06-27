@@ -39,11 +39,11 @@ export class ParticleFlow {
       const r = Math.random();
       // 三层分配：背景(0-0.3) 中间(0.3-0.8) 前景(0.8-1.0)
       if (r < 0.3) {
-        sizes[i] = 0.15 + Math.random() * 0.35;
+        sizes[i] = 0.2 + Math.random() * 0.4;
       } else if (r < 0.8) {
-        sizes[i] = 0.4 + Math.random() * 0.6;
+        sizes[i] = 0.5 + Math.random() * 0.8;
       } else {
-        sizes[i] = 0.8 + Math.random() * 1.5;
+        sizes[i] = 1.2 + Math.random() * 2.0; // v8.4: 更大前景粒子
       }
       randoms[i] = Math.random();
     }
@@ -95,9 +95,10 @@ export class ParticleFlow {
             vSpeedLayer = 1.0;
           }
 
-          // v8.3: 粒子从前方逆向流来（pos += vel: 粒子从运动方向飞向相机）
+          // v8.4: 用归一化方向避免高速时粒子飞出视锥
+          vec3 velDir = length(uVelocity) > 0.1 ? normalize(uVelocity) : vec3(0.0, 0.0, 1.0);
           float flowStrength = speedFactor * 30.0 * layerSpeed;
-          vec3 streakOffset = uVelocity * flowStrength * aRandom * uStreakLength;
+          vec3 streakOffset = velDir * flowStrength * aRandom * uStreakLength;
           pos += streakOffset;
 
           // 静止时微小漂浮
@@ -119,7 +120,7 @@ export class ParticleFlow {
           vec2 screenStreak = (streakEnd.xy / streakEnd.w - mvPosition.xy / mvPosition.w);
           vStreakDir = normalize(screenStreak) * length(screenStreak) * 0.3;
 
-          gl_PointSize = aSize * uPixelRatio * (400.0 / -mvPosition.z) * (1.0 + uSprintFactor * 1.0);
+          gl_PointSize = aSize * uPixelRatio * (500.0 / -mvPosition.z) * (1.0 + uSprintFactor * 1.2);
           gl_Position = projectionMatrix * mvPosition;
         }
       `,
@@ -177,13 +178,46 @@ export class ParticleFlow {
 
   resetParticle(i, spread) {
     const i3 = i * 3;
+    // v8.4: 球形分布 + 前方集中
     const theta = Math.random() * Math.PI * 2;
     const phi = Math.acos(2 * Math.random() - 1);
-    const r = spread * (0.2 + Math.random() * 0.8);
+    const r = spread * (0.3 + Math.random() * 0.7);
 
     this.positions[i3]     = r * Math.sin(phi) * Math.cos(theta);
     this.positions[i3 + 1] = r * Math.sin(phi) * Math.sin(theta);
     this.positions[i3 + 2] = r * Math.cos(phi);
+  }
+
+  /**
+   * v8.4: 在运动方向前方锥形区域生成粒子
+   */
+  resetParticleAhead(i, spread, velDir) {
+    const i3 = i * 3;
+    // 在前方半锥角60°内生成
+    const halfAngle = Math.PI / 3;
+    const theta = Math.random() * Math.PI * 2;
+    const phi = Math.acos(1 - Math.random() * (1 - Math.cos(halfAngle)));
+    const r = spread * (0.2 + Math.random() * 0.8);
+
+    // 局部坐标：Z轴 = velDir
+    const lx = r * Math.sin(phi) * Math.cos(theta);
+    const ly = r * Math.sin(phi) * Math.sin(theta);
+    const lz = -r * Math.cos(phi); // 前方 = -Z（相机前方）
+
+    // 旋转到velDir方向
+    const up = Math.abs(velDir.y) > 0.99 
+      ? new THREE.Vector3(1, 0, 0) 
+      : new THREE.Vector3(0, 1, 0);
+    // Simplified: use velDir directly
+    if (velDir.lengthSq() > 0.5) {
+      const v = velDir.clone().normalize();
+      // 粒子在 -v 方向生成（相机前方）
+      this.positions[i3]     = -v.x * r + (Math.random() - 0.5) * spread * 0.6;
+      this.positions[i3 + 1] = -v.y * r + (Math.random() - 0.5) * spread * 0.6;
+      this.positions[i3 + 2] = -v.z * r + (Math.random() - 0.5) * spread * 0.6;
+    } else {
+      this.resetParticle(i, spread);
+    }
   }
 
   update(delta, elapsed, speed, velocity) {
@@ -211,7 +245,7 @@ export class ParticleFlow {
     const vel = this._velocity;
     const speedNorm = Math.min(speed / 50, 1.0);
 
-    // v8.3: 粒子从前方流来（pos += vel: 粒子顺速度方向移动）
+    // v8.4: 粒子从前方流来 — 密集锥形分布
     for (let i = 0; i < this.count; i++) {
       const i3 = i * 3;
 
@@ -220,20 +254,13 @@ export class ParticleFlow {
       pos[i3 + 2] += vel.z * delta * speedNorm * 10;
 
       const distSq = pos[i3] * pos[i3] + pos[i3+1] * pos[i3+1] + pos[i3+2] * pos[i3+2];
-      // 粒子飞过相机后方或飞太远 → 重生在前方
       const vLen = Math.sqrt(vel.x * vel.x + vel.y * vel.y + vel.z * vel.z);
-      if (distSq > spread * spread * 1.5 || distSq < spread * spread * 0.05) {
+      
+      // 粒子飞过相机或太远 → 在前方锥形区域重生
+      if (distSq > spread * spread * 1.5 || 
+          (vLen > 0.5 && distSq < spread * spread * 0.02)) {
         if (vLen > 0.5) {
-          // 在运动方向前方生成粒子
-          const nx = -vel.x / vLen;
-          const ny = -vel.y / vLen;
-          const nz = -vel.z / vLen;
-          const r = spread * (0.5 + Math.random() * 0.5);
-          const theta = Math.random() * Math.PI * 2;
-          const perpR = r * (0.1 + Math.random() * 0.4);
-          pos[i3]     = nx * r + Math.cos(theta) * perpR;
-          pos[i3 + 1] = ny * r + Math.sin(theta) * perpR;
-          pos[i3 + 2] = nz * r + (Math.random() - 0.5) * perpR;
+          this.resetParticleAhead(i, spread, vel);
         } else {
           this.resetParticle(i, spread);
         }
