@@ -9,7 +9,7 @@ export const config = {
     fov: 75,
     near: 1,
     far: 200000,
-    startPosition: { x: 0, y: 30, z: 1200 }, // v9.0: 地球轨道外侧，朝向太阳
+    startPosition: { x: 0, y: 60, z: 350 }, // v9.5: 水星轨道内侧,近太阳看全景
   },
 
   // ---- 玩家控制 (v9.0: 惯性飞行系统) ----
