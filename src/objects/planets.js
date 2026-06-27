@@ -128,9 +128,9 @@ export class PlanetSystem {
       radius,
       lod,
       atmLod,
-      rotationSpeed: randomRange(0.001, 0.01),
-      orbitSpeed: randomRange(0.0001, 0.001),
-      orbitRadius: position.length(),
+      rotationSpeed: randomRange(0.005, 0.02),
+      orbitSpeed: randomRange(0.002, 0.01),
+      orbitRadius: 80 + Math.random() * 120, // v9.3: 可见的局部轨道
       orbitAngle: Math.random() * Math.PI * 2,
       originalPosition: position.clone(),
     };
@@ -517,10 +517,11 @@ export class PlanetSystem {
       );
     }
 
-    // 重置轨道数据（保留小幅公转，增加视觉动感）
+    // 重置轨道数据 (v9.3: 可见的公转)
     const data = planet.userData;
     data.originalPosition.copy(planet.position);
-    data.orbitRadius = 10 + rng() * 30;
+    data.orbitRadius = 80 + rng() * 120;  // 80-200单位,肉眼可见
+    data.orbitSpeed = 0.002 + rng() * 0.008; // 更快
     data.orbitAngle = rng() * Math.PI * 2;
   }
 
