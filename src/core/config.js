@@ -73,7 +73,7 @@ export const config = {
     timeScale: 0.5,
     sunLightIntensity: 5.0,  // v9.0: PBR材质需要更强光照
     sunLightRange: 25000,
-    ambientIntensity: 0.05,  // v9.0: 微弱环境光防死黑
+    ambientIntensity: 0.12, // v9.5: 稍增环境光,暗面可见
   },
 
   // ---- 星云效果（体积光线步进）----
