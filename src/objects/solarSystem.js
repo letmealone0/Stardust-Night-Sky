@@ -140,6 +140,7 @@ export class SolarSystem {
       roughnessMap: tex?.roughnessMap || null,
       roughness: isGas ? 0.4 : 0.7,
       metalness: 0.05,
+      color: new THREE.Color(pData.color), // v9.1: 纹理缺失时颜色回退
     };
 
     // 岩石行星: displacementMap
@@ -205,10 +206,29 @@ export class SolarSystem {
 
     this.group.add(orbitPivot);
 
+    const texStatus = tex ? (tex.map ? '纹理OK' : '无纹理') : '未加载';
+
     this.planets.push({
       group: planetGroup, orbitPivot, data: pData, mesh, material, moons,
       angle: Math.random() * Math.PI * 2, rotAngle: 0,
     });
+  }
+
+  // ==================== 卫星 ====================
+
+  createMoon(mData) {
+    const moonPivot = new THREE.Group();
+    const moonColor = new THREE.Color(mData.color);
+    const material = new THREE.MeshStandardMaterial({
+      color: moonColor,
+      roughness: 0.9,
+      metalness: 0.05,
+    });
+    const geometry = new THREE.SphereGeometry(mData.radius, 16, 16);
+    const mesh = new THREE.Mesh(geometry, material);
+    mesh.position.x = mData.orbitRadius;
+    moonPivot.add(mesh);
+    return moonPivot;
   }
 
   /** v9.0: 菲涅尔大气边缘辉光 */
@@ -227,55 +247,6 @@ export class SolarSystem {
       blending: THREE.AdditiveBlending, side: THREE.BackSide, transparent: true, depthWrite: false,
     });
     group.add(new THREE.Mesh(atmGeo, atmMat));
-  }
-
-  createAtmosphere(pData) {
-    let atmColor;
-    switch (pData.name) {
-      case 'Venus':   atmColor = new THREE.Color(0.9, 0.8, 0.4); break;
-      case 'Earth':   atmColor = new THREE.Color(0.3, 0.5, 1.0); break;
-      case 'Mars':    atmColor = new THREE.Color(0.8, 0.4, 0.2); break;
-      case 'Jupiter': atmColor = new THREE.Color(0.8, 0.7, 0.5); break;
-      case 'Saturn':  atmColor = new THREE.Color(0.9, 0.8, 0.5); break;
-      case 'Uranus':  atmColor = new THREE.Color(0.5, 0.8, 0.9); break;
-      case 'Neptune': atmColor = new THREE.Color(0.3, 0.4, 0.9); break;
-      default:        atmColor = new THREE.Color(0.5, 0.6, 1.0);
-    }
-
-    const atmRadius = pData.radius * 1.08;
-    const geometry = new THREE.SphereGeometry(atmRadius, 32, 32);
-    const material = new THREE.ShaderMaterial({
-      uniforms: {
-        uColor: { value: atmColor },
-      },
-      vertexShader: `
-        varying vec3 vNormal;
-        varying vec3 vWorldPos;
-        void main() {
-          vNormal = normalize(normalMatrix * normal);
-          vWorldPos = (modelMatrix * vec4(position, 1.0)).xyz;
-          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-        }
-      `,
-      fragmentShader: `
-        varying vec3 vNormal;
-        varying vec3 vWorldPos;
-        uniform vec3 uColor;
-        void main() {
-          vec3 viewDir = normalize(cameraPosition - vWorldPos);
-          float rim = 1.0 - max(0.0, dot(viewDir, vNormal));
-          float intensity = pow(rim, 3.0);
-          float alpha = intensity * 0.5;
-          gl_FragColor = vec4(uColor * intensity, alpha);
-        }
-      `,
-      blending: THREE.AdditiveBlending,
-      side: THREE.BackSide,
-      transparent: true,
-      depthWrite: false,
-    });
-
-    return new THREE.Mesh(geometry, material);
   }
 
   // ==================== 土星环 ====================
@@ -365,28 +336,6 @@ export class SolarSystem {
     const ring = new THREE.Mesh(geometry, material);
     ring.rotation.x = -Math.PI * 0.5 + 0.15; // 略有倾斜
     return ring;
-  }
-
-  // ==================== 卫星 ====================
-
-  createMoon(mData) {
-    const moonPivot = new THREE.Group();
-
-    const texture = this.generateMoonTexture(mData.name);
-    const moonColor = new THREE.Color(mData.color);
-    const material = new THREE.MeshStandardMaterial({
-      map: texture,
-      roughness: 0.9,
-      metalness: 0.05,
-      emissive: moonColor.clone().multiplyScalar(0.15),
-      emissiveIntensity: 0.15,
-    });
-    const geometry = new THREE.SphereGeometry(mData.radius, 16, 16);
-    const mesh = new THREE.Mesh(geometry, material);
-    mesh.position.x = mData.orbitRadius;
-    moonPivot.add(mesh);
-
-    return moonPivot;
   }
 
   // ==================== 轨道线 ====================
