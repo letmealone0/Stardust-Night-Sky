@@ -34,15 +34,28 @@ export class PlanetSystem {
     // 太阳系在原点，先加入作为障碍
     existingPositions.push(new THREE.Vector3(0, 0, 0));
 
+    // 收集太阳系行星轨道位置，防止随机行星生成在太阳系内部
+    if (this.sceneObjects && this.sceneObjects.solarSystem && this.sceneObjects.solarSystem.planets) {
+      this.sceneObjects.solarSystem.planets.forEach((p) => {
+        // 行星在轨道上，位置大致在 orbitRadius 处
+        const orbitR = p.data.orbitRadius;
+        existingPositions.push(new THREE.Vector3(orbitR, 0, 0));
+        existingPositions.push(new THREE.Vector3(-orbitR, 0, 0));
+        existingPositions.push(new THREE.Vector3(0, 0, orbitR));
+        existingPositions.push(new THREE.Vector3(0, 0, -orbitR));
+      });
+    }
+
     for (let i = 0; i < count; i++) {
       // 所有行星随机生成，均匀分布在球壳内，且不与其他星体重叠
       const radius = randomRange(minRadius, maxRadius);
       const minDist = radius * 3 + 100; // 最小间距 = 行星直径 + 余量
 
-      const position = findValidPosition(
+      // v8.0: 随机行星生成在太阳系外围（7000-9000），确保不侵入太阳系内部
+      let position = findValidPosition(
         existingPositions, minDist,
         new THREE.Vector3(0, 0, 0), // 中心
-        3000, 5000,  // v7.1: 远离太阳系（海王星轨道6500）
+        7000, 9000,  // v8.0: 严格远离太阳系（海王星轨道6500→扩容后约7500）
         50, 0.3
       );
 
@@ -50,7 +63,7 @@ export class PlanetSystem {
         // 找不到合法位置，使用随机位置（降级）
         const theta = Math.random() * Math.PI * 2;
         const phi = Math.acos(2 * Math.random() - 1);
-        const r = 3000 + Math.random() * 2000; // v7.1: 远离太阳系
+        const r = 7000 + Math.random() * 2000;
         position = new THREE.Vector3(
           r * Math.sin(phi) * Math.cos(theta),
           r * Math.sin(phi) * Math.sin(theta) * 0.3,

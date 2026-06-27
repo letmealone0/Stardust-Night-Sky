@@ -16,9 +16,12 @@ export const config = {
   player: {
     moveSpeed: 50,           // 基础移动速度
     sprintMultiplier: 4.0,   // 冲刺倍数（增强加速感）
-    sprintFovBoost: 15,      // 冲刺时 FOV 增加量
+    sprintFovBoost: 18,      // 冲刺时 FOV 增加量（v8.0: 增强）
     mouseSensitivity: 0.002, // 鼠标灵敏度
     damping: 0.05,           // 移动阻尼
+    cameraShake: true,       // v8.0: 冲刺镜头抖动
+    shakeAmplitude: 1.2,     // v8.0: 抖动幅度
+    shakeFrequency: 8.0,     // v8.0: 抖动频率 (Hz)
   },
 
   // ---- 星空背景 ----
@@ -32,6 +35,17 @@ export const config = {
       { count: 2500, depth: 0.5, size: [0.15, 0.3] },
       { count: 1500, depth: 1.0, size: [0.2, 0.5] },
     ],
+    // v8.0: 银河系背景配置
+    galaxy: {
+      count: 12000,            // 银河粒子数（v8.0: 增加但平衡性能）
+      armCount: 5,            // 旋臂数
+      spin: 2.5,              // 螺旋紧密度
+      armSpread: 0.25,        // 旋臂散开度
+      position: { x: 0, y: -3000, z: -8000 },
+      tilt: 30,               // 倾斜角度（度）
+      scale: 2.0,             // 整体缩放
+      hazeCount: 2000,        // 雾气粒子数
+    },
   },
 
   // ---- 行星系统（随机生成的额外星体）----
@@ -39,17 +53,19 @@ export const config = {
     count: 4,                // 额外随机行星数量（减少，太阳系已有 8 颗）
     minRadius: 40,           // 最小半径
     maxRadius: 200,          // 最大半径
-    spread: 5000,            // 分布范围（v7.1: 加大，远离太阳系）
+    spread: 5000,            // 分布范围
     atmosphereScale: 1.15,   // 大气层缩放
-    respawnDistance: 5500,   // 超出此距离重生行星（v7.1: 加大）
-    respawnMin: 3000,        // 重生最小距离（v7.1: 远离太阳系，海王星轨道6500）
-    respawnMax: 5000,        // 重生最大距离（v7.1: 远离太阳系）
+    respawnDistance: 8000,   // v8.0: 超出此距离重生行星
+    respawnMin: 7000,        // v8.0: 严格远离太阳系
+    respawnMax: 9000,        // v8.0
   },
 
   // ---- 太阳系 ----
   solarSystem: {
-    sunRadius: 80,           // 太阳半径
+    sunRadius: 120,          // v8.0: 太阳更大更壮观
     timeScale: 0.5,          // 时间缩放（每秒游戏时间对应多少天）
+    sunLightIntensity: 4.0,  // 太阳点光源强度（v8.0）
+    sunLightRange: 20000,    // 太阳点光源范围（v8.0）
   },
 
   // ---- 星云效果（体积光线步进）----
@@ -71,13 +87,17 @@ export const config = {
   // ---- 后处理效果 ----
   postprocessing: {
     bloom: {
-      strength: 0.8,         // 辉光强度（降低避免闪烁）
+      strength: 0.9,         // v8.0: 微调辉光强度
       radius: 0.3,           // 辉光半径
-      threshold: 0.6,        // 辉光阈值（提高避免闪烁）
+      threshold: 0.55,       // v8.0: 降低阈值，让更多物体发光
     },
     vignette: {
       offset: 0.5,           // 暗角偏移
-      darkness: 0.3,         // 暗角深度（降低）
+      darkness: 0.3,         // 暗角深度
+    },
+    motionBlur: {            // v8.0: 运动模糊（仅冲刺时）
+      strength: 0.08,        // 模糊强度
+      samples: 3,            // 采样次数
     },
   },
 
@@ -86,21 +106,23 @@ export const config = {
     antialias: true,
     alpha: false,
     powerPreference: 'high-performance',
+    toneMappingExposure: 1.2, // v8.0: 提高曝光，适应更亮的太阳
   },
 
   // ---- 速度线 ----
   speedLines: {
-    count: 500,              // 数量（v7.1: 增加）
-    minRadius: 1.5,          // 最小分布半径
-    maxRadius: 15.0,         // 最大分布半径（v7.1: 稍大）
-    minLength: 12,           // 最短线长（v7.1: 更长）
-    maxLength: 60,           // 最长线长（v7.1: 更长）
-    zStart: -85,             // 起始 Z 距离
-    zEnd: -15,               // 结束 Z 距离
-    speedThreshold: 2,       // 显示阈值
-    opacityTarget: 1.0,      // 最大透明度（v7.1: 更亮）
-    opacitySpeed: 0.2,       // 透明度过渡速度
-    moveFactor: 18,          // 移动速度系数（v7.1: 更快）
+    count: 1000,             // v8.0: 大幅增加线数
+    minRadius: 1.0,          // 最小分布半径
+    maxRadius: 18.0,         // v8.0: 更大分布范围
+    minLength: 15,           // v8.0: 更长线段
+    maxLength: 80,           // v8.0: 更长
+    zStart: -100,            // v8.0
+    zEnd: -10,               // v8.0
+    speedThreshold: 1.5,     // v8.0: 更易触发
+    opacityTarget: 1.2,      // v8.0: 更亮
+    opacitySpeed: 0.25,      // 透明度过渡速度
+    moveFactor: 25,          // v8.0: 更快流动
+    sprintExtraCount: 200,   // v8.0: 冲刺额外亮线
   },
 
   // ---- 黑洞系统 ----
@@ -133,18 +155,25 @@ export const config = {
 
   // ---- 宇宙尘埃 ----
   cosmicDust: {
-    count: 2000,               // 粒子数
-    spread: 6000,              // 分布范围（加大）
+    count: 2500,               // v8.0: 平衡性能与视觉
+    spread: 6000,              // 分布范围
     recenterDistance: 3000,    // 超出此距离重新居中
   },
 
   // ---- 全方向粒子流 ----
   particleFlow: {
-    count: 5000,               // 粒子数（v7.1: 大幅增加，增强穿越感）
+    count: 6000,               // v8.0: 平衡性能与视觉
+    spread: 200,               // v8.0: 更大分布范围
+    sprintColorBoost: 1.5,     // v8.0: 冲刺颜色增强
+    streakLength: 4.0,         // v8.0: 粒子拖尾长度
   },
 
   // ---- 性能优化 ----
   performance: {
-    lodDistances: [0, 800, 2000], // LOD 距离阈值（匹配更大行星）
+    lodDistances: [0, 800, 2000], // LOD 距离阈值
+    adaptiveQuality: true,     // v8.0: 自适应画质
+    minTargetFPS: 35,          // v8.0: 低于此FPS自动降质
+    qualityDropThreshold: 3,   // v8.0: 持续低于阈值秒数
+    warmupSeconds: 3,          // v8.0: 启动预热时间（期间不降质）
   },
 };

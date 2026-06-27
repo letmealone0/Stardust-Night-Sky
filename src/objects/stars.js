@@ -210,96 +210,89 @@ export class StarField {
   }
 
   createMilkyWay(scene, spread) {
-    const count = 8000; // v7.1: 增加银河粒子密度
+    // v8.0: 银河系配置
+    const galaxyCfg = config.stars.galaxy || {};
+    const count = galaxyCfg.count || 20000;
+    const armCount = galaxyCfg.armCount || 5;
+    const spin = galaxyCfg.spin || 2.5;
+    const armSpread = galaxyCfg.armSpread || 0.25;
+    const tiltDeg = galaxyCfg.tilt || 30;
+    const galaxyScale = galaxyCfg.scale || 2.0;
+
     const geometry = new THREE.BufferGeometry();
     const positions = new Float32Array(count * 3);
     const colors = new Float32Array(count * 3);
     const sizes = new Float32Array(count);
     const randoms = new Float32Array(count);
 
-    const galaxyRadius = spread * 0.5;
-    const armCount = 4;
-    const spin = 2.0;                  // v7.1: 更紧密的螺旋
-    const armSpread = 0.3;             // v7.1: 旋臂更紧凑（原0.45）
+    const galaxyRadius = spread * 0.5 * galaxyScale;
     const armLength = galaxyRadius * 0.85;
-    const thickness = galaxyRadius * 0.04;
-    const dustLaneCount = Math.floor(count * 0.12); // 12% 尘埃带
+    const thickness = galaxyRadius * 0.03;
+    const dustLaneCount = Math.floor(count * 0.1);
+    const coreBulgeCount = Math.floor(count * 0.08); // 核球粒子
 
     for (let i = 0; i < count; i++) {
       const i3 = i * 3;
+      let x, y, z, radius, colorFactor;
 
-      let x, y, z;
-      let radius;
-      let colorFactor = 0;
+      if (i < coreBulgeCount) {
+        // ===== 核球：密集椭球体，金白色 =====
+        const bulgeR = armLength * 0.12;
+        const theta = Math.random() * Math.PI * 2;
+        const phi = Math.acos(2 * Math.random() - 1);
+        radius = Math.pow(Math.random(), 1.5) * bulgeR;
+        x = Math.cos(theta) * Math.sin(phi) * radius;
+        z = Math.sin(theta) * Math.sin(phi) * radius;
+        y = Math.cos(phi) * radius * 0.3; // 压扁
 
-      if (i < count - dustLaneCount) {
+        const hue = 0.1 + Math.random() * 0.04;
+        const c = new THREE.Color().setHSL(hue, 0.2, 0.7 + Math.random() * 0.3);
+        colors[i3] = c.r; colors[i3 + 1] = c.g; colors[i3 + 2] = c.b;
+        colorFactor = 1.0;
+        sizes[i] = 0.2 + Math.random() * 0.5;
+      } else if (i < count - dustLaneCount) {
         // ===== 旋臂粒子 =====
-        // 使用 Three.js Journey 的 Galaxy Generator 模式
-        const branchIndex = i % armCount;
+        const branchIndex = (i - coreBulgeCount) % armCount;
         const branchAngle = (branchIndex / armCount) * Math.PI * 2;
-
-        // 半径分布：中心密集，外层稀疏（r = rand^0.5）
         const rand = Math.pow(Math.random(), 0.5);
         radius = rand * armLength;
 
-        // 螺旋角度 = 基础旋臂角 + 旋转量 * 半径 + 高斯随机散开
         const spinAngle = spin * radius / armLength;
-        const scatterAngle = gaussianRandom(0, armSpread * 0.3) * (1 - rand * 0.3);
-
+        const scatterAngle = gaussianRandom(0, armSpread * 0.25) * (1 - rand * 0.3);
         const angle = branchAngle + spinAngle + scatterAngle;
-
-        // 散开半径（高斯分布，粒子更自然聚集在旋臂中心线附近）
-        const scatterRadius = gaussianRandom(0, galaxyRadius * 0.06) * (1 - rand * 0.7);
+        const scatterRadius = gaussianRandom(0, galaxyRadius * 0.05) * (1 - rand * 0.7);
 
         x = Math.cos(angle) * (radius + scatterRadius);
         z = Math.sin(angle) * (radius + scatterRadius);
-        y = (Math.random() - 0.5) * thickness * (1 - rand * 0.5); // 中心更薄
+        y = (Math.random() - 0.5) * thickness * (1 - rand * 0.5);
 
-        // 颜色：核心暖黄 → 旋臂蓝白 → 外层暗红
         const normR = radius / armLength;
-        if (normR < 0.15) {
-          // 核心区域：暖黄/白色
-          const hue = 0.08 + Math.random() * 0.05;
-          const sat = 0.15 + Math.random() * 0.2;
-          const light = 0.7 + rand * 0.3;
-          const c = new THREE.Color().setHSL(hue, sat, light);
+        if (normR < 0.12) {
+          const c = new THREE.Color().setHSL(0.1 + Math.random() * 0.04, 0.1 + Math.random() * 0.2, 0.75 + rand * 0.25);
           colors[i3] = c.r; colors[i3 + 1] = c.g; colors[i3 + 2] = c.b;
           colorFactor = 1.0;
-        } else if (normR < 0.6) {
-          // 旋臂区域：蓝白/淡蓝
-          const hue = 0.55 + Math.random() * 0.1;
-          const sat = 0.1 + Math.random() * 0.25;
-          const light = 0.5 + rand * 0.4;
-          const c = new THREE.Color().setHSL(hue, sat, light);
+        } else if (normR < 0.55) {
+          const c = new THREE.Color().setHSL(0.55 + Math.random() * 0.1, 0.08 + Math.random() * 0.2, 0.55 + rand * 0.35);
           colors[i3] = c.r; colors[i3 + 1] = c.g; colors[i3 + 2] = c.b;
-          colorFactor = 0.7;
+          colorFactor = 0.8;
         } else {
-          // 外层：暗红/橙
-          const hue = 0.02 + Math.random() * 0.06;
-          const sat = 0.2 + Math.random() * 0.3;
-          const light = 0.25 + rand * 0.3;
-          const c = new THREE.Color().setHSL(hue, sat, light);
+          const c = new THREE.Color().setHSL(0.58 + Math.random() * 0.08, 0.15 + Math.random() * 0.2, 0.2 + rand * 0.3);
           colors[i3] = c.r; colors[i3 + 1] = c.g; colors[i3 + 2] = c.b;
-          colorFactor = 0.3;
+          colorFactor = 0.35;
         }
-
-        sizes[i] = 0.15 + rand * 0.35;
+        sizes[i] = 0.12 + rand * 0.3;
       } else {
-        // ===== 尘埃带粒子（暗色、低透明度）=====
+        // ===== 尘埃带 =====
         const angle = Math.random() * Math.PI * 2;
         radius = Math.pow(Math.random(), 0.3) * armLength * 0.9;
-        const dustSpin = spin * 0.8 * radius / armLength;
-
+        const dustSpin = spin * 0.7 * radius / armLength;
         x = Math.cos(angle + dustSpin) * radius;
         z = Math.sin(angle + dustSpin) * radius;
-        y = (Math.random() - 0.5) * thickness * 0.3;
-
-        // 暗紫色/暗蓝色尘埃
-        const hue = 0.6 + Math.random() * 0.15;
-        const c = new THREE.Color().setHSL(hue, 0.3 + Math.random() * 0.2, 0.1 + Math.random() * 0.1);
+        y = (Math.random() - 0.5) * thickness * 0.25;
+        const c = new THREE.Color().setHSL(0.6 + Math.random() * 0.15, 0.25, 0.08 + Math.random() * 0.08);
         colors[i3] = c.r; colors[i3 + 1] = c.g; colors[i3 + 2] = c.b;
         colorFactor = 0.0;
-        sizes[i] = 0.1 + Math.random() * 0.2;
+        sizes[i] = 0.08 + Math.random() * 0.15;
       }
 
       positions[i3] = x;
@@ -313,11 +306,10 @@ export class StarField {
     geometry.setAttribute('size', new THREE.BufferAttribute(sizes, 1));
     geometry.setAttribute('aRandom', new THREE.BufferAttribute(randoms, 1));
 
-    // 使用 ShaderMaterial 实现银河自转动画 + 软圆形粒子
     const material = new THREE.ShaderMaterial({
       uniforms: {
         uTime: { value: 0 },
-        uRotationSpeed: { value: 0.015 }, // 银河缓慢自转
+        uRotationSpeed: { value: 0.012 },
         uPixelRatio: { value: Math.min(window.devicePixelRatio, 2) },
       },
       vertexShader: `
@@ -328,11 +320,8 @@ export class StarField {
         uniform float uPixelRatio;
         varying vec3 vColor;
         varying float vAlpha;
-
         void main() {
           vColor = color;
-
-          // 银河缓慢自转（绕 Y 轴）
           float angle = uTime * uRotationSpeed;
           float cosA = cos(angle);
           float sinA = sin(angle);
@@ -341,10 +330,7 @@ export class StarField {
           float rz = pos.x * sinA + pos.z * cosA;
           pos.x = rx;
           pos.z = rz;
-
-          // 微小闪烁（每颗星独立频率）
           vAlpha = 0.5 + sin(uTime * (0.5 + aRandom * 2.0) + aRandom * 6.28) * 0.3;
-
           vec4 mvPosition = modelViewMatrix * vec4(pos, 1.0);
           gl_PointSize = size * uPixelRatio * (300.0 / -mvPosition.z);
           gl_Position = projectionMatrix * mvPosition;
@@ -354,9 +340,7 @@ export class StarField {
         precision highp float;
         varying vec3 vColor;
         varying float vAlpha;
-
         void main() {
-          // 软圆形粒子（避免方形像素感）
           float d = length(gl_PointCoord - 0.5) * 2.0;
           float alpha = 1.0 - smoothstep(0.0, 1.0, d);
           alpha *= vAlpha;
@@ -374,25 +358,32 @@ export class StarField {
 
     const points = new THREE.Points(geometry, material);
     points.userData.isGalaxy = true;
-    scene.add(points);
-    this.meshes.push(points);
+
+    // v8.0: 将银河包装在 Group 中，重定位到远处背景
+    const galaxyGroup = new THREE.Group();
+    const posCfg = galaxyCfg.position || { x: 0, y: -3000, z: -8000 };
+    galaxyGroup.position.set(posCfg.x, posCfg.y, posCfg.z);
+    // 倾斜30°让银河从太阳系平面可见
+    galaxyGroup.rotation.x = (tiltDeg * Math.PI) / 180;
+    galaxyGroup.add(points);
+    scene.add(galaxyGroup);
+
+    this.meshes.push(galaxyGroup);
     this.materials.push(material);
     this.geometries.push(geometry);
 
-    // v7.1: 银河雾气层（参考 GalaxyThreeJS 的 Haze 层）
-    // 低透明度大粒子模拟银河尘雾，增加体积感
-    this.createGalaxyHaze(scene, spread, armCount, spin, armLength, thickness);
+    // v8.0: 银河雾气层
+    this.createGalaxyHaze(scene, galaxyGroup, armCount, spin, armLength, thickness, galaxyScale, tiltDeg);
   }
 
   /**
-   * v7.1: 银河雾气层 — 大粒子低透明度，模拟银河尘雾
+   * v8.0: 银河雾气层 — 大粒子低透明度，模拟银河尘雾
    */
-  createGalaxyHaze(scene, spread, armCount, spin, armLength, thickness) {
-    const hazeCount = 1000;
+  createGalaxyHaze(scene, galaxyGroup, armCount, spin, armLength, thickness, galaxyScale, tiltDeg) {
+    const hazeCount = config.stars.galaxy?.hazeCount || 3000;
     const geo = new THREE.BufferGeometry();
     const pos = new Float32Array(hazeCount * 3);
     const col = new Float32Array(hazeCount * 3);
-    const sz = new Float32Array(hazeCount);
 
     for (let i = 0; i < hazeCount; i++) {
       const i3 = i * 3;
@@ -401,39 +392,37 @@ export class StarField {
       const rand = Math.pow(Math.random(), 0.4);
       const radius = rand * armLength;
       const spinAngle = spin * radius / armLength;
-      const scatterAngle = gaussianRandom(0, 0.15);
+      const scatterAngle = gaussianRandom(0, 0.12);
 
       const angle = branchAngle + spinAngle + scatterAngle;
-      const scatterR = gaussianRandom(0, armLength * 0.08);
+      const scatterR = gaussianRandom(0, armLength * 0.07);
 
       pos[i3]     = Math.cos(angle) * (radius + scatterR);
-      pos[i3 + 1] = gaussianRandom(0, thickness * 0.5);
+      pos[i3 + 1] = gaussianRandom(0, thickness * 0.6);
       pos[i3 + 2] = Math.sin(angle) * (radius + scatterR);
 
       // 温暖的淡紫色/淡蓝色雾气
       const hue = 0.6 + Math.random() * 0.15;
-      const c = new THREE.Color().setHSL(hue, 0.2 + Math.random() * 0.15, 0.4 + Math.random() * 0.2);
+      const c = new THREE.Color().setHSL(hue, 0.15 + Math.random() * 0.15, 0.35 + Math.random() * 0.25);
       col[i3] = c.r; col[i3 + 1] = c.g; col[i3 + 2] = c.b;
-
-      // 大粒子，模拟弥散雾气
-      sz[i] = 2.0 + Math.random() * 4.0;
     }
 
     geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
     geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
 
     const hazeMat = new THREE.PointsMaterial({
-      size: 3.0,
+      size: 3.5,
       vertexColors: true,
       transparent: true,
-      opacity: 0.08,
+      opacity: 0.07,
       sizeAttenuation: true,
       blending: THREE.AdditiveBlending,
       depthWrite: false,
     });
 
     const hazePoints = new THREE.Points(geo, hazeMat);
-    scene.add(hazePoints);
+    hazePoints.userData.isGalaxyHaze = true;
+    galaxyGroup.add(hazePoints);
     this.meshes.push(hazePoints);
     this.materials.push(hazeMat);
     this.geometries.push(geo);

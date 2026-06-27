@@ -30,6 +30,11 @@ export class Engine {
     this.fps = 0;
     this.frameCount = 0;
     this.lastFPSTime = 0;
+    // v8.0: 自适应画质
+    this.lowFpsDuration = 0;
+    this.qualityLevel = 1.0; // 1.0 = 全画质, 0.5 = 降质
+    this.warmupTime = (config.performance?.warmupSeconds || 3);
+    this.warmupStartElapsed = 0;
   }
 
   /**
@@ -183,6 +188,31 @@ export class Engine {
       this.frameCount = 0;
       this.lastFPSTime = now;
       this.hud.updateFPS(this.fps);
+
+      // v8.0: 自适应画质 — 使用实际elapsed时间做预热
+      if (config.performance?.adaptiveQuality !== false) {
+        if (this.warmupStartElapsed === 0) this.warmupStartElapsed = elapsed;
+        const warmedUp = (elapsed - this.warmupStartElapsed) >= this.warmupTime;
+        if (warmedUp) {
+          const minFps = config.performance?.minTargetFPS || 35;
+          const dropThreshold = config.performance?.qualityDropThreshold || 3;
+          if (this.fps < minFps) {
+            this.lowFpsDuration++;
+            if (this.lowFpsDuration >= dropThreshold) {
+              this.qualityLevel = Math.max(0.4, this.qualityLevel - 0.1);
+              this.applyQualityLevel();
+              console.warn('[Engine] FPS过低，降质至:', this.qualityLevel.toFixed(2));
+              this.lowFpsDuration = 0;
+            }
+          } else {
+            this.lowFpsDuration = Math.max(0, this.lowFpsDuration - 1);
+            if (this.fps > minFps + 10 && this.qualityLevel < 1.0) {
+              this.qualityLevel = Math.min(1.0, this.qualityLevel + 0.03);
+              this.applyQualityLevel();
+            }
+          }
+        }
+      }
     }
 
     // 暂停时只更新 camera uniform（避免恢复时位置跳变），跳过重计算
@@ -216,6 +246,25 @@ export class Engine {
 
     // 渲染
     this.postprocessing.render();
+  }
+
+  /**
+   * v8.0: 应用自适应画质等级
+   */
+  applyQualityLevel() {
+    const q = this.qualityLevel;
+    if (this.scene && this.scene.objects) {
+      // 降低尘埃透明度
+      if (this.scene.objects.cosmicDust && this.scene.objects.cosmicDust.material) {
+        this.scene.objects.cosmicDust.material.opacity = 0.1 * q;
+      }
+      // 降低速度线透明度
+      if (this.scene.objects.speedLines && this.scene.objects.speedLines.material) {
+        this.scene.objects.speedLines.material.opacity = Math.min(
+          this.scene.objects.speedLines.material.opacity, q
+        );
+      }
+    }
   }
 
   /**

@@ -38,7 +38,7 @@ export class RendererManager {
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     // toneMapping 在 PostProcessingManager 中统一设置（ACESFilmicToneMapping）
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    this.renderer.toneMappingExposure = 1.0;
+    this.renderer.toneMappingExposure = config.renderer.toneMappingExposure || 1.2;
 
     console.log('[RendererManager] 渲染器初始化完成');
   }

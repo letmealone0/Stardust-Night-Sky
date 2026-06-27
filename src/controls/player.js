@@ -196,6 +196,16 @@ export class PlayerController {
     const fovDamp = 1 - Math.pow(0.001, delta);
     this.camera.fov += (targetFov - this.camera.fov) * fovDamp;
     this.camera.updateProjectionMatrix();
+
+    // v8.0: 冲刺镜头抖动（穿越感）
+    if (config.player.cameraShake !== false && this.sprintFactor > 0.01) {
+      const shakeAmp = (config.player.shakeAmplitude || 1.2) * this.sprintFactor;
+      const shakeFreq = config.player.shakeFrequency || 8.0;
+      const t = performance.now() * 0.001;
+      this.camera.position.x += Math.sin(t * shakeFreq) * shakeAmp * delta;
+      this.camera.position.y += Math.cos(t * shakeFreq * 1.3) * shakeAmp * delta * 0.7;
+      this.camera.position.z += Math.sin(t * shakeFreq * 0.7 + 0.5) * shakeAmp * delta * 0.5;
+    }
   }
 
   /**

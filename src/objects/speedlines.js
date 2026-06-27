@@ -5,7 +5,7 @@ export class SpeedLines {
   constructor() {
     this.group = new THREE.Group();
     this.cfg = config.speedLines;
-    this.lineCount = this.cfg.count;
+    this.lineCount = this.cfg.count || 1000;
     this.geometry = null;
     this.material = null;
     this.lineSegments = null;
@@ -13,13 +13,18 @@ export class SpeedLines {
     this.colors = null;
     this.speed = 0;
     this.camera = null;
-    this._velocity = new THREE.Vector3(); // 缓存速度方向
+    this._velocity = new THREE.Vector3();
+    // v8.0: 冲刺额外线段
+    this.sprintLines = null;
+    this.sprintMaterial = null;
+    this.sprintPositions = null;
+    this.sprintColors = null;
+    this.springCount = this.cfg.sprintExtraCount || 200;
   }
 
   init(scene, camera) {
     this.camera = camera;
 
-    // 每个速度线是一条线段（2 个顶点），总顶点数 = lineCount * 2
     const vertexCount = this.lineCount * 2;
     this.positions = new Float32Array(vertexCount * 3);
     this.colors = new Float32Array(vertexCount * 3);
@@ -44,7 +49,32 @@ export class SpeedLines {
     this.lineSegments = new THREE.LineSegments(this.geometry, this.material);
     this.camera.add(this.lineSegments);
 
-    console.log('[SpeedLines] 速度线系统初始化完成（方向感知 LineSegments）');
+    // v8.0: 冲刺额外亮线（更亮、更宽、从中心辐射）
+    const sprintVertexCount = this.springCount * 2;
+    this.sprintPositions = new Float32Array(sprintVertexCount * 3);
+    this.sprintColors = new Float32Array(sprintVertexCount * 3);
+
+    for (let i = 0; i < this.springCount; i++) {
+      this.resetSprintLine(i);
+    }
+
+    const sprintGeo = new THREE.BufferGeometry();
+    sprintGeo.setAttribute('position', new THREE.BufferAttribute(this.sprintPositions, 3));
+    sprintGeo.setAttribute('color', new THREE.BufferAttribute(this.sprintColors, 3));
+
+    this.sprintMaterial = new THREE.LineBasicMaterial({
+      vertexColors: true,
+      transparent: true,
+      opacity: 0,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+      linewidth: 1,
+    });
+
+    this.sprintLines = new THREE.LineSegments(sprintGeo, this.sprintMaterial);
+    this.camera.add(this.sprintLines);
+
+    console.log('[SpeedLines] v8.0 速度线系统初始化完成（主线:', this.lineCount, '+ 冲刺线:', this.springCount, ')');
   }
 
   /**
@@ -125,16 +155,61 @@ export class SpeedLines {
     }
   }
 
+  /**
+   * 重置冲刺专用亮线（v8.0）
+   * 更亮、从中心辐射、颜色偏暖白
+   */
+  resetSprintLine(i) {
+    const i2 = i * 2;
+    const i3_0 = i2 * 3;
+    const i3_1 = (i2 + 1) * 3;
+    const cfg = this.cfg;
+
+    // 从中心向外辐射
+    const angle = Math.random() * Math.PI * 2;
+    const radius = cfg.minRadius * 0.3 + Math.random() * (cfg.maxRadius * 0.5 - cfg.minRadius * 0.3);
+
+    const x = Math.cos(angle) * radius;
+    const y = Math.sin(angle) * radius;
+    const z = 0;
+
+    const length = cfg.minLength * 0.8 + Math.random() * (cfg.maxLength * 0.6);
+    const offset = Math.abs(cfg.zEnd) + Math.random() * (Math.abs(cfg.zStart) * 0.5);
+
+    this.sprintPositions[i3_0]     = x;
+    this.sprintPositions[i3_0 + 1] = y;
+    this.sprintPositions[i3_0 + 2] = z + offset;
+
+    this.sprintPositions[i3_1]     = x;
+    this.sprintPositions[i3_1 + 1] = y;
+    this.sprintPositions[i3_1 + 2] = z + offset + length;
+
+    // 暖白/亮蓝混合颜色
+    const isWarm = Math.random() > 0.85;
+    this.sprintColors[i3_0] = isWarm ? 1.0 : 0.6;
+    this.sprintColors[i3_0 + 1] = isWarm ? 0.9 : 0.7;
+    this.sprintColors[i3_0 + 2] = isWarm ? 0.7 : 1.0;
+
+    this.sprintColors[i3_1] = isWarm ? 1.0 : 0.8;
+    this.sprintColors[i3_1 + 1] = isWarm ? 0.95 : 0.85;
+    this.sprintColors[i3_1 + 2] = isWarm ? 0.8 : 1.0;
+  }
+
   update(delta, speed, velocity) {
     this.speed = speed;
 
-    // 缓存速度方向
     if (velocity) {
       this._velocity.copy(velocity);
     }
 
     const targetOpacity = speed > this.cfg.speedThreshold ? Math.min(speed / 20, this.cfg.opacityTarget) : 0;
     this.material.opacity += (targetOpacity - this.material.opacity) * this.cfg.opacitySpeed;
+
+    // v8.0: 冲刺线透明度（仅在高速时可见）
+    const sprintTarget = speed > config.player.moveSpeed * config.player.sprintMultiplier * 0.5 ? 1.2 : 0;
+    if (this.sprintMaterial) {
+      this.sprintMaterial.opacity += (sprintTarget - this.sprintMaterial.opacity) * 0.3;
+    }
 
     if (speed < this.cfg.speedThreshold) return;
 
@@ -175,13 +250,37 @@ export class SpeedLines {
     }
 
     this.geometry.attributes.position.needsUpdate = true;
+
+    // v8.0: 冲刺线更新（只在冲刺时处理）
+    if (this.sprintPositions && this.sprintMaterial && this.sprintMaterial.opacity > 0.01) {
+      const sprintMove = speed * delta * this.cfg.moveFactor * 1.5;
+      for (let i = 0; i < this.springCount; i++) {
+        const i2 = i * 2;
+        const i3_0 = i2 * 3;
+        const i3_1 = (i2 + 1) * 3;
+
+        this.sprintPositions[i3_0 + 2] += sprintMove;
+        this.sprintPositions[i3_1 + 2] += sprintMove;
+
+        // 超出范围则重置
+        if (this.sprintPositions[i3_0 + 2] > 50) {
+          this.resetSprintLine(i);
+        }
+      }
+      if (this.sprintLines && this.sprintLines.geometry) {
+        this.sprintLines.geometry.attributes.position.needsUpdate = true;
+      }
+    }
   }
 
   dispose() {
-    if (this.camera && this.lineSegments) {
-      this.camera.remove(this.lineSegments);
+    if (this.camera) {
+      if (this.lineSegments) this.camera.remove(this.lineSegments);
+      if (this.sprintLines) this.camera.remove(this.sprintLines);
     }
     if (this.geometry) this.geometry.dispose();
     if (this.material) this.material.dispose();
+    if (this.sprintLines && this.sprintLines.geometry) this.sprintLines.geometry.dispose();
+    if (this.sprintMaterial) this.sprintMaterial.dispose();
   }
 }

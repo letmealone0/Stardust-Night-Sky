@@ -8,15 +8,16 @@ import { config } from '../core/config.js';
 import { noise2D, noise3D, fbm2D, fbm3D, turbulence2D } from '../utils/noise.js';
 
 // ---- 行星数据（轨道半径、半径、公转周期、自转周期、倾角、偏心率）----
+// v8.0: 行星半径 ×1.5，轨道微扩，增强可见性
 const PLANET_DATA = [
-  { name: 'Mercury', orbitRadius: 400,   radius: 5,    orbitPeriod: 88,     rotationPeriod: 58.6,  tilt: 0.03,  eccentricity: 0.21, color: '#8c7e6d' },
-  { name: 'Venus',   orbitRadius: 650,   radius: 8,    orbitPeriod: 225,    rotationPeriod: -243,  tilt: 177.4,  eccentricity: 0.007, color: '#c8a44e' },
-  { name: 'Earth',   orbitRadius: 900,   radius: 9,    orbitPeriod: 365,    rotationPeriod: 1,     tilt: 23.4,   eccentricity: 0.017, color: '#2b5ea7' },
-  { name: 'Mars',    orbitRadius: 1200,  radius: 6,    orbitPeriod: 687,    rotationPeriod: 1.03,  tilt: 25.2,   eccentricity: 0.093, color: '#c1440e' },
-  { name: 'Jupiter', orbitRadius: 2200,  radius: 35,   orbitPeriod: 4333,   rotationPeriod: 0.41,  tilt: 3.1,    eccentricity: 0.049, color: '#c4a46a' },
-  { name: 'Saturn',  orbitRadius: 3500,  radius: 28,   orbitPeriod: 10759,  rotationPeriod: 0.44,  tilt: 26.7,   eccentricity: 0.057, color: '#b8a060' },
-  { name: 'Uranus',  orbitRadius: 5000,  radius: 14,   orbitPeriod: 30687,  rotationPeriod: -0.72, tilt: 97.8,   eccentricity: 0.046, color: '#7ec8c8' },
-  { name: 'Neptune', orbitRadius: 6500,  radius: 13,   orbitPeriod: 60190,  rotationPeriod: 0.67,  tilt: 28.3,   eccentricity: 0.010, color: '#3d5fc4' },
+  { name: 'Mercury', orbitRadius: 500,   radius: 7,    orbitPeriod: 88,     rotationPeriod: 58.6,  tilt: 0.03,  eccentricity: 0.21, color: '#8c7e6d' },
+  { name: 'Venus',   orbitRadius: 800,   radius: 12,   orbitPeriod: 225,    rotationPeriod: -243,  tilt: 177.4,  eccentricity: 0.007, color: '#c8a44e' },
+  { name: 'Earth',   orbitRadius: 1100,  radius: 13,   orbitPeriod: 365,    rotationPeriod: 1,     tilt: 23.4,   eccentricity: 0.017, color: '#2b5ea7' },
+  { name: 'Mars',    orbitRadius: 1500,  radius: 9,    orbitPeriod: 687,    rotationPeriod: 1.03,  tilt: 25.2,   eccentricity: 0.093, color: '#c1440e' },
+  { name: 'Jupiter', orbitRadius: 2600,  radius: 50,   orbitPeriod: 4333,   rotationPeriod: 0.41,  tilt: 3.1,    eccentricity: 0.049, color: '#c4a46a' },
+  { name: 'Saturn',  orbitRadius: 4000,  radius: 40,   orbitPeriod: 10759,  rotationPeriod: 0.44,  tilt: 26.7,   eccentricity: 0.057, color: '#b8a060' },
+  { name: 'Uranus',  orbitRadius: 5500,  radius: 20,   orbitPeriod: 30687,  rotationPeriod: -0.72, tilt: 97.8,   eccentricity: 0.046, color: '#7ec8c8' },
+  { name: 'Neptune', orbitRadius: 7000,  radius: 19,   orbitPeriod: 60190,  rotationPeriod: 0.67,  tilt: 28.3,   eccentricity: 0.010, color: '#3d5fc4' },
 ];
 
 // ---- 卫星数据 ----
@@ -61,8 +62,14 @@ export class SolarSystem {
       this.createPlanet(pData, cfg);
     });
 
+    // v8.0: 小行星带（火星与木星之间）
+    this.createAsteroidBelt();
+
+    // v8.0: 太阳耀斑粒子
+    this.createSunFlares(cfg);
+
     scene.add(this.group);
-    console.log('[SolarSystem] 太阳系初始化完成（太阳 + 8 行星 + 卫星）');
+    console.log('[SolarSystem] 太阳系初始化完成（太阳 + 8 行星 + 卫星 + 小行星带）');
   }
 
   setCamera(camera) {
@@ -156,8 +163,8 @@ export class SolarSystem {
     this.sun = new THREE.Mesh(sunGeo, this.sunMaterial);
     this.group.add(this.sun);
 
-    // 太阳点光源
-    const sunLight = new THREE.PointLight(0xfff5e0, 2.5, 12000);
+    // 太阳点光源（v8.0: 增强光照范围和强度，让行星可见）
+    const sunLight = new THREE.PointLight(0xfff5e0, cfg.sunLightIntensity || 4.0, cfg.sunLightRange || 20000);
     sunLight.position.set(0, 0, 0);
     this.group.add(sunLight);
 
@@ -239,15 +246,15 @@ export class SolarSystem {
 
     // 行星网格
     const texture = this.generatePlanetTexture(pData.name);
-    // v7.1: 增加 emissive 发光，让行星在黑暗背景中更显眼
+    // v8.0: 增强 emissive，让行星在黑暗背景中非常显眼
     const baseColor = new THREE.Color(pData.color);
-    const emissiveColor = baseColor.clone().multiplyScalar(0.3);
+    const emissiveColor = baseColor.clone().multiplyScalar(0.5);
     const material = new THREE.MeshStandardMaterial({
       map: texture,
       roughness: 0.8,
       metalness: 0.05,
       emissive: emissiveColor,
-      emissiveIntensity: 0.2,
+      emissiveIntensity: 0.4,
     });
 
     const segments = pData.radius > 20 ? 64 : 32;
@@ -483,6 +490,102 @@ export class SolarSystem {
     return new THREE.Line(geometry, material);
   }
 
+  // ==================== 小行星带（v8.0）====================
+
+  createAsteroidBelt() {
+    const count = 600;
+    const innerR = 1800;  // 火星轨道（1500）之后
+    const outerR = 2300;  // 木星轨道（2600）之前
+    const positions = new Float32Array(count * 3);
+    const colors = new Float32Array(count * 3);
+    const sizes = new Float32Array(count);
+
+    for (let i = 0; i < count; i++) {
+      const i3 = i * 3;
+      const angle = Math.random() * Math.PI * 2;
+      const radius = innerR + Math.random() * (outerR - innerR);
+      // 微小的Y轴偏移模拟带厚度
+      const yOffset = (Math.random() - 0.5) * 40;
+
+      positions[i3] = Math.cos(angle) * radius;
+      positions[i3 + 1] = yOffset;
+      positions[i3 + 2] = Math.sin(angle) * radius;
+
+      const brightness = 0.3 + Math.random() * 0.3;
+      colors[i3] = brightness;
+      colors[i3 + 1] = brightness * 0.85;
+      colors[i3 + 2] = brightness * 0.7;
+
+      sizes[i] = 0.3 + Math.random() * 1.2;
+    }
+
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+    geo.setAttribute('size', new THREE.BufferAttribute(sizes, 1));
+
+    const mat = new THREE.PointsMaterial({
+      size: 0.8,
+      vertexColors: true,
+      transparent: true,
+      opacity: 0.6,
+      sizeAttenuation: true,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+    });
+
+    const belt = new THREE.Points(geo, mat);
+    belt.userData.isAsteroidBelt = true;
+    // 添加到 group 让其跟随太阳系整体
+    const beltPivot = new THREE.Group();
+    beltPivot.add(belt);
+    this.group.add(beltPivot);
+
+    this.asteroidBelt = { points: belt, pivot: beltPivot };
+
+    console.log('[SolarSystem] 小行星带初始化完成，粒子数:', count);
+  }
+
+  // ==================== 太阳耀斑粒子（v8.0）====================
+
+  createSunFlares(cfg) {
+    const flareCount = 200;
+    const positions = new Float32Array(flareCount * 3);
+    const sizes = new Float32Array(flareCount);
+
+    for (let i = 0; i < flareCount; i++) {
+      const i3 = i * 3;
+      const theta = Math.random() * Math.PI * 2;
+      const phi = Math.acos(2 * Math.random() - 1);
+      // 分布在太阳表面外不远处
+      const r = cfg.sunRadius * (1.0 + Math.random() * 0.4);
+
+      positions[i3] = r * Math.sin(phi) * Math.cos(theta);
+      positions[i3 + 1] = r * Math.sin(phi) * Math.sin(theta);
+      positions[i3 + 2] = r * Math.cos(phi);
+
+      sizes[i] = 1.5 + Math.random() * 3.5;
+    }
+
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+
+    const mat = new THREE.PointsMaterial({
+      size: 2.0,
+      color: 0xffdd88,
+      transparent: true,
+      opacity: 0.5,
+      sizeAttenuation: true,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+    });
+
+    const flares = new THREE.Points(geo, mat);
+    flares.userData.isSunFlares = true;
+    this.group.add(flares);
+    this.sunFlares = { points: flares, material: mat };
+  }
+
   // ==================== 更新 ====================
 
   update(delta, elapsed) {
@@ -498,6 +601,14 @@ export class SolarSystem {
     // 日冕动画
     if (this.coronaMaterial) {
       this.coronaMaterial.uniforms.uTime.value = elapsed;
+    }
+    // v8.0: 小行星带缓慢旋转
+    if (this.asteroidBelt && this.asteroidBelt.pivot) {
+      this.asteroidBelt.pivot.rotation.y += delta * 0.02;
+    }
+    // v8.0: 太阳耀斑脉冲
+    if (this.sunFlares && this.sunFlares.material) {
+      this.sunFlares.material.opacity = 0.35 + Math.sin(elapsed * 2.5) * 0.2;
     }
 
     // 行星
@@ -526,7 +637,8 @@ export class SolarSystem {
   // ==================== 纹理生成 ====================
 
   generatePlanetTexture(name) {
-    const w = 1024, h = 512;
+    // v8.0: 降低纹理分辨率（512→128K像素，原1024→524K）大幅提升启动性能
+    const w = 512, h = 256;
     const canvas = document.createElement('canvas');
     canvas.width = w;
     canvas.height = h;

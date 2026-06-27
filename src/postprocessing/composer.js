@@ -31,13 +31,10 @@ export class PostProcessingManager {
     this.composer.addPass(this.bloomPass);
 
     // OutputPass 必须在最后：负责 toneMapping 和 sRGB 转换
-    // 缺少 OutputPass 是之前黑白闪烁的根本原因
     const outputPass = new OutputPass();
     this.composer.addPass(outputPass);
 
-    // toneMapping 已在 RendererManager 中统一设置为 ACESFilmicToneMapping
-
-    console.log('[PostProcessingManager] 后处理初始化完成（EffectComposer + Bloom + OutputPass）');
+    console.log('[PostProcessingManager] 后处理初始化完成（Bloom + OutputPass）');
   }
 
   render() {

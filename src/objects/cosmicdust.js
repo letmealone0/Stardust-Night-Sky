@@ -125,10 +125,10 @@ export class CosmicDust {
         const dy = py - this.camera.position.y;
         const dz = pz - this.camera.position.z;
         const distSq = dx * dx + dy * dy + dz * dz;
-        const pushRadius = 100; // 推开半径
+        const pushRadius = 200; // v8.0: 更大的推开半径（原100）
         if (distSq < pushRadius * pushRadius) {
           const dist = Math.sqrt(distSq);
-          const push = (1 - dist / pushRadius) * speedFactor * 30;
+          const push = (1 - dist / pushRadius) * speedFactor * 45; // v8.0: 更强推开效果
           px += vx * push;
           py += vy * push;
           pz += vz * push;
@@ -141,9 +141,14 @@ export class CosmicDust {
     }
     this.geometry.attributes.position.needsUpdate = true;
 
-    // 脉冲透明度（移动时更亮）
-    const baseOpacity = 0.1 + Math.sin(elapsed * 0.02) * 0.05;
-    this.material.opacity = baseOpacity + speedFactor * 0.1;
+    // v8.0: 脉冲透明度（移动时更亮、偏蓝）
+    const baseOpacity = 0.08 + Math.sin(elapsed * 0.02) * 0.04;
+    this.material.opacity = baseOpacity + speedFactor * 0.15;
+    // 移动时尘埃偏蓝（复用缓存的 Color 对象避免每帧分配）
+    if (!this._dustColor) this._dustColor = new THREE.Color();
+    const blueTint = 0.7 + speedFactor * 0.3;
+    this._dustColor.setRGB(blueTint * 0.9, blueTint, 1.0);
+    this.material.color = this._dustColor;
   }
 
   /**
