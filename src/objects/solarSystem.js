@@ -155,6 +155,10 @@ export class SolarSystem {
     const mesh = new THREE.Mesh(geometry, material);
     planetGroup.add(mesh);
 
+    // v9.4-tmp: 行星名字标签 (Sprite)
+    const labelSprite = this.createNameLabel(pData.name, pData.radius);
+    planetGroup.add(labelSprite);
+
     // 特化行星细节
     if (pData.name === 'Earth') {
       // 云层球体 (独立自转)
@@ -452,6 +456,31 @@ export class SolarSystem {
     flares.userData.isSunFlares = true;
     this.group.add(flares);
     this.sunFlares = { points: flares, material: mat };
+  }
+
+  /** v9.4-tmp: 行星名字标签 */
+  createNameLabel(name, radius) {
+    const canvas = document.createElement('canvas');
+    canvas.width = 256;
+    canvas.height = 64;
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = '#ffffff';
+    ctx.font = 'bold 28px Arial';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(name, 128, 32);
+    
+    const texture = new THREE.CanvasTexture(canvas);
+    const spriteMat = new THREE.SpriteMaterial({
+      map: texture,
+      transparent: true,
+      depthWrite: false,
+      depthTest: false,
+    });
+    const sprite = new THREE.Sprite(spriteMat);
+    sprite.position.y = radius * 1.5;
+    sprite.scale.set(radius * 1.5, radius * 1.5 * 0.25, 1);
+    return sprite;
   }
 
   // ==================== 更新 ====================
