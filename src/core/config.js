@@ -160,10 +160,10 @@ export const config = {
 
   // ---- 全方向粒子流 ----
   particleFlow: {
-    count: 6000,               // v8.0: 平衡性能与视觉
-    spread: 200,               // v8.0: 更大分布范围
-    sprintColorBoost: 1.5,     // v8.0: 冲刺颜色增强
-    streakLength: 4.0,         // v8.0: 粒子拖尾长度
+    count: 8000,               // v8.3: 更多粒子增强穿越感
+    spread: 150,               // v8.3: 更集中，粒子密度更高
+    sprintColorBoost: 1.5,
+    streakLength: 5.0,         // v8.3: 更长拖尾
   },
 
   // ---- 性能优化 ----

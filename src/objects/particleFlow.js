@@ -95,19 +95,19 @@ export class ParticleFlow {
             vSpeedLayer = 1.0;
           }
 
-          // 主流动方向 + 粒子拖尾拉伸
-          float flowStrength = speedFactor * 25.0 * layerSpeed;
+          // v8.3: 粒子从前方逆向流来（pos += vel: 粒子从运动方向飞向相机）
+          float flowStrength = speedFactor * 30.0 * layerSpeed;
           vec3 streakOffset = uVelocity * flowStrength * aRandom * uStreakLength;
-          pos -= streakOffset;
+          pos += streakOffset;
 
-          // 微小漂浮动画
-          float t = uTime * 0.3 * layerSpeed;
-          pos.x += sin(t + aRandom * 6.28) * 0.8;
-          pos.y += cos(t * 0.7 + aRandom * 6.28) * 0.8;
-          pos.z += sin(t * 0.5 + aRandom * 6.28) * 0.8;
+          // 静止时微小漂浮
+          float t = uTime * 0.5 * layerSpeed;
+          pos.x += sin(t + aRandom * 6.28) * 1.2;
+          pos.y += cos(t * 0.7 + aRandom * 6.28) * 1.2;
+          pos.z += sin(t * 0.5 + aRandom * 6.28) * 1.2;
 
-          // 透明度
-          float baseAlpha = 0.12;
+          // v8.3: 提高透明度
+          float baseAlpha = 0.18;
           vAlpha = baseAlpha + speedFactor * (0.55 + aRandom * 0.4);
           vAlpha *= (0.6 + vSpeedLayer * 0.6);
           vAlpha *= (1.0 + uSprintFactor * 1.8);
@@ -211,30 +211,29 @@ export class ParticleFlow {
     const vel = this._velocity;
     const speedNorm = Math.min(speed / 50, 1.0);
 
-    // v8.0: 每帧更新粒子位置（更多流动）
+    // v8.3: 粒子从前方流来（pos += vel: 粒子顺速度方向移动）
     for (let i = 0; i < this.count; i++) {
       const i3 = i * 3;
 
-      // 应用速度偏移
-      pos[i3]     -= vel.x * delta * speedNorm * 8;
-      pos[i3 + 1] -= vel.y * delta * speedNorm * 8;
-      pos[i3 + 2] -= vel.z * delta * speedNorm * 8;
+      pos[i3]     += vel.x * delta * speedNorm * 10;
+      pos[i3 + 1] += vel.y * delta * speedNorm * 10;
+      pos[i3 + 2] += vel.z * delta * speedNorm * 10;
 
-      // 循环重生
       const distSq = pos[i3] * pos[i3] + pos[i3+1] * pos[i3+1] + pos[i3+2] * pos[i3+2];
-      if (distSq > spread * spread * 1.5) {
-        const vLen = Math.sqrt(vel.x * vel.x + vel.y * vel.y + vel.z * vel.z);
+      // 粒子飞过相机后方或飞太远 → 重生在前方
+      const vLen = Math.sqrt(vel.x * vel.x + vel.y * vel.y + vel.z * vel.z);
+      if (distSq > spread * spread * 1.5 || distSq < spread * spread * 0.05) {
         if (vLen > 0.5) {
+          // 在运动方向前方生成粒子
           const nx = -vel.x / vLen;
           const ny = -vel.y / vLen;
           const nz = -vel.z / vLen;
-          const r = spread * (0.4 + Math.random() * 0.6);
+          const r = spread * (0.5 + Math.random() * 0.5);
           const theta = Math.random() * Math.PI * 2;
-          const perpX = Math.cos(theta) * r * 0.3;
-          const perpY = Math.sin(theta) * r * 0.3;
-          pos[i3]     = nx * spread * 0.8 + perpX;
-          pos[i3 + 1] = ny * spread * 0.8 + perpY;
-          pos[i3 + 2] = nz * spread * 0.8 + (Math.random() - 0.5) * r * 0.3;
+          const perpR = r * (0.1 + Math.random() * 0.4);
+          pos[i3]     = nx * r + Math.cos(theta) * perpR;
+          pos[i3 + 1] = ny * r + Math.sin(theta) * perpR;
+          pos[i3 + 2] = nz * r + (Math.random() - 0.5) * perpR;
         } else {
           this.resetParticle(i, spread);
         }
