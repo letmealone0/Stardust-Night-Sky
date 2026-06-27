@@ -8,6 +8,7 @@ export class StarField {
     this.materials = [];
     this.geometries = [];
     this.brightStars = [];
+    this.galaxyMaterial = null; // 银河 Shader 材质（用于更新时间）
   }
 
   init(scene) {
@@ -83,14 +84,36 @@ export class StarField {
     geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
     geometry.setAttribute('size', new THREE.BufferAttribute(sizes, 1));
 
-    const material = new THREE.PointsMaterial({
-      size: 0.5,
-      vertexColors: true,
+    const material = new THREE.ShaderMaterial({
+      uniforms: {
+        uPixelRatio: { value: Math.min(window.devicePixelRatio, 2) },
+      },
+      vertexShader: `
+        attribute float size;
+        uniform float uPixelRatio;
+        varying vec3 vColor;
+        void main() {
+          vColor = color;
+          vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
+          gl_PointSize = size * uPixelRatio * (300.0 / -mvPosition.z);
+          gl_Position = projectionMatrix * mvPosition;
+        }
+      `,
+      fragmentShader: `
+        precision highp float;
+        varying vec3 vColor;
+        void main() {
+          float d = length(gl_PointCoord - 0.5) * 2.0;
+          float alpha = 1.0 - smoothstep(0.0, 1.0, d);
+          alpha *= 0.8;
+          if (alpha < 0.01) discard;
+          gl_FragColor = vec4(vColor, alpha);
+        }
+      `,
       transparent: true,
-      opacity: 0.8,
-      sizeAttenuation: true,
-      blending: THREE.AdditiveBlending,
       depthWrite: false,
+      blending: THREE.AdditiveBlending,
+      vertexColors: true,
     });
 
     const points = new THREE.Points(geometry, material);
@@ -179,53 +202,167 @@ export class StarField {
   }
 
   createMilkyWay(scene, spread) {
-    const count = 4000;
+    const count = 5000;
     const geometry = new THREE.BufferGeometry();
     const positions = new Float32Array(count * 3);
     const colors = new Float32Array(count * 3);
     const sizes = new Float32Array(count);
+    const randoms = new Float32Array(count); // 随机种子（用于 Shader 动画）
 
-    const galaxyRadius = spread * 0.6;
-    const thickness = spread * 0.05;
+    const galaxyRadius = spread * 0.5;
+    const armCount = 4;                // 旋臂数量
+    const spin = 1.5;                  // 螺旋旋转量
+    const armSpread = 0.45;            // 旋臂散开程度
+    const armLength = galaxyRadius * 0.85;
+    const thickness = galaxyRadius * 0.04; // 银河盘厚度
+    const dustLaneCount = Math.floor(count * 0.15); // 15% 粒子用于尘埃带
 
     for (let i = 0; i < count; i++) {
       const i3 = i * 3;
 
-      // 螺旋星系盘
-      const radius = Math.random() * galaxyRadius;
-      const angle = radius * 0.003 + Math.random() * Math.PI * 2;
-      const armOffset = Math.sin(radius * 0.005 + Math.random() * Math.PI * 2) * 50;
+      let x, y, z;
+      let radius;
+      let colorFactor = 0;
 
-      positions[i3] = Math.cos(angle + armOffset) * radius;
-      positions[i3 + 1] = (Math.random() - 0.5) * thickness;
-      positions[i3 + 2] = Math.sin(angle + armOffset) * radius;
+      if (i < count - dustLaneCount) {
+        // ===== 旋臂粒子 =====
+        // 使用 Three.js Journey 的 Galaxy Generator 模式
+        const branchIndex = i % armCount;
+        const branchAngle = (branchIndex / armCount) * Math.PI * 2;
 
-      // 核心区域更亮、更密集
-      const coreFactor = Math.max(0, 1 - radius / galaxyRadius);
-      const brightness = 0.3 + coreFactor * 0.7;
+        // 半径分布：中心密集，外层稀疏（r = rand^0.5）
+        const rand = Math.pow(Math.random(), 0.5);
+        radius = rand * armLength;
 
-      const warm = 0.08 + Math.random() * 0.06;
-      const color = new THREE.Color().setHSL(warm, 0.3, brightness);
-      colors[i3] = color.r;
-      colors[i3 + 1] = color.g;
-      colors[i3 + 2] = color.b;
+        // 螺旋角度 = 基础旋臂角 + 旋转量 * 半径 + 随机散开
+        const spinAngle = spin * radius / armLength;
+        const scatterAngle = (Math.random() - 0.5) * armSpread * (1 - rand * 0.3);
 
-      sizes[i] = 0.2 + coreFactor * 0.5;
+        const angle = branchAngle + spinAngle + scatterAngle;
+
+        // 散开半径（离中心越远越散）
+        const scatterRadius = (1 - rand * 0.7) * galaxyRadius * 0.12 * Math.random();
+
+        x = Math.cos(angle) * (radius + scatterRadius);
+        z = Math.sin(angle) * (radius + scatterRadius);
+        y = (Math.random() - 0.5) * thickness * (1 - rand * 0.5); // 中心更薄
+
+        // 颜色：核心暖黄 → 旋臂蓝白 → 外层暗红
+        const normR = radius / armLength;
+        if (normR < 0.15) {
+          // 核心区域：暖黄/白色
+          const hue = 0.08 + Math.random() * 0.05;
+          const sat = 0.15 + Math.random() * 0.2;
+          const light = 0.7 + rand * 0.3;
+          const c = new THREE.Color().setHSL(hue, sat, light);
+          colors[i3] = c.r; colors[i3 + 1] = c.g; colors[i3 + 2] = c.b;
+          colorFactor = 1.0;
+        } else if (normR < 0.6) {
+          // 旋臂区域：蓝白/淡蓝
+          const hue = 0.55 + Math.random() * 0.1;
+          const sat = 0.1 + Math.random() * 0.25;
+          const light = 0.5 + rand * 0.4;
+          const c = new THREE.Color().setHSL(hue, sat, light);
+          colors[i3] = c.r; colors[i3 + 1] = c.g; colors[i3 + 2] = c.b;
+          colorFactor = 0.7;
+        } else {
+          // 外层：暗红/橙
+          const hue = 0.02 + Math.random() * 0.06;
+          const sat = 0.2 + Math.random() * 0.3;
+          const light = 0.25 + rand * 0.3;
+          const c = new THREE.Color().setHSL(hue, sat, light);
+          colors[i3] = c.r; colors[i3 + 1] = c.g; colors[i3 + 2] = c.b;
+          colorFactor = 0.3;
+        }
+
+        sizes[i] = 0.15 + rand * 0.35;
+      } else {
+        // ===== 尘埃带粒子（暗色、低透明度）=====
+        const angle = Math.random() * Math.PI * 2;
+        radius = Math.pow(Math.random(), 0.3) * armLength * 0.9;
+        const dustSpin = spin * 0.8 * radius / armLength;
+
+        x = Math.cos(angle + dustSpin) * radius;
+        z = Math.sin(angle + dustSpin) * radius;
+        y = (Math.random() - 0.5) * thickness * 0.3;
+
+        // 暗紫色/暗蓝色尘埃
+        const hue = 0.6 + Math.random() * 0.15;
+        const c = new THREE.Color().setHSL(hue, 0.3 + Math.random() * 0.2, 0.1 + Math.random() * 0.1);
+        colors[i3] = c.r; colors[i3 + 1] = c.g; colors[i3 + 2] = c.b;
+        colorFactor = 0.0;
+        sizes[i] = 0.1 + Math.random() * 0.2;
+      }
+
+      positions[i3] = x;
+      positions[i3 + 1] = y;
+      positions[i3 + 2] = z;
+      randoms[i] = Math.random();
     }
 
     geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
     geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
     geometry.setAttribute('size', new THREE.BufferAttribute(sizes, 1));
+    geometry.setAttribute('aRandom', new THREE.BufferAttribute(randoms, 1));
 
-    const material = new THREE.PointsMaterial({
-      size: 0.4,
-      vertexColors: true,
+    // 使用 ShaderMaterial 实现银河自转动画 + 软圆形粒子
+    const material = new THREE.ShaderMaterial({
+      uniforms: {
+        uTime: { value: 0 },
+        uRotationSpeed: { value: 0.015 }, // 银河缓慢自转
+        uPixelRatio: { value: Math.min(window.devicePixelRatio, 2) },
+      },
+      vertexShader: `
+        attribute float size;
+        attribute float aRandom;
+        uniform float uTime;
+        uniform float uRotationSpeed;
+        uniform float uPixelRatio;
+        varying vec3 vColor;
+        varying float vAlpha;
+
+        void main() {
+          vColor = color;
+
+          // 银河缓慢自转（绕 Y 轴）
+          float angle = uTime * uRotationSpeed;
+          float cosA = cos(angle);
+          float sinA = sin(angle);
+          vec3 pos = position;
+          float rx = pos.x * cosA - pos.z * sinA;
+          float rz = pos.x * sinA + pos.z * cosA;
+          pos.x = rx;
+          pos.z = rz;
+
+          // 微小闪烁（每颗星独立频率）
+          vAlpha = 0.5 + sin(uTime * (0.5 + aRandom * 2.0) + aRandom * 6.28) * 0.3;
+
+          vec4 mvPosition = modelViewMatrix * vec4(pos, 1.0);
+          gl_PointSize = size * uPixelRatio * (300.0 / -mvPosition.z);
+          gl_Position = projectionMatrix * mvPosition;
+        }
+      `,
+      fragmentShader: `
+        precision highp float;
+        varying vec3 vColor;
+        varying float vAlpha;
+
+        void main() {
+          // 软圆形粒子（避免方形像素感）
+          float d = length(gl_PointCoord - 0.5) * 2.0;
+          float alpha = 1.0 - smoothstep(0.0, 1.0, d);
+          alpha *= vAlpha;
+          if (alpha < 0.01) discard;
+          gl_FragColor = vec4(vColor, alpha);
+        }
+      `,
       transparent: true,
-      opacity: 0.6,
-      sizeAttenuation: true,
-      blending: THREE.AdditiveBlending,
       depthWrite: false,
+      blending: THREE.AdditiveBlending,
+      vertexColors: true,
     });
+
+    this.galaxyMaterial = material;
 
     const points = new THREE.Points(geometry, material);
     points.userData.isGalaxy = true;
@@ -242,6 +379,11 @@ export class StarField {
         material.uniforms.uTime.value = elapsed;
       }
     });
+
+    // 银河自转动画
+    if (this.galaxyMaterial && this.galaxyMaterial.uniforms) {
+      this.galaxyMaterial.uniforms.uTime.value = elapsed;
+    }
   }
 
   dispose(scene) {

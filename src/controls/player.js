@@ -33,6 +33,8 @@ export class PlayerController {
     this.damping = config.player.damping;
     this.baseFov = config.camera.fov;
 
+    // 冲刺状态（用于平滑过渡）
+    this.sprintFactor = 0; // 0=正常, 1=完全冲刺
   }
 
   /**
@@ -44,7 +46,27 @@ export class PlayerController {
     // 绑定键盘事件
     this.bindKeyboardEvents();
 
+    // PointerLock 中断时重置按键状态（防止 Alt+Tab 后按键卡住）
+    document.addEventListener('pointerlockchange', () => {
+      if (!this.controls.isLocked) {
+        this.resetKeys();
+      }
+    });
+
     console.log('[PlayerController] 控制器初始化完成');
+  }
+
+  /**
+   * 重置所有按键状态
+   */
+  resetKeys() {
+    this.moveForward = false;
+    this.moveBackward = false;
+    this.moveLeft = false;
+    this.moveRight = false;
+    this.moveUp = false;
+    this.moveDown = false;
+    this.sprint = false;
   }
 
   /**
@@ -142,6 +164,11 @@ export class PlayerController {
     // 计算目标速度（不含 delta，后面移动时再乘）
     const speed = this.sprint ? this.moveSpeed * this.sprintMultiplier : this.moveSpeed;
 
+    // 冲刺因子平滑过渡（ease-in-out）
+    const sprintTarget = this.sprint ? 1.0 : 0.0;
+    const sprintSpeed = this.sprint ? 6.0 : 3.0; // 解除冲刺更快
+    this.sprintFactor += (sprintTarget - this.sprintFactor) * Math.min(1, delta * sprintSpeed);
+
     // 帧率无关阻尼：使用指数衰减
     const dampFactor = Math.pow(1 - this.damping, delta * 60);
     this.velocity.x *= dampFactor;
@@ -164,9 +191,9 @@ export class PlayerController {
     this.controls.moveForward(-this.velocity.z * delta);
     this.camera.position.y += this.velocity.y * delta;
 
-    // 冲刺 FOV 效果（平滑过渡）
-    const targetFov = this.sprint ? this.baseFov + this.sprintFovBoost : this.baseFov;
-    const fovDamp = 1 - Math.pow(0.001, delta); // ~0.1 秒过渡
+    // 冲刺 FOV 效果（使用平滑的 sprintFactor）
+    const targetFov = this.baseFov + this.sprintFovBoost * this.sprintFactor;
+    const fovDamp = 1 - Math.pow(0.001, delta);
     this.camera.fov += (targetFov - this.camera.fov) * fovDamp;
     this.camera.updateProjectionMatrix();
   }
@@ -176,6 +203,21 @@ export class PlayerController {
    */
   getSpeed() {
     return this.velocity.length();
+  }
+
+  /**
+   * 获取速度向量（用于方向感知效果）
+   * 返回相机空间的速度方向
+   */
+  getVelocity() {
+    return this.velocity;
+  }
+
+  /**
+   * 获取平滑冲刺因子 (0~1)
+   */
+  getSprintFactor() {
+    return this.sprintFactor;
   }
 
   /**

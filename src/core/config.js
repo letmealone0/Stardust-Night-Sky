@@ -138,6 +138,11 @@ export const config = {
     recenterDistance: 3000,    // 超出此距离重新居中
   },
 
+  // ---- 全方向粒子流 ----
+  particleFlow: {
+    count: 3000,               // 粒子数（跟随相机的流动粒子）
+  },
+
   // ---- 性能优化 ----
   performance: {
     lodDistances: [0, 800, 2000], // LOD 距离阈值（匹配更大行星）

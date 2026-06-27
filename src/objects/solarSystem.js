@@ -185,6 +185,42 @@ export class SolarSystem {
       depthWrite: false,
     });
     this.group.add(new THREE.Mesh(glowGeo, glowMat));
+
+    // 日冕（外层辉光，更大范围）
+    const coronaGeo = new THREE.SphereGeometry(cfg.sunRadius * 3, 32, 32);
+    const coronaMat = new THREE.ShaderMaterial({
+      uniforms: {
+        uTime: { value: 0 },
+      },
+      vertexShader: `
+        varying vec3 vNormal;
+        varying vec3 vWorldPos;
+        void main() {
+          vNormal = normalize(normalMatrix * normal);
+          vWorldPos = (modelMatrix * vec4(position, 1.0)).xyz;
+          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        }
+      `,
+      fragmentShader: `
+        varying vec3 vNormal;
+        uniform float uTime;
+        void main() {
+          float rim = 1.0 - max(0.0, dot(vNormal, vec3(0,0,1)));
+          float intensity = pow(rim, 4.0);
+          // 脉动
+          float pulse = 0.8 + sin(uTime * 0.5) * 0.2;
+          // 日冕颜色：外层偏红橙
+          vec3 coronaColor = mix(vec3(1.0, 0.6, 0.2), vec3(1.0, 0.3, 0.1), rim);
+          gl_FragColor = vec4(coronaColor, intensity * 0.25 * pulse);
+        }
+      `,
+      blending: THREE.AdditiveBlending,
+      side: THREE.BackSide,
+      transparent: true,
+      depthWrite: false,
+    });
+    this.coronaMaterial = coronaMat;
+    this.group.add(new THREE.Mesh(coronaGeo, coronaMat));
   }
 
   // ==================== 行星 ====================
@@ -450,6 +486,10 @@ export class SolarSystem {
     }
     if (this.sunMaterial) {
       this.sunMaterial.uniforms.uTime.value = elapsed;
+    }
+    // 日冕动画
+    if (this.coronaMaterial) {
+      this.coronaMaterial.uniforms.uTime.value = elapsed;
     }
 
     // 行星

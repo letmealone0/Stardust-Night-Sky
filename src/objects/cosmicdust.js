@@ -78,7 +78,7 @@ export class CosmicDust {
     console.log('[CosmicDust] 宇宙尘埃初始化完成');
   }
 
-  update(delta, elapsed) {
+  update(delta, elapsed, velocity) {
     const { recenterDistance, spread } = config.cosmicDust;
 
     // 当相机远离中心时，重新居中粒子系统
@@ -88,6 +88,18 @@ export class CosmicDust {
         this.recenterParticles(spread);
       }
     }
+
+    // 计算移动速度（用于粒子推开效果）
+    let speed = 0;
+    let vx = 0, vy = 0, vz = 0;
+    if (velocity && velocity.lengthSq() > 0.01) {
+      speed = velocity.length();
+      const len = speed;
+      vx = velocity.x / len;
+      vy = velocity.y / len;
+      vz = velocity.z / len;
+    }
+    const speedFactor = Math.min(speed / 50, 1.0);
 
     // 缓慢的漂浮动画（使用预计算相位偏移，减少三角函数调用）
     const pos = this.geometry.attributes.position.array;
@@ -101,14 +113,37 @@ export class CosmicDust {
       const p = phases[i];
       const drift = 0.5 + Math.sin(et1 * 0.5 + p * 0.1) * 0.5;
       const drift10 = drift * 10;
-      pos[i3]     = init[i3]     + Math.sin(et1 + p) * drift10;
-      pos[i3 + 1] = init[i3 + 1] + Math.cos(et2 + p * 1.5) * drift10;
-      pos[i3 + 2] = init[i3 + 2] + Math.sin(et3 + p * 2) * drift10;
+
+      // 基础漂浮
+      let px = init[i3]     + Math.sin(et1 + p) * drift10;
+      let py = init[i3 + 1] + Math.cos(et2 + p * 1.5) * drift10;
+      let pz = init[i3 + 2] + Math.sin(et3 + p * 2) * drift10;
+
+      // 移动推开效果：靠近相机的粒子被推开
+      if (speedFactor > 0.01 && this.camera) {
+        const dx = px - this.camera.position.x;
+        const dy = py - this.camera.position.y;
+        const dz = pz - this.camera.position.z;
+        const distSq = dx * dx + dy * dy + dz * dz;
+        const pushRadius = 100; // 推开半径
+        if (distSq < pushRadius * pushRadius) {
+          const dist = Math.sqrt(distSq);
+          const push = (1 - dist / pushRadius) * speedFactor * 30;
+          px += vx * push;
+          py += vy * push;
+          pz += vz * push;
+        }
+      }
+
+      pos[i3]     = px;
+      pos[i3 + 1] = py;
+      pos[i3 + 2] = pz;
     }
     this.geometry.attributes.position.needsUpdate = true;
 
-    // 脉冲透明度
-    this.material.opacity = 0.1 + Math.sin(elapsed * 0.02) * 0.05;
+    // 脉冲透明度（移动时更亮）
+    const baseOpacity = 0.1 + Math.sin(elapsed * 0.02) * 0.05;
+    this.material.opacity = baseOpacity + speedFactor * 0.1;
   }
 
   /**

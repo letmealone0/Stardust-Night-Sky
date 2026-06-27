@@ -103,9 +103,13 @@ export class NebulaSystem {
         float density(vec3 p) {
           vec3 np = p / (uScale * 0.5);  // 归一化到 [-1,1]
           float n = fbm(np * 1.8 + uTime * 0.012);
-          float falloff = 1.0 - smoothstep(0.0, 1.0, length(np));
+          // 更柔和的球形衰减（使用 smoothstep 而非线性）
+          float falloff = 1.0 - smoothstep(0.0, 0.85, length(np));
+          // 额外的丝絮结构（更高频噪声）
+          float filaments = abs(noise(np * 4.0 + uTime * 0.008) * 2.0 - 1.0);
+          n = mix(n, filaments, 0.3); // 混合30%丝絮
           float d = n * falloff;
-          return max(0.0, d - 0.18) * uDensity;
+          return max(0.0, d - 0.15) * uDensity;
         }
 
         // 光线-盒子相交
@@ -137,6 +141,9 @@ export class NebulaSystem {
           float accAlpha = 0.0;
           float tCur = t.x + stepSize * hash(ro + fract(uTime)) * 0.5;
 
+          // 第三色：亮白高光（密度最高处）
+          vec3 uColor3 = mix(uColor1, vec3(1.0), 0.5);
+
           for (int i = 0; i < MAX_STEPS; i++) {
             if (i >= steps || accAlpha > 0.95) break;
 
@@ -145,8 +152,10 @@ export class NebulaSystem {
 
             if (d > 0.005) {
               float tc = smoothstep(0.0, 1.0, d / uDensity);
-              vec3 col = mix(uColor1, uColor2, tc);
-              col += smoothstep(0.5, 1.0, tc) * 0.3;
+              // 三色渐变：低密度=主色, 中密度=副色, 高密度=亮白
+              vec3 col = mix(uColor1, uColor2, smoothstep(0.0, 0.6, tc));
+              col = mix(col, uColor3, smoothstep(0.6, 1.0, tc) * 0.5);
+              col += smoothstep(0.5, 1.0, tc) * 0.2;
 
               float alpha = d * stepSize * 0.12 * uOpacity;
               accColor += col * alpha * (1.0 - accAlpha);

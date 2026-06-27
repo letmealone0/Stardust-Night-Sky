@@ -7,12 +7,21 @@ import * as THREE from 'three';
 import { config } from '../core/config.js';
 import { randomRange, randomChoice } from '../utils/random.js';
 import { hashCoords, seededRandom } from '../utils/seededRandom.js';
+import { isPositionValid, findValidPosition, collectAllPositions } from '../utils/spatial.js';
 
 export class PlanetSystem {
   constructor() {
     this.planets = [];
     this.group = new THREE.Group();
     this.camera = null;
+    this.sceneObjects = null; // 用于防重叠检测
+  }
+
+  /**
+   * 设置场景对象引用（用于防重叠检测）
+   */
+  setSceneObjects(sceneObjects) {
+    this.sceneObjects = sceneObjects;
   }
 
   /**
@@ -20,18 +29,36 @@ export class PlanetSystem {
    */
   init(scene) {
     const { count, minRadius, maxRadius, spread } = config.planets;
+    const existingPositions = [];
+
+    // 太阳系在原点，先加入作为障碍
+    existingPositions.push(new THREE.Vector3(0, 0, 0));
 
     for (let i = 0; i < count; i++) {
-      // 所有行星随机生成，均匀分布在球壳内
+      // 所有行星随机生成，均匀分布在球壳内，且不与其他星体重叠
       const radius = randomRange(minRadius, maxRadius);
-      const theta = Math.random() * Math.PI * 2;
-      const phi = Math.acos(2 * Math.random() - 1);
-      const r = spread * (0.15 + Math.random() * 0.85);
-      const position = new THREE.Vector3(
-        r * Math.sin(phi) * Math.cos(theta),
-        r * Math.sin(phi) * Math.sin(theta) * 0.3, // Y 轴压缩，避免太高太低
-        r * Math.cos(phi)
+      const minDist = radius * 3 + 100; // 最小间距 = 行星直径 + 余量
+
+      const position = findValidPosition(
+        existingPositions, minDist,
+        new THREE.Vector3(0, 0, 0), // 中心
+        spread * 0.15, spread * 0.95,
+        50, 0.3
       );
+
+      if (!position) {
+        // 找不到合法位置，使用随机位置（降级）
+        const theta = Math.random() * Math.PI * 2;
+        const phi = Math.acos(2 * Math.random() - 1);
+        const r = spread * (0.15 + Math.random() * 0.85);
+        position = new THREE.Vector3(
+          r * Math.sin(phi) * Math.cos(theta),
+          r * Math.sin(phi) * Math.sin(theta) * 0.3,
+          r * Math.cos(phi)
+        );
+      }
+
+      existingPositions.push(position);
 
       const planet = this.createPlanet(radius, position, i);
       this.group.add(planet);
@@ -446,23 +473,44 @@ export class PlanetSystem {
     const seed = hashCoords(chunkX + planet.userData.index * 7919, chunkY, chunkZ);
     const rng = seededRandom(seed);
 
-    // 在相机前方球壳内随机位置
-    const theta = rng() * Math.PI * 2;
-    const phi = Math.acos(2 * rng() - 1);
-    const r = cfg.respawnMin + rng() * (cfg.respawnMax - cfg.respawnMin);
+    // 收集所有已知星体位置（用于防重叠）
+    const existingPositions = [];
+    if (this.sceneObjects) {
+      const allPos = collectAllPositions(this.sceneObjects);
+      allPos.forEach(p => existingPositions.push(p));
+    }
+    // 排除自身当前位置
+    const selfIdx = existingPositions.findIndex(p =>
+      p.distanceToSquared(planet.position) < 1
+    );
+    if (selfIdx >= 0) existingPositions.splice(selfIdx, 1);
 
-    const newPos = new THREE.Vector3(
-      camPos.x + r * Math.sin(phi) * Math.cos(theta),
-      camPos.y + r * Math.sin(phi) * Math.sin(theta) * 0.3,
-      camPos.z + r * Math.cos(phi)
+    const minDist = planet.userData.radius * 3 + 100;
+    const newPos = findValidPosition(
+      existingPositions, minDist,
+      camPos,
+      cfg.respawnMin, cfg.respawnMax,
+      30, 0.3
     );
 
-    planet.position.copy(newPos);
+    if (newPos) {
+      planet.position.copy(newPos);
+    } else {
+      // 降级：使用确定性随机位置
+      const theta = rng() * Math.PI * 2;
+      const phi = Math.acos(2 * rng() - 1);
+      const r = cfg.respawnMin + rng() * (cfg.respawnMax - cfg.respawnMin);
+      planet.position.set(
+        camPos.x + r * Math.sin(phi) * Math.cos(theta),
+        camPos.y + r * Math.sin(phi) * Math.sin(theta) * 0.3,
+        camPos.z + r * Math.cos(phi)
+      );
+    }
 
     // 重置轨道数据（保留小幅公转，增加视觉动感）
     const data = planet.userData;
-    data.originalPosition.copy(newPos);
-    data.orbitRadius = 10 + rng() * 30; // 小幅公转，不超出安全区
+    data.originalPosition.copy(planet.position);
+    data.orbitRadius = 10 + rng() * 30;
     data.orbitAngle = rng() * Math.PI * 2;
   }
 

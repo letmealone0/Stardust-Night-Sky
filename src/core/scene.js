@@ -13,6 +13,7 @@ import { CosmicDust } from '../objects/cosmicdust.js';
 import { BlackHole } from '../objects/blackhole.js';
 import { Pulsar } from '../objects/pulsar.js';
 import { SolarSystem } from '../objects/solarSystem.js';
+import { ParticleFlow } from '../objects/particleFlow.js';
 
 export class SceneManager {
   constructor() {
@@ -27,6 +28,7 @@ export class SceneManager {
       blackhole: null,
       pulsar: null,
       solarSystem: null,
+      particleFlow: null,
     };
   }
 
@@ -49,6 +51,7 @@ export class SceneManager {
       this.objects.planets = new PlanetSystem();
       this.objects.planets.init(this.scene);
       this.objects.planets.setCamera(camera);
+      this.objects.planets.setSceneObjects(this.objects);
     } catch (e) { console.warn('[Scene] 行星初始化失败:', e); }
 
     try {
@@ -84,6 +87,11 @@ export class SceneManager {
       this.objects.solarSystem.setCamera(camera);
     } catch (e) { console.warn('[Scene] 太阳系初始化失败:', e); }
 
+    try {
+      this.objects.particleFlow = new ParticleFlow();
+      this.objects.particleFlow.init(this.scene, camera);
+    } catch (e) { console.warn('[Scene] 粒子流初始化失败:', e); }
+
     const ambientLight = new THREE.AmbientLight(0x111122, 0.4);
     this.scene.add(ambientLight);
 
@@ -98,15 +106,16 @@ export class SceneManager {
   /**
    * 更新场景
    */
-  update(delta, elapsed, speed = 0) {
+  update(delta, elapsed, speed = 0, velocity = null) {
     if (this.objects.stars) this.objects.stars.update(delta, elapsed);
     if (this.objects.planets) this.objects.planets.update(delta, elapsed);
     if (this.objects.nebula) this.objects.nebula.update(delta, elapsed, this.camera);
-    if (this.objects.speedLines) this.objects.speedLines.update(delta, speed);
-    if (this.objects.cosmicDust) this.objects.cosmicDust.update(delta, elapsed);
+    if (this.objects.speedLines) this.objects.speedLines.update(delta, speed, velocity);
+    if (this.objects.cosmicDust) this.objects.cosmicDust.update(delta, elapsed, velocity);
     if (this.objects.blackhole) this.objects.blackhole.update(delta, elapsed);
     if (this.objects.pulsar) this.objects.pulsar.update(delta, elapsed);
     if (this.objects.solarSystem) this.objects.solarSystem.update(delta, elapsed);
+    if (this.objects.particleFlow) this.objects.particleFlow.update(delta, elapsed, speed, velocity);
   }
 
   /**
@@ -121,5 +130,6 @@ export class SceneManager {
     if (this.objects.blackhole) this.objects.blackhole.dispose(this.scene);
     if (this.objects.pulsar) this.objects.pulsar.dispose(this.scene);
     if (this.objects.solarSystem) this.objects.solarSystem.dispose(this.scene);
+    if (this.objects.particleFlow) this.objects.particleFlow.dispose();
   }
 }

@@ -163,7 +163,8 @@ export class Engine {
   animate() {
     if (!this.isRunning) return;
 
-    const delta = this.clock.getDelta();
+    // Delta clamping: 防止 Tab 切换或掉帧导致大跳跃
+    const delta = Math.min(this.clock.getDelta(), 0.1);
     const elapsed = this.clock.getElapsedTime();
 
     // 更新 FPS
@@ -185,7 +186,7 @@ export class Engine {
 
     // 更新系统
     this.player.update(delta);
-    this.scene.update(delta, elapsed, this.player.getSpeed());
+    this.scene.update(delta, elapsed, this.player.getSpeed(), this.player.getVelocity());
     this.hud.update(delta);
 
     // 更新 HUD 信息

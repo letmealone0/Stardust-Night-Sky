@@ -1,6 +1,6 @@
 # 深空探索 (Deep Space Explorer) — 项目文档
 
-> **项目**: `stars-project/` · **版本**: v6.4 · **最后更新**: 2026-06-27
+> **项目**: `stars-project/` · **版本**: v7.0 · **最后更新**: 2026-06-27
 >
 > **一句话描述**: 基于 Three.js 3D 引擎的第一人称深空探索体验，WASD 移动 + 鼠标视角，
 > 可探索真实太阳系（太阳+8行星+卫星+星环）、银河系背景、体积光线步进星云、宇宙尘埃、黑洞（含行星吸收）和脉冲星。
@@ -117,13 +117,14 @@ stars-project/
 │   │   └── input.js            # [废弃] 已合并到 player.js
 │   │
 │   ├── objects/
-│   │   ├── stars.js            # 星空 + 银河系 + 亮星闪烁（GPU Shader）
-│   │   ├── planets.js          # 随机行星（纹理/大气层/环/LOD/公转/重生）
-│   │   ├── solarSystem.js      # 太阳系（太阳+8行星+卫星+星环+真实纹理）
-│   │   ├── nebula.js           # 星云（体积光线步进 Raymarching）
-│   │   ├── speedlines.js       # 速度线（LineSegments 渐变线段）
-│   │   ├── cosmicdust.js       # 宇宙尘埃（2000 粒子漂浮+跟随重居中）
-│   │   ├── blackhole.js        # 黑洞（事件视界/吸积盘/喷流/引力/重生）
+│   │   ├── stars.js            # 星空 + 银河系（对数螺旋臂 + GPU 自转）+ 亮星闪烁
+│   │   ├── planets.js          # 随机行星（纹理/大气层/环/LOD/公转/重生/防重叠）
+│   │   ├── solarSystem.js      # 太阳系（太阳+8行星+卫星+星环+日冕）
+│   │   ├── nebula.js           # 星云（体积光线步进 Raymarching + 三色渐变）
+│   │   ├── speedlines.js       # 速度线（方向感知 LineSegments）
+│   │   ├── particleFlow.js     # 全方向粒子流（垂直运动粒子反馈，新增）
+│   │   ├── cosmicdust.js       # 宇宙尘埃（2000 粒子漂浮+跟随重居中+推开效果）
+│   │   ├── blackhole.js        # 黑洞（事件视界/吸积盘湍流/喷流/引力/重生）
 │   │   └── pulsar.js           # 脉冲星（中子星/双锥光束/快速旋转/重生）
 │   │
 │   ├── postprocessing/
@@ -136,7 +137,8 @@ stars-project/
 │       ├── math.js             # 数学工具（lerp/clamp/noise）
 │       ├── random.js           # 随机工具（range/color/vector3）
 │       ├── seededRandom.js     # 确定性随机数（种子哈希）
-│       └── noise.js            # 噪声工具（2D/3D值噪声/FBM/turbulence）
+│       ├── noise.js            # 噪声工具（2D/3D值噪声/FBM/turbulence）
+│       └── spatial.js          # 空间距离检测（防重叠，新增）
 │
 └── dist/                       # 构建输出
 ```
@@ -150,13 +152,14 @@ main.js
   └─ new Engine()
        ├─ CameraController  ─→  PerspectiveCamera
        ├─ SceneManager
-       │    ├─ StarField         (8000 星 + 银河盘 + 亮星 GPU 闪烁)
-       │    ├─ PlanetSystem      (4 额外随机行星, LOD, 重生系统)
-       │    ├─ SolarSystem       (太阳 + 8 行星 + 卫星 + 星环, 真实纹理)
-       │    ├─ NebulaSystem      (4 星云, 体积 Raymarching, 重生系统)
-       │    ├─ SpeedLines        (相机子对象, 跟随视角)
-       │    ├─ CosmicDust        (2000 粒子, 跟随重居中)
-       │    ├─ BlackHole         (事件视界 + 吸积盘 + 喷流 + 引力 + 重生)
+       │    ├─ StarField         (8000 星 + 螺旋臂银河盘 + 尘埃带 + 亮星 GPU 闪烁)
+       │    ├─ PlanetSystem      (4 额外随机行星, LOD, 重生系统, 防重叠)
+       │    ├─ SolarSystem       (太阳 + 8 行星 + 卫星 + 星环 + 日冕, 真实纹理)
+       │    ├─ NebulaSystem      (4 星云, 体积 Raymarching, 三色渐变, 重生系统)
+       │    ├─ SpeedLines        (相机子对象, 方向感知, 跟随视角)
+       │    ├─ ParticleFlow      (3000 粒子, 全方向粒子流, 垂直运动反馈, 新增)
+       │    ├─ CosmicDust        (2000 粒子, 跟随重居中, 移动推开效果)
+       │    ├─ BlackHole         (事件视界 + 吸积盘湍流 + 喷流 + 引力 + 重生)
        │    └─ Pulsar            (中子星 + 双锥光束 + 重生)
        ├─ RendererManager    ─→  WebGLRenderer
        ├─ PlayerController   ─→  PointerLockControls + 键盘
@@ -168,7 +171,7 @@ main.js
 
 渲染循环 (engine.animate):
   player.update(delta)
-  → scene.update(delta, elapsed, speed)
+  → scene.update(delta, elapsed, speed, velocity)
   → hud.update(delta)
   → postprocessing.render()
 ```
@@ -441,3 +444,4 @@ main.js
 | **v6.2** | **2026-06-27** | **新功能**：距离驱动的星体重生系统（行星/星云/黑洞/脉冲星超出距离自动在新位置重生）；宇宙尘埃相机跟随重居中；确定性随机种子（基于坐标哈希）；**改进**：移除硬编码位置，全部随机球壳分布；加大分布范围（星空 5000→10000，尘埃 4000→6000）；camera far 10000→20000 |
 | **v6.3** | **2026-06-27** | **巨物感增强**：行星半径 10-60→40-200；星云 scale 600→1200；黑洞事件视界 15→25、吸积盘外径 100→200、喷流 250→400；脉冲星半径 3→5、光束 150→300；吸积盘粒子 5000→8000、喷流粒子 400→600；脉冲星光束 Shader 参数 uniform 化；camera.near 0.1→1；LOD 距离 0/500/1200→0/800/2000 |
 | **v6.4** | **2026-06-27** | **新功能**：太阳系系统（太阳+8行星+卫星+星环）；太阳 Shader 程序化等离子体纹理（日斑/湍流/光晕）；8 行星 Canvas 2D + 3D FBM 噪声真实纹理（地球海洋大陆/木星大红斑/土星环卡西尼缝等）；7 颗卫星（月球/木卫一~四/土卫六/土卫二）；土星环+天王星环；轨道线；时间缩放（1秒≈0.5天）；**改进**：随机行星数 8→4（太阳系已有 8 颗）；通用补光减弱（太阳为独立光源） |
+| **v7.0** | **2026-06-27** | **Bug 修复**（3项）：Delta Clamping 防大帧跳跃、PointerLock 中断时按键状态重置、冲刺 FOV 过渡改用平滑 sprintFactor；**新功能**（3项）：全方向粒子流系统（3000 粒子跟随相机，垂直运动粒子反馈）、星体防重叠系统（空间距离检测工具 + 各系统集成）、太阳日冕效果（外层辉光层 + 脉动动画）；**银河系重写**：对数螺旋臂（4 条旋臂 + 尘埃带）、核心暖黄→旋臂蓝白→外层暗红颜色渐变、GPU 驱动银河自转动画、软圆形粒子替代方形像素、星星多频率叠加闪烁；**运动效果增强**：方向感知速度线系统（根据移动方向旋转线段，垂直运动有粒子反馈）、宇宙尘埃移动推开效果（近处粒子被推开）、冲刺因子平滑过渡（sprintFactor 0~1）；**视觉增强**：吸积盘 Shader 湍流扰动（噪声驱动旋转偏移）、星云三色渐变 + 丝絮结构、星云更柔和的球形衰减曲线；**架构改进**：新增 `src/utils/spatial.js`（空间检测工具）、新增 `src/objects/particleFlow.js`（粒子流系统）、场景系统支持速度向量传递 |

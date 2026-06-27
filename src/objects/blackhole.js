@@ -91,14 +91,14 @@ export class BlackHole {
   }
 
   createAccretionDisk(cfg) {
-    const particleCount = 8000; // 更多粒子填充更大吸积盘
+    const particleCount = 8000;
     const positions = new Float32Array(particleCount * 3);
     const colors = new Float32Array(particleCount * 3);
+    const randoms = new Float32Array(particleCount); // 用于湍流扰动
 
     for (let i = 0; i < particleCount; i++) {
       const i3 = i * 3;
       const angle = Math.random() * Math.PI * 2;
-      // 更多粒子集中在内圈
       const rNorm = Math.pow(Math.random(), 0.6);
       const r = cfg.accretionInnerRadius + rNorm * (cfg.accretionOuterRadius - cfg.accretionInnerRadius);
       const height = (Math.random() - 0.5) * 4 * (1 - rNorm * 0.5);
@@ -107,7 +107,6 @@ export class BlackHole {
       positions[i3 + 1] = height;
       positions[i3 + 2] = Math.sin(angle) * r;
 
-      // 内圈更亮更白，外圈偏红暗
       const t = rNorm;
       if (t < 0.25) {
         const c = new THREE.Color(0.9 + Math.random() * 0.1, 0.9 + Math.random() * 0.1, 1.0);
@@ -119,20 +118,81 @@ export class BlackHole {
         const c = new THREE.Color(0.7 + Math.random() * 0.2, 0.15 + Math.random() * 0.15, 0.03);
         colors[i3] = c.r; colors[i3 + 1] = c.g; colors[i3 + 2] = c.b;
       }
+
+      randoms[i] = Math.random();
     }
 
     const geometry = new THREE.BufferGeometry();
     geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
     geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+    geometry.setAttribute('aRandom', new THREE.BufferAttribute(randoms, 1));
 
-    this.diskMaterial = new THREE.PointsMaterial({
-      size: 1.8,
-      vertexColors: true,
+    // ShaderMaterial: 湍流扰动 + 旋转动画
+    this.diskMaterial = new THREE.ShaderMaterial({
+      uniforms: {
+        uTime: { value: 0 },
+        uRotationSpeed: { value: 0.15 },
+        uPixelRatio: { value: Math.min(window.devicePixelRatio, 2) },
+      },
+      vertexShader: `
+        attribute float aRandom;
+        uniform float uTime;
+        uniform float uRotationSpeed;
+        uniform float uPixelRatio;
+        varying vec3 vColor;
+        varying float vAlpha;
+
+        // 简单噪声
+        float hash(float n) { return fract(sin(n) * 43758.5453); }
+
+        void main() {
+          vColor = color;
+
+          vec3 pos = position;
+
+          // 旋转动画
+          float angle = uTime * uRotationSpeed;
+          float cosA = cos(angle);
+          float sinA = sin(angle);
+          float rx = pos.x * cosA - pos.z * sinA;
+          float rz = pos.x * sinA + pos.z * cosA;
+          pos.x = rx;
+          pos.z = rz;
+
+          // 湍流扰动（噪声驱动的径向偏移）
+          float turbulence = sin(uTime * 2.0 + aRandom * 20.0) * 0.3;
+          turbulence += sin(uTime * 1.3 + aRandom * 15.0) * 0.2;
+          float dist = length(pos.xz);
+          float angle2 = atan(pos.z, pos.x) + turbulence / max(dist, 1.0);
+          pos.x = cos(angle2) * dist;
+          pos.z = sin(angle2) * dist;
+
+          // 高度脉冲
+          pos.y += sin(uTime * 3.0 + aRandom * 10.0) * 0.5;
+
+          vAlpha = 0.7 + aRandom * 0.3;
+
+          vec4 mvPosition = modelViewMatrix * vec4(pos, 1.0);
+          gl_PointSize = 1.8 * uPixelRatio * (200.0 / -mvPosition.z);
+          gl_Position = projectionMatrix * mvPosition;
+        }
+      `,
+      fragmentShader: `
+        precision highp float;
+        varying vec3 vColor;
+        varying float vAlpha;
+        void main() {
+          float d = length(gl_PointCoord - 0.5) * 2.0;
+          float alpha = 1.0 - smoothstep(0.0, 1.0, d);
+          alpha *= vAlpha;
+          if (alpha < 0.01) discard;
+          gl_FragColor = vec4(vColor, alpha);
+        }
+      `,
       transparent: true,
-      opacity: 0.9,
-      blending: THREE.AdditiveBlending,
       depthWrite: false,
-      sizeAttenuation: true,
+      blending: THREE.AdditiveBlending,
+      vertexColors: true,
     });
 
     this.accretionDisk = new THREE.Points(geometry, this.diskMaterial);
@@ -223,9 +283,9 @@ export class BlackHole {
   update(delta, elapsed) {
     const cfg = config.blackhole;
 
-    // 吸积盘旋转（内圈更快）
-    if (this.accretionDisk) {
-      this.accretionDisk.rotation.z += 0.008;
+    // 吸积盘：Shader 驱动旋转 + 湍流（不再需要 CPU 端旋转）
+    if (this.diskMaterial && this.diskMaterial.uniforms) {
+      this.diskMaterial.uniforms.uTime.value = elapsed;
     }
 
     // 喷流脉冲
