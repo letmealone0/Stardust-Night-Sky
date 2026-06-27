@@ -34,16 +34,22 @@ export const config = {
     ],
   },
 
-  // ---- 行星系统 ----
+  // ---- 行星系统（随机生成的额外星体）----
   planets: {
-    count: 8,                // 行星数量
-    minRadius: 40,           // 最小半径（加大，飞近时有存在感）
-    maxRadius: 200,          // 最大半径（巨型行星充满视野）
+    count: 4,                // 额外随机行星数量（减少，太阳系已有 8 颗）
+    minRadius: 40,           // 最小半径
+    maxRadius: 200,          // 最大半径
     spread: 3000,            // 分布范围
-    atmosphereScale: 1.15,   // 大气层缩放（略收紧，大行星比例更协调）
+    atmosphereScale: 1.15,   // 大气层缩放
     respawnDistance: 2500,   // 超出此距离重生行星
     respawnMin: 600,         // 重生最小距离
     respawnMax: 1800,        // 重生最大距离
+  },
+
+  // ---- 太阳系 ----
+  solarSystem: {
+    sunRadius: 80,           // 太阳半径
+    timeScale: 0.5,          // 时间缩放（每秒游戏时间对应多少天）
   },
 
   // ---- 星云效果（体积光线步进）----

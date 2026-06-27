@@ -1,9 +1,9 @@
 # 深空探索 (Deep Space Explorer) — 项目文档
 
-> **项目**: `stars-project/` · **版本**: v6.1 · **最后更新**: 2026-06-26
+> **项目**: `stars-project/` · **版本**: v6.4 · **最后更新**: 2026-06-27
 >
 > **一句话描述**: 基于 Three.js 3D 引擎的第一人称深空探索体验，WASD 移动 + 鼠标视角，
-> 可探索 8 颗程序化行星、银河系背景、体积光线步进星云、宇宙尘埃、黑洞（含行星吸收）和脉冲星。
+> 可探索真实太阳系（太阳+8行星+卫星+星环）、银河系背景、体积光线步进星云、宇宙尘埃、黑洞（含行星吸收）和脉冲星。
 
 ---
 
@@ -118,12 +118,13 @@ stars-project/
 │   │
 │   ├── objects/
 │   │   ├── stars.js            # 星空 + 银河系 + 亮星闪烁（GPU Shader）
-│   │   ├── planets.js          # 行星（纹理/大气层/环/LOD/公转）
-│   │   ├── nebula.js           # 星云（几何合并 Shader 云团）
+│   │   ├── planets.js          # 随机行星（纹理/大气层/环/LOD/公转/重生）
+│   │   ├── solarSystem.js      # 太阳系（太阳+8行星+卫星+星环+真实纹理）
+│   │   ├── nebula.js           # 星云（体积光线步进 Raymarching）
 │   │   ├── speedlines.js       # 速度线（LineSegments 渐变线段）
-│   │   ├── cosmicdust.js       # 宇宙尘埃（2000 粒子漂浮）
-│   │   ├── blackhole.js        # 黑洞（事件视界/吸积盘/喷流/引力）
-│   │   └── pulsar.js           # 脉冲星（中子星/双锥光束/快速旋转）
+│   │   ├── cosmicdust.js       # 宇宙尘埃（2000 粒子漂浮+跟随重居中）
+│   │   ├── blackhole.js        # 黑洞（事件视界/吸积盘/喷流/引力/重生）
+│   │   └── pulsar.js           # 脉冲星（中子星/双锥光束/快速旋转/重生）
 │   │
 │   ├── postprocessing/
 │   │   └── composer.js         # EffectComposer（Bloom + OutputPass）
@@ -133,7 +134,9 @@ stars-project/
 │   │
 │   └── utils/
 │       ├── math.js             # 数学工具（lerp/clamp/noise）
-│       └── random.js           # 随机工具（range/color/vector3）
+│       ├── random.js           # 随机工具（range/color/vector3）
+│       ├── seededRandom.js     # 确定性随机数（种子哈希）
+│       └── noise.js            # 噪声工具（2D/3D值噪声/FBM/turbulence）
 │
 └── dist/                       # 构建输出
 ```
@@ -148,12 +151,13 @@ main.js
        ├─ CameraController  ─→  PerspectiveCamera
        ├─ SceneManager
        │    ├─ StarField         (8000 星 + 银河盘 + 亮星 GPU 闪烁)
-       │    ├─ PlanetSystem      (8 行星, LOD, 相机距离驱动)
-       │    ├─ NebulaSystem      (4 星云, 体积 Raymarching)
+       │    ├─ PlanetSystem      (4 额外随机行星, LOD, 重生系统)
+       │    ├─ SolarSystem       (太阳 + 8 行星 + 卫星 + 星环, 真实纹理)
+       │    ├─ NebulaSystem      (4 星云, 体积 Raymarching, 重生系统)
        │    ├─ SpeedLines        (相机子对象, 跟随视角)
-       │    ├─ CosmicDust        (2000 粒子, 预计算相位)
-       │    ├─ BlackHole         (事件视界 + 吸积盘 + 喷流 + 引力)
-       │    └─ Pulsar            (中子星 + 双锥光束)
+       │    ├─ CosmicDust        (2000 粒子, 跟随重居中)
+       │    ├─ BlackHole         (事件视界 + 吸积盘 + 喷流 + 引力 + 重生)
+       │    └─ Pulsar            (中子星 + 双锥光束 + 重生)
        ├─ RendererManager    ─→  WebGLRenderer
        ├─ PlayerController   ─→  PointerLockControls + 键盘
        ├─ PostProcessing     ─→  EffectComposer
@@ -200,11 +204,24 @@ main.js
 - 50 颗亮星独立频率/相位闪烁（**v6.0: GPU Shader 计算**）
 
 ### objects/planets.js
-- 8 颗行星：岩石 / 气态 / 冰 / 熔岩
+- 4 颗额外随机行星：岩石 / 气态 / 冰 / 熔岩
 - Canvas 2D 程序化纹理（陨石坑、条纹、裂纹、熔岩流）
 - Rayleigh + Mie 散射大气层 Shader
-- **LOD 系统**：64 / 32 / 16 段，距离 0 / 300 / 800 切换
-- 自转 + 公转动画
+- **LOD 系统**：64 / 32 / 16 段，距离 0 / 800 / 2000 切换
+- 自转 + 公转动画 + 距离重生系统
+
+### objects/solarSystem.js（v6.4 新增）
+- **太阳**：Shader 程序化等离子体纹理（日斑/湍流/光晕）
+- **8 大行星**：水星/金星/地球/火星/木星/土星/天王星/海王星
+  - Canvas 2D + 3D FBM 噪声程序化纹理（1024×512）
+  - 地球：海洋+大陆+冰盖（高度图着色）
+  - 木星：横向条带+大红斑
+  - 土星：条带+华丽星环（含卡西尼缝）
+  - 各行星独立轴倾角、公转/自转周期
+- **卫星**：月球、木卫一~四、土卫六/土卫二
+- **星环**：土星环（程序化渐变+噪点+卡西尼缝）、天王星环
+- **轨道线**：半透明圆形轨道参考线
+- **时间缩放**：1 秒 ≈ 0.5 天（一年约 730 秒）
 
 ### objects/nebula.js
 - **体积光线步进（Raymarching）**：立方体包围盒内逐采样点累积密度
@@ -259,37 +276,37 @@ main.js
 {
   camera: {
     fov: 75,                        // 视野角度
-    near: 0.1,                      // 近裁剪面
-    far: 10000,                     // 远裁剪面
+    near: 1,                        // 近裁剪面（v6.3 加大，防穿模）
+    far: 20000,                     // 远裁剪面（v6.2 加大）
     startPosition: { x:0, y:0, z:100 }
   },
   player: {
     moveSpeed: 50,                  // 基础移动速度
-    sprintMultiplier: 4.0,          // 冲刺倍数（v6.1 增强）
-    sprintFovBoost: 15,             // 冲刺 FOV 增加量（v6.1 新增）
+    sprintMultiplier: 4.0,          // 冲刺倍数
+    sprintFovBoost: 15,             // 冲刺 FOV 增加量
     mouseSensitivity: 0.002,        // 鼠标灵敏度
     damping: 0.05                   // 移动阻尼
   },
   stars: {
     count: 8000,                    // 总星星数
-    spread: 5000,                   // 分布半径
-    layers: [
-      { count: 4000, depth: 0.2, size: [0.1, 0.2] },
-      { count: 2500, depth: 0.5, size: [0.15, 0.3] },
-      { count: 1500, depth: 1.0, size: [0.2, 0.5] },
-    ]
+    spread: 10000,                  // 分布半径（v6.2 加大）
+    layers: [ /* 三层星空 */ ]
   },
-  planets: {
-    count: 8,                       // 行星数
-    minRadius: 10, maxRadius: 60,   // 半径范围（v6.1 加大）
-    spread: 2500,                   // 分布范围（v6.1 缩小，更集中）
-    atmosphereScale: 1.2            // 大气层缩放
+  planets: {                        // 额外随机行星
+    count: 4,                       // 数量（v6.4 减少，太阳系已有 8 颗）
+    minRadius: 40, maxRadius: 200,  // 半径范围（v6.3 加大）
+    spread: 3000, respawnDistance: 2500
+  },
+  solarSystem: {                    // 太阳系（v6.4 新增）
+    sunRadius: 80,                  // 太阳半径
+    timeScale: 0.5,                 // 时间缩放（每秒≈0.5天）
   },
   nebula: {
-    count: 3,                       // 星云数
-    scale: 500,                     // 大小
-    opacity: 0.15,                  // 透明度
-    colors: [ /* 紫/蓝/红 */ ]
+    count: 4,                       // 星云数
+    scale: 1200,                    // 大小（v6.3 翻倍）
+    opacity: 1.0,
+    colors: [ /* 深紫/深蓝/暗红/青绿 */ ],
+    respawnDistance: 5000, respawnMin: 2000, respawnMax: 4000
   },
   postprocessing: {
     bloom: {
@@ -305,23 +322,25 @@ main.js
     speedThreshold: 2,              // 显示速度阈值
     opacityTarget: 0.7              // 最大透明度
   },
-  blackhole: {                      // v6.0 新增，v6.1 增强
-    eventHorizonRadius: 15,         // 事件视界半径
-    accretionInnerRadius: 25,       // 吸积盘内半径
-    accretionOuterRadius: 100,      // 吸积盘外半径（v6.1 加大）
+  blackhole: {                      // v6.0 新增，v6.3 加大
+    eventHorizonRadius: 25,         // 事件视界半径（v6.3 加大）
+    accretionInnerRadius: 40,       // 吸积盘内半径（v6.3 加大）
+    accretionOuterRadius: 200,      // 吸积盘外半径（v6.3 加大）
     position: { x:800, y:50, z:-600 },
-    dangerRadius: 400,              // 危险区域半径（v6.1 加大）
-    pullRadius: 200,                // 引力影响半径（v6.1 加大）
-    pullStrength: 80,               // 引力强度（v6.1 增强）
-    jetLength: 250,                 // 喷流长度（v6.1 加长）
-    absorbRadius: 80,               // 行星吸收半径（v6.1 新增）
+    dangerRadius: 600,              // 危险区域半径（v6.3 加大）
+    pullRadius: 300,                // 引力影响半径（v6.3 加大）
+    pullStrength: 80,               // 引力强度
+    jetLength: 400,                 // 喷流长度（v6.3 加长）
+    absorbRadius: 80,               // 行星吸收半径
+    respawnDistance: 3000,           // 重生距离（v6.2 新增）
   },
-  pulsar: {                         // v6.0 新增
-    radius: 3,                      // 半径
-    beamLength: 150,                // 光束长度
+  pulsar: {                         // v6.0 新增，v6.3 加大
+    radius: 5,                      // 半径（v6.3 加大）
+    beamLength: 300,                // 光束长度（v6.3 翻倍）
     rotationSpeed: 5,               // 旋转速度（弧度/秒）
     position: { x:-500, y:100, z:400 },
     color: { r:0.5, g:0.8, b:1.0 },
+    respawnDistance: 3000,           // 重生距离（v6.2 新增）
   }
 }
 ```
@@ -348,6 +367,9 @@ main.js
 | 脉冲星光束 | 使用锥形几何模拟，非真实体积光 |
 | 星云体积渲染 | 光线步进 24 步，低端设备可能有性能压力 |
 | 行星吸收 | 仅黑洞附近触发，不支持远程引力影响 |
+| 太阳系比例 | 行星大小和轨道距离为艺术化缩放，非真实天文比例 |
+| 行星纹理 | Canvas 2D 程序化生成，精度有限（1024×512） |
+| 卫星数量 | 仅展示主要卫星（7 颗），未包含全部已知卫星 |
 
 ---
 
@@ -416,3 +438,6 @@ main.js
 | v5.2 | 2026-06-25 | **Bug 修复**（7项）：window.engine null、方向 NaN、noise 置换表、dispose 清理等；**性能**（4项）：Planet LOD、Nebula 几何合并、Resize 节流、setAnimationLoop；**画面**（8项）：Bloom 管线重启用、LineSegments 速度线、OBAFGKM 星色、银河盘、程序化纹理、Rayleigh 大气层、宇宙尘埃、独立亮星闪烁；**代码质量**（4项）：配置校验、输入合并、参数化、优雅降级 |
 | **v6.0** | **2026-06-26** | **Bug 修复**（3项）：亮星颜色衰减（GPU Shader 修复）、Scene null 安全检查、冰行星纹理性能；**性能优化**（3项）：亮星闪烁迁移到 GPU、宇宙尘埃预计算相位、冰行星 ImageData 批量写入；**新功能**（2项）：黑洞系统（事件视界/吸积盘/喷流/引力拖拽/危险区域）、脉冲星系统（中子星/双锥光束/快速旋转）；**画面增强**（3项）：跃迁特效（CSS 光晕+扫描线）、黑洞危险区域红色警告、准星脉冲动画+角标设计；**代码结构**（4项）：Camera/Player dispose 完整、toneMapping 统一管理、移除未使用 maxFPS 配置、HUD 危险等级接口 |
 | **v6.1** | **2026-06-26** | **Bug 修复**（5项）：星云坐标空间不匹配（世界/局部空间统一）、玩家移动双重 delta（帧率无关修复）、阻尼帧率相关（改指数衰减）、黑洞每帧 new Vector3（复用优化）、速度线每帧多余 color.needsUpdate；**性能优化**（5项）：HUD DOM 引用缓存、速度线颜色按需更新、暂停时 camera uniform 仍更新、行星距离裁剪（>2000 跳过）、黑洞 addScaledVector 替代 multiplyScalar；**新功能**（3项）：星云体积光线步进（Raymarching + FBM）、黑洞行星吸收系统（缩小+偏色+粒子流+移除）、冲刺 FOV 扩展效果（+15°平滑过渡）；**画面增强**（4项）：冲刺倍数 2.5→4.0、跃迁 CSS 脉冲动画、吸积盘 5000 粒子+内圈高亮、HUD 冲刺 WARP 指示器；**操控改进**（2项）：下降键 Ctrl→C（防浏览器冲突）、行星半径 5-30→10-60+近处大行星 |
+| **v6.2** | **2026-06-27** | **新功能**：距离驱动的星体重生系统（行星/星云/黑洞/脉冲星超出距离自动在新位置重生）；宇宙尘埃相机跟随重居中；确定性随机种子（基于坐标哈希）；**改进**：移除硬编码位置，全部随机球壳分布；加大分布范围（星空 5000→10000，尘埃 4000→6000）；camera far 10000→20000 |
+| **v6.3** | **2026-06-27** | **巨物感增强**：行星半径 10-60→40-200；星云 scale 600→1200；黑洞事件视界 15→25、吸积盘外径 100→200、喷流 250→400；脉冲星半径 3→5、光束 150→300；吸积盘粒子 5000→8000、喷流粒子 400→600；脉冲星光束 Shader 参数 uniform 化；camera.near 0.1→1；LOD 距离 0/500/1200→0/800/2000 |
+| **v6.4** | **2026-06-27** | **新功能**：太阳系系统（太阳+8行星+卫星+星环）；太阳 Shader 程序化等离子体纹理（日斑/湍流/光晕）；8 行星 Canvas 2D + 3D FBM 噪声真实纹理（地球海洋大陆/木星大红斑/土星环卡西尼缝等）；7 颗卫星（月球/木卫一~四/土卫六/土卫二）；土星环+天王星环；轨道线；时间缩放（1秒≈0.5天）；**改进**：随机行星数 8→4（太阳系已有 8 颗）；通用补光减弱（太阳为独立光源） |

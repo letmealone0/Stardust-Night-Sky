@@ -12,6 +12,7 @@ import { SpeedLines } from '../objects/speedlines.js';
 import { CosmicDust } from '../objects/cosmicdust.js';
 import { BlackHole } from '../objects/blackhole.js';
 import { Pulsar } from '../objects/pulsar.js';
+import { SolarSystem } from '../objects/solarSystem.js';
 
 export class SceneManager {
   constructor() {
@@ -25,6 +26,7 @@ export class SceneManager {
       cosmicDust: null,
       blackhole: null,
       pulsar: null,
+      solarSystem: null,
     };
   }
 
@@ -76,10 +78,17 @@ export class SceneManager {
       this.objects.pulsar.setCamera(camera);
     } catch (e) { console.warn('[Scene] 脉冲星初始化失败:', e); }
 
-    const ambientLight = new THREE.AmbientLight(0x111122, 0.5);
+    try {
+      this.objects.solarSystem = new SolarSystem();
+      this.objects.solarSystem.init(this.scene, camera);
+      this.objects.solarSystem.setCamera(camera);
+    } catch (e) { console.warn('[Scene] 太阳系初始化失败:', e); }
+
+    const ambientLight = new THREE.AmbientLight(0x111122, 0.4);
     this.scene.add(ambientLight);
 
-    const pointLight = new THREE.PointLight(0xffeedd, 1, 2000);
+    // 通用补光（太阳系有独立光源，这里只提供基础照明）
+    const pointLight = new THREE.PointLight(0xffeedd, 0.3, 5000);
     pointLight.position.set(100, 50, 100);
     this.scene.add(pointLight);
 
@@ -97,6 +106,7 @@ export class SceneManager {
     if (this.objects.cosmicDust) this.objects.cosmicDust.update(delta, elapsed);
     if (this.objects.blackhole) this.objects.blackhole.update(delta, elapsed);
     if (this.objects.pulsar) this.objects.pulsar.update(delta, elapsed);
+    if (this.objects.solarSystem) this.objects.solarSystem.update(delta, elapsed);
   }
 
   /**
@@ -110,5 +120,6 @@ export class SceneManager {
     if (this.objects.cosmicDust) this.objects.cosmicDust.dispose(this.scene);
     if (this.objects.blackhole) this.objects.blackhole.dispose(this.scene);
     if (this.objects.pulsar) this.objects.pulsar.dispose(this.scene);
+    if (this.objects.solarSystem) this.objects.solarSystem.dispose(this.scene);
   }
 }
