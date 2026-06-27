@@ -259,6 +259,23 @@ export class Engine {
     this.hud.updateWarpEffect(this.player.getSpeed(), 100);
     this.hud.updateSprint(this.player.isSprinting());
 
+    // v10.0: 银河宏观运动 — 太阳系公转 + 较差自转
+    const gm = config.galaxyMotion;
+    if (gm && gm.enabled !== false && !this.isMotionFrozen) {
+      const ts = gm.timeScale || 1;
+      // 太阳系绕银心公转
+      if (this.scene.solarOrbitNode) {
+        this.scene.solarOrbitNode.rotation.y += (gm.solarOrbitSpeed || 0.0015) * delta * ts;
+      }
+      // 银河Shader参数
+      const gmMat = this.scene.objects.stars?.galaxyMaterial;
+      if (gmMat && gmMat.uniforms) {
+        gmMat.uniforms.uTimeScale.value = ts;
+        gmMat.uniforms.uCoreRotSpeed.value = gm.coreRotSpeed || 0.008;
+        gmMat.uniforms.uRadiusFalloff.value = gm.radiusFalloff || 0.00004;
+      }
+    }
+
     // 渲染
     this.postprocessing.render();
   }

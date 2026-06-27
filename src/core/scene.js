@@ -39,13 +39,22 @@ export class SceneManager {
     this.camera = camera;
     this.scene = new THREE.Scene();
     this.scene.background = new THREE.Color(0x000005);
-    // v9.2: 线性雾 — 扩展范围匹配新海王星轨道(12000)
     this.scene.fog = new THREE.Fog(0x000005, 10000, 120000);
+
+    // v10.0: 三级Group嵌套 — 银河自转+太阳系公转
+    this.galaxyGroup = new THREE.Group();        // 银河整体自转
+    this.galaxyCenterGroup = new THREE.Group();  // 银心位置
+    this.galaxyCenterGroup.position.set(-15000, 500, -30000);
+    this.solarOrbitNode = new THREE.Group();     // 太阳系绕银心公转
+    this.solarOrbitNode.position.x = config.galaxyMotion?.solarOrbitRadius || 50000;
+    this.galaxyCenterGroup.add(this.solarOrbitNode);
+    this.galaxyGroup.add(this.galaxyCenterGroup);
+    this.scene.add(this.galaxyGroup);
 
     // 逐个初始化，失败不阻断整体流程
     try {
       this.objects.stars = new StarField();
-      this.objects.stars.init(this.scene);
+      this.objects.stars.init(this.galaxyGroup);  // v10.0: 挂到galaxyGroup
     } catch (e) { console.warn('[Scene] 星空初始化失败:', e); }
 
     try {
@@ -57,7 +66,7 @@ export class SceneManager {
 
     try {
       this.objects.nebula = new NebulaSystem();
-      this.objects.nebula.init(this.scene);
+      this.objects.nebula.init(this.galaxyGroup);  // v10.0: 星云挂到galaxyGroup
     } catch (e) { console.warn('[Scene] 星云初始化失败:', e); }
 
     try {
@@ -67,7 +76,7 @@ export class SceneManager {
 
     try {
       this.objects.cosmicDust = new CosmicDust();
-      this.objects.cosmicDust.init(this.scene);
+      this.objects.cosmicDust.init(this.galaxyGroup);  // v10.0: 尘埃挂到galaxyGroup
       this.objects.cosmicDust.setCamera(camera);
     } catch (e) { console.warn('[Scene] 宇宙尘埃初始化失败:', e); }
 
@@ -86,6 +95,8 @@ export class SceneManager {
       this.objects.solarSystem = new SolarSystem();
       await this.objects.solarSystem.init(this.scene, camera);
       this.objects.solarSystem.setCamera(camera);
+      // v10.0: 太阳系挂到solarOrbitNode下, 绕银心公转
+      this.solarOrbitNode.add(this.objects.solarSystem.group);
     } catch (e) { console.warn('[Scene] 太阳系初始化失败:', e); }
 
     try {

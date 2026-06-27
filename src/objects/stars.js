@@ -309,20 +309,27 @@ export class StarField {
     const material = new THREE.ShaderMaterial({
       uniforms: {
         uTime: { value: 0 },
-        uRotationSpeed: { value: 0.012 },
+        uCoreRotSpeed: { value: 0.008 },     // v10.0: 银心基准角速度
+        uRadiusFalloff: { value: 0.00004 },  // v10.0: 较差自转衰减
+        uTimeScale: { value: 1.0 },          // v10.0: 全局调速
         uPixelRatio: { value: Math.min(window.devicePixelRatio, 2) },
       },
       vertexShader: `
         attribute float size;
         attribute float aRandom;
         uniform float uTime;
-        uniform float uRotationSpeed;
+        uniform float uCoreRotSpeed;
+        uniform float uRadiusFalloff;
+        uniform float uTimeScale;
         uniform float uPixelRatio;
         varying vec3 vColor;
         varying float vAlpha;
         void main() {
           vColor = color;
-          float angle = uTime * uRotationSpeed;
+          // v10.0: 较差自转 — 内圈快外圈慢
+          float r = length(position.xz) + 0.01;
+          float localSpeed = uCoreRotSpeed / (0.1 + r * uRadiusFalloff);
+          float angle = uTime * localSpeed * uTimeScale;
           float cosA = cos(angle);
           float sinA = sin(angle);
           vec3 pos = position;
@@ -330,7 +337,9 @@ export class StarField {
           float rz = pos.x * sinA + pos.z * cosA;
           pos.x = rx;
           pos.z = rz;
-          vAlpha = 0.5 + sin(uTime * (0.5 + aRandom * 2.0) + aRandom * 6.28) * 0.3;
+          // v10.0: 银心亮度脉动
+          float corePulse = 1.0 + sin(uTime * 1.5) * 0.1 / (r * 0.0001 + 0.5);
+          vAlpha = (0.5 + sin(uTime * (0.5 + aRandom * 2.0) + aRandom * 6.28) * 0.3) * corePulse;
           vec4 mvPosition = modelViewMatrix * vec4(pos, 1.0);
           gl_PointSize = size * uPixelRatio * (300.0 / -mvPosition.z);
           gl_Position = projectionMatrix * mvPosition;

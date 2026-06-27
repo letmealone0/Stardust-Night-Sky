@@ -76,6 +76,16 @@ export const config = {
     ambientIntensity: 0.12, // v9.5: 稍增环境光,暗面可见
   },
 
+  // ---- 银河系宏观运动 (v10.0) ----
+  galaxyMotion: {
+    enabled: true,             // 一键开关所有宏观运动
+    timeScale: 1.0,            // 全局速度倍率
+    coreRotSpeed: 0.008,       // 银心基准角速度 (rad/s)
+    radiusFalloff: 0.00004,    // 较差自转衰减系数
+    solarOrbitRadius: 50000,   // 太阳系绕银心半径 (~2/3旋臂)
+    solarOrbitSpeed: 0.0015,   // 太阳系公转角速度 (rad/s, ~70s一圈)
+  },
+
   // ---- 星云效果（体积光线步进）----
   nebula: {
     count: 3,                // v8.2: 减少数量，提升质量

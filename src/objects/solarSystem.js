@@ -140,8 +140,8 @@ export class SolarSystem {
       roughness: isGas ? 0.35 : 0.5,
       metalness: 0.05,
       color: tex?.map ? 0xffffff : new THREE.Color(pData.color),
-      emissive: tex?.map ? new THREE.Color(0x111111) : new THREE.Color(0x000000),
-      emissiveIntensity: 0.6,
+      emissive: tex?.map ? new THREE.Color(0x444444) : new THREE.Color(0x000000),
+      emissiveIntensity: 1.0,
     };
 
     // 岩石行星: displacementMap
