@@ -232,8 +232,8 @@ export class Engine {
       return;
     }
 
-    // 更新系统 (v9.5: P键暂停时传入delta=0冻结天体运动)
-    this.player.update(this.isMotionFrozen ? 0 : delta);
+    // 更新系统 (v9.5: P键仅冻结天体, 玩家仍可自由移动)
+    this.player.update(delta);
     this.scene.update(
       this.isMotionFrozen ? 0 : delta,
       elapsed,
