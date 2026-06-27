@@ -10,10 +10,10 @@ import { noise2D, noise3D, fbm2D, fbm3D, turbulence2D } from '../utils/noise.js'
 // ---- 行星数据（轨道半径、半径、公转周期、自转周期、倾角、偏心率）----
 // v8.0: 行星半径 ×1.5，轨道微扩，增强可见性
 const PLANET_DATA = [
-  { name: 'Mercury', orbitRadius: 500,   radius: 7,    orbitPeriod: 88,     rotationPeriod: 58.6,  tilt: 0.03,  eccentricity: 0.21, color: '#8c7e6d' },
-  { name: 'Venus',   orbitRadius: 800,   radius: 12,   orbitPeriod: 225,    rotationPeriod: -243,  tilt: 177.4,  eccentricity: 0.007, color: '#c8a44e' },
-  { name: 'Earth',   orbitRadius: 1100,  radius: 13,   orbitPeriod: 365,    rotationPeriod: 1,     tilt: 23.4,   eccentricity: 0.017, color: '#2b5ea7' },
-  { name: 'Mars',    orbitRadius: 1500,  radius: 9,    orbitPeriod: 687,    rotationPeriod: 1.03,  tilt: 25.2,   eccentricity: 0.093, color: '#c1440e' },
+  { name: 'Mercury', orbitRadius: 500,   radius: 12,   orbitPeriod: 88,     rotationPeriod: 58.6,  tilt: 0.03,  eccentricity: 0.21, color: '#8c7e6d' },
+  { name: 'Venus',   orbitRadius: 800,   radius: 18,   orbitPeriod: 225,    rotationPeriod: -243,  tilt: 177.4,  eccentricity: 0.007, color: '#c8a44e' },
+  { name: 'Earth',   orbitRadius: 1100,  radius: 20,   orbitPeriod: 365,    rotationPeriod: 1,     tilt: 23.4,   eccentricity: 0.017, color: '#2b5ea7' },
+  { name: 'Mars',    orbitRadius: 1500,  radius: 15,   orbitPeriod: 687,    rotationPeriod: 1.03,  tilt: 25.2,   eccentricity: 0.093, color: '#c1440e' },
   { name: 'Jupiter', orbitRadius: 2600,  radius: 50,   orbitPeriod: 4333,   rotationPeriod: 0.41,  tilt: 3.1,    eccentricity: 0.049, color: '#c4a46a' },
   { name: 'Saturn',  orbitRadius: 4000,  radius: 40,   orbitPeriod: 10759,  rotationPeriod: 0.44,  tilt: 26.7,   eccentricity: 0.057, color: '#b8a060' },
   { name: 'Uranus',  orbitRadius: 5500,  radius: 20,   orbitPeriod: 30687,  rotationPeriod: -0.72, tilt: 97.8,   eccentricity: 0.046, color: '#7ec8c8' },
@@ -256,7 +256,7 @@ export class SolarSystem {
       roughness: 0.8,
       metalness: 0.05,
       emissive: emissiveColor,
-      emissiveIntensity: 0.4,
+      emissiveIntensity: cfg.planetEmissiveIntensity || 0.6,
     });
 
     const segments = pData.radius > 20 ? 64 : 32;
@@ -485,9 +485,9 @@ export class SolarSystem {
     const geometry = new THREE.BufferGeometry();
     geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
     const material = new THREE.LineBasicMaterial({
-      color: 0x334455,
+      color: 0x446688,
       transparent: true,
-      opacity: 0.2,
+      opacity: 0.35,
     });
     return new THREE.Line(geometry, material);
   }

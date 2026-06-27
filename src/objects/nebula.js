@@ -99,17 +99,24 @@ export class NebulaSystem {
           return v;
         }
 
-        // 密度场
+        // v8.2: 改进密度场 — 更多细节+更柔和球形衰减
         float density(vec3 p) {
-          vec3 np = p / (uScale * 0.5);  // 归一化到 [-1,1]
-          float n = fbm(np * 1.8 + uTime * 0.012);
-          // 更柔和的球形衰减（使用 smoothstep 而非线性）
-          float falloff = 1.0 - smoothstep(0.0, 0.85, length(np));
-          // 额外的丝絮结构（更高频噪声）
-          float filaments = abs(noise(np * 4.0 + uTime * 0.008) * 2.0 - 1.0);
-          n = mix(n, filaments, 0.3); // 混合30%丝絮
-          float d = n * falloff;
-          return max(0.0, d - 0.15) * uDensity;
+          vec3 np = p / (uScale * 0.5);
+          float r = length(np);
+          float falloff = 1.0 - smoothstep(0.3, 1.0, r);
+          if (falloff < 0.001) return 0.0;
+
+          // 3层FBM + 湍流
+          float n = 0.0, amp = 0.5;
+          vec3 q = np * 1.5 + uTime * 0.01;
+          n += amp * noise(q); q = q * 2.1 + 50.0; amp *= 0.5;
+          n += amp * noise(q); q = q * 2.1 + 80.0; amp *= 0.5;
+          n += amp * noise(q); q = q * 2.1 + 110.0; amp *= 0.5;
+          n += amp * abs(noise(q * 1.5 + uTime * 0.006) * 2.0 - 1.0);
+
+          float filaments = abs(noise(np * 3.5 + uTime * 0.005) * 2.0 - 1.0);
+          n = mix(n, filaments, 0.35);
+          return n * falloff * uDensity;
         }
 
         // 光线-盒子相交
@@ -133,8 +140,8 @@ export class NebulaSystem {
           if (t.x < 0.0) discard;
 
           float len = t.y - t.x;
-          const int MAX_STEPS = 24;
-          int steps = int(clamp(len / (uScale * 0.045), 6.0, float(MAX_STEPS)));
+          const int MAX_STEPS = 28;
+          int steps = int(clamp(len / (uScale * 0.05), 5.0, float(MAX_STEPS)));
           float stepSize = len / float(steps);
 
           vec3 accColor = vec3(0.0);
@@ -142,7 +149,7 @@ export class NebulaSystem {
           float tCur = t.x + stepSize * hash(ro + fract(uTime)) * 0.5;
 
           // 第三色：亮白高光（密度最高处）
-          vec3 uColor3 = mix(uColor1, vec3(1.0), 0.5);
+          vec3 uColor3 = mix(uColor1, vec3(1.0, 0.95, 0.9), 0.3);
 
           for (int i = 0; i < MAX_STEPS; i++) {
             if (i >= steps || accAlpha > 0.95) break;
@@ -150,14 +157,12 @@ export class NebulaSystem {
             vec3 sp = ro + rd * tCur;
             float d = density(sp);
 
-            if (d > 0.005) {
-              float tc = smoothstep(0.0, 1.0, d / uDensity);
-              // 三色渐变：低密度=主色, 中密度=副色, 高密度=亮白
-              vec3 col = mix(uColor1, uColor2, smoothstep(0.0, 0.6, tc));
-              col = mix(col, uColor3, smoothstep(0.6, 1.0, tc) * 0.5);
-              col += smoothstep(0.5, 1.0, tc) * 0.2;
+            if (d > 0.003) {
+              float tc = d / uDensity;
+              vec3 col = mix(uColor1, uColor2, smoothstep(0.1, 0.55, tc));
+              col = mix(col, uColor3, smoothstep(0.5, 0.85, tc) * 0.4);
 
-              float alpha = d * stepSize * 0.12 * uOpacity;
+              float alpha = d * stepSize * 0.18 * uOpacity;
               accColor += col * alpha * (1.0 - accAlpha);
               accAlpha += alpha * (1.0 - accAlpha);
             }
@@ -166,8 +171,8 @@ export class NebulaSystem {
             if (tCur > t.y) break;
           }
 
-          if (accAlpha < 0.001) discard;
-          gl_FragColor = vec4(accColor, accAlpha);
+          if (accAlpha < 0.002) discard;
+          gl_FragColor = vec4(accColor, accAlpha * 0.7);
         }
       `,
       blending: THREE.AdditiveBlending,

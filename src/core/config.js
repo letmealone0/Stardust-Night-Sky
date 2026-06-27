@@ -9,7 +9,7 @@ export const config = {
     fov: 75,
     near: 1,
     far: 50000,              // v8.1: 更远裁剪面匹配银河距离
-    startPosition: { x: 0, y: 40, z: 1150 }, // v8.1: Z轴地球轨道距离，默认视角(-Z)正对太阳
+    startPosition: { x: 0, y: 20, z: 350 }, // v8.2: 水星轨道内侧，太阳系清晰可见
   },
 
   // ---- 玩家控制 ----
@@ -35,16 +35,16 @@ export const config = {
       { count: 2500, depth: 0.5, size: [0.15, 0.3] },
       { count: 1500, depth: 1.0, size: [0.2, 0.5] },
     ],
-    // v8.1: 银河系背景配置 — 远距离壮丽天幕
+    // v8.2: 银河系包围太阳系 — 太阳系在旋臂~2/3处
     galaxy: {
-      count: 15000,            // 银河粒子数
+      count: 18000,            // 银河粒子数
       armCount: 5,            // 旋臂数
       spin: 2.5,              // 螺旋紧密度
       armSpread: 0.25,        // 旋臂散开度
-      position: { x: 0, y: -12000, z: -28000 }, // v8.1: 极远处天幕
-      tilt: 55,               // v8.1: 更倾斜，横跨视野
-      scale: 6.0,             // v8.1: 大幅放大
-      hazeCount: 2500,        // 雾气粒子数
+      position: { x: -15000, y: 500, z: -30000 }, // 银河中心偏移，太阳系在旋臂中
+      tilt: 50,               // 银道面倾角
+      scale: 22.0,            // v8.2: 超大尺度，太阳系在旋臂中
+      hazeCount: 3000,        // 雾气粒子数
     },
   },
 
@@ -62,26 +62,24 @@ export const config = {
 
   // ---- 太阳系 ----
   solarSystem: {
-    sunRadius: 120,          // v8.0: 太阳更大更壮观
-    timeScale: 0.5,          // 时间缩放（每秒游戏时间对应多少天）
-    sunLightIntensity: 4.0,  // 太阳点光源强度（v8.0）
-    sunLightRange: 20000,    // 太阳点光源范围（v8.0）
+    sunRadius: 120,          // 太阳半径
+    timeScale: 0.5,          // 时间缩放
+    sunLightIntensity: 4.0,  // 太阳点光源强度
+    sunLightRange: 20000,    // 太阳点光源范围
+    planetEmissiveIntensity: 0.6, // v8.2: 行星自发光增强
   },
 
   // ---- 星云效果（体积光线步进）----
   nebula: {
-    count: 4,                // 星云数量
-    scale: 1200,             // 体积边界盒大小（翻倍，穿越感更强）
-    opacity: 1.0,            // 基础透明度（Shader 内部控制衰减）
+    count: 3,                // v8.2: 减少数量，提升质量
+    scale: 600,              // v8.2: 稍小但更精致
+    opacity: 1.5,            // v8.2: 更高透明度
     colors: [
-      { r: 0.3, g: 0.1, b: 0.6 },  // 深紫
-      { r: 0.1, g: 0.35, b: 0.7 }, // 深蓝
-      { r: 0.6, g: 0.15, b: 0.25 },// 暗红
-      { r: 0.15, g: 0.5, b: 0.4 }, // 青绿
+      { r: 0.25, g: 0.08, b: 0.55 },  // 深紫
+      { r: 0.08, g: 0.3, b: 0.65 },   // 深蓝
+      { r: 0.5, g: 0.12, b: 0.2 },    // 暗红
     ],
-    respawnDistance: 5000,   // 超出此距离重生星云（匹配更大 scale）
-    respawnMin: 2000,        // 重生最小距离
-    respawnMax: 4000,        // 重生最大距离
+    respawnDistance: 8000,   // v8.2: 匹配更大世界\n    respawnMin: 4000,        // v8.2\n    respawnMax: 7000,        // v8.2
   },
 
   // ---- 后处理效果 ----

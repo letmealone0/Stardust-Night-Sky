@@ -39,8 +39,8 @@ export class SceneManager {
     this.camera = camera;
     this.scene = new THREE.Scene();
     this.scene.background = new THREE.Color(0x000005);
-    // v8.1: 线性雾 — near=3000开始衰减, far=45000完全雾化（匹配银河距离）
-    this.scene.fog = new THREE.Fog(0x000005, 3000, 45000);
+    // v8.2: 线性雾 — 扩展范围匹配超大银河
+    this.scene.fog = new THREE.Fog(0x000005, 6000, 100000);
 
     // 逐个初始化，失败不阻断整体流程
     try {
