@@ -95,11 +95,7 @@ export class ParticleFlow {
             vSpeedLayer = 1.0;
           }
 
-          // v8.4: 用归一化方向避免高速时粒子飞出视锥
-          vec3 velDir = length(uVelocity) > 0.1 ? normalize(uVelocity) : vec3(0.0, 0.0, 1.0);
-          float flowStrength = speedFactor * 30.0 * layerSpeed;
-          vec3 streakOffset = velDir * flowStrength * aRandom * uStreakLength;
-          pos += streakOffset;
+          // v8.5: 正确方向 — 按W时velocity.z=-50, -=(-50)=+50→粒子流向相机\n          vec3 velDir = length(uVelocity) > 0.1 ? normalize(uVelocity) : vec3(0.0, 0.0, 1.0);\n          float flowStrength = speedFactor * 30.0 * layerSpeed;\n          vec3 streakOffset = velDir * flowStrength * aRandom * uStreakLength;\n          pos -= streakOffset;
 
           // 静止时微小漂浮
           float t = uTime * 0.5 * layerSpeed;
@@ -249,9 +245,9 @@ export class ParticleFlow {
     for (let i = 0; i < this.count; i++) {
       const i3 = i * 3;
 
-      pos[i3]     += vel.x * delta * speedNorm * 10;
-      pos[i3 + 1] += vel.y * delta * speedNorm * 10;
-      pos[i3 + 2] += vel.z * delta * speedNorm * 10;
+      pos[i3]     -= vel.x * delta * speedNorm * 10;
+      pos[i3 + 1] -= vel.y * delta * speedNorm * 10;
+      pos[i3 + 2] -= vel.z * delta * speedNorm * 10;
 
       const distSq = pos[i3] * pos[i3] + pos[i3+1] * pos[i3+1] + pos[i3+2] * pos[i3+2];
       const vLen = Math.sqrt(vel.x * vel.x + vel.y * vel.y + vel.z * vel.z);
