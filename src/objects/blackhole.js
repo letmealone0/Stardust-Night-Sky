@@ -187,9 +187,12 @@ export class BlackHole {
           pos.x = rx;
           pos.z = rz;
 
-          // v12: 内落运动 — 半径随时间减小，到达内缘后重生到外缘
+          // v12-fix5: 内落运动 — Kepler轨道：越近越快
           float dist = aRadius;
-          float infall = mod(uTime * uInfallSpeed + aRandom * 100.0, uOuterRadius - uInnerRadius);
+          // 基于半径的内落速度：近处快、远处慢（∝ r^(-1.5)）
+          float normalizedR = (dist - uInnerRadius) / max(uOuterRadius - uInnerRadius, 1.0);
+          float infallSpeed = uInfallSpeed * (2.0 + 8.0 * pow(1.0 - normalizedR, 1.5)); // 近处10倍速
+          float infall = mod(uTime * infallSpeed + aRandom * 50.0, uOuterRadius - uInnerRadius);
           float currentR = uOuterRadius - infall;
           if (currentR < uInnerRadius) currentR = uOuterRadius;
 
@@ -235,31 +238,83 @@ export class BlackHole {
 
   // ==================== 喷流 ====================
   createJets(cfg) {
-    const jetCount = 600;
+    const jetCount = 400; // 每侧 400 个
     const positions = new Float32Array(jetCount * 2 * 3);
     const colors = new Float32Array(jetCount * 2 * 3);
+    const phases = new Float32Array(jetCount * 2); // v12-fix6: 流动相位
     for (let jet = 0; jet < 2; jet++) {
       const dir = jet === 0 ? 1 : -1;
       for (let i = 0; i < jetCount; i++) {
-        const i3 = (jet * jetCount + i) * 3;
+        const idx = jet * jetCount + i;
+        const i3 = idx * 3;
         const t = Math.random();
-        const r = cfg.eventHorizonRadius * 0.3 + t * cfg.eventHorizonRadius * 0.25;
+        // v12-fix6: 更窄的锥形（底窄顶稍宽）
+        const r = cfg.eventHorizonRadius * 0.15 + t * cfg.eventHorizonRadius * 0.12;
         const angle = Math.random() * Math.PI * 2;
-        const y = cfg.eventHorizonRadius * 1.5 + t * cfg.jetLength;
-        positions[i3] = Math.cos(angle) * r * (1 + t * 0.6);
+        const y = cfg.eventHorizonRadius * 1.2 + t * cfg.jetLength;
+        positions[i3] = Math.cos(angle) * r;
         positions[i3 + 1] = dir * y;
-        positions[i3 + 2] = Math.sin(angle) * r * (1 + t * 0.6);
+        positions[i3 + 2] = Math.sin(angle) * r;
         const brightness = 1.0 - t * 0.4;
         colors[i3] = 0.35 + t * 0.35; colors[i3 + 1] = 0.55 + brightness * 0.3; colors[i3 + 2] = 1.0;
+        phases[idx] = t; // 0=底部, 1=顶部
       }
     }
     const geo = new THREE.BufferGeometry();
     geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
     geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
-    this.jetParticles = new THREE.Points(geo, new THREE.PointsMaterial({
-      size: 1.2, vertexColors: true, transparent: true, opacity: 0.7,
-      blending: THREE.AdditiveBlending, depthWrite: false, sizeAttenuation: true,
-    }));
+    geo.setAttribute('aPhase', new THREE.BufferAttribute(phases, 1));
+    // v12-fix6: Shader 让粒子沿 Y 轴向外流动
+    this._jetMaterial = new THREE.ShaderMaterial({
+      uniforms: {
+        uTime: { value: 0 },
+        uJetLength: { value: cfg.jetLength },
+        uEHRadius: { value: cfg.eventHorizonRadius },
+        uPixelRatio: { value: Math.min(window.devicePixelRatio, 2) },
+      },
+      vertexShader: `
+        attribute float aPhase;
+        uniform float uTime;
+        uniform float uJetLength;
+        uniform float uEHRadius;
+        uniform float uPixelRatio;
+        varying vec3 vColor;
+        varying float vAlpha;
+        void main() {
+          vColor = color;
+          vec3 pos = position;
+          // v12-fix6: 粒子沿 Y 轴向外流动（循环）
+          float flow = mod(uTime * 0.8 + aPhase * 2.0, 2.0); // 0~2 循环
+          float flowY = flow * uJetLength * 0.5;
+          pos.y += sign(pos.y) * flowY;
+          // 超出喷流长度后回到底部
+          float absY = abs(pos.y);
+          if (absY > uEHRadius * 1.2 + uJetLength) {
+            pos.y = sign(pos.y) * uEHRadius * 1.2;
+          }
+          // 透明度：底部亮，顶部暗
+          float t = clamp((absY - uEHRadius * 1.2) / uJetLength, 0.0, 1.0);
+          vAlpha = (1.0 - t * 0.6) * 0.7;
+          vec4 mvPosition = modelViewMatrix * vec4(pos, 1.0);
+          gl_PointSize = (1.0 + (1.0 - t) * 0.5) * uPixelRatio * (200.0 / -mvPosition.z);
+          gl_Position = projectionMatrix * mvPosition;
+        }
+      `,
+      fragmentShader: `
+        precision highp float;
+        varying vec3 vColor;
+        varying float vAlpha;
+        void main() {
+          float d = length(gl_PointCoord - 0.5) * 2.0;
+          float alpha = 1.0 - smoothstep(0.0, 1.0, d);
+          alpha *= vAlpha;
+          if (alpha < 0.01) discard;
+          gl_FragColor = vec4(vColor, alpha);
+        }
+      `,
+      transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, vertexColors: true,
+    });
+    this.jetParticles = new THREE.Points(geo, this._jetMaterial);
     this.group.add(this.jetParticles);
   }
 
@@ -286,23 +341,23 @@ export class BlackHole {
 
     for (let i = 0; i < count; i++) {
       const i3 = i * 3;
-      // 球壳分布
+      // v12-fix2: 从外围开始，向内坠落
       const theta = Math.random() * Math.PI * 2;
       const phi = Math.acos(2 * Math.random() - 1);
-      const r = cfg.eventHorizonRadius * 2 + Math.random() * (range - cfg.eventHorizonRadius * 2);
+      const r = range * (0.3 + Math.random() * 0.7);
       positions[i3] = r * Math.sin(phi) * Math.cos(theta);
       positions[i3 + 1] = r * Math.sin(phi) * Math.sin(theta) * 0.5; // 扁平化
       positions[i3 + 2] = r * Math.cos(phi);
 
-      // 切向初速度（形成螺旋而非直线）
-      const tangent = new THREE.Vector3(-Math.sin(theta), 0, Math.cos(theta));
-      const speed = Math.sqrt(cfg.infallGravity / r) * (cfg.infallTangential || 0.6);
-      velocities[i3] = tangent.x * speed + (Math.random() - 0.5) * speed * 0.3;
-      velocities[i3 + 1] = (Math.random() - 0.5) * speed * 0.1;
-      velocities[i3 + 2] = tangent.z * speed + (Math.random() - 0.5) * speed * 0.3;
+      // v12-fix4: 初速度向内
+      const rActual = Math.sqrt(positions[i3]**2 + positions[i3+1]**2 + positions[i3+2]**2);
+      const nx = -positions[i3] / rActual, ny = -positions[i3+1] / rActual, nz = -positions[i3+2] / rActual;
+      velocities[i3]     = nx * 10;
+      velocities[i3 + 1] = ny * 10;
+      velocities[i3 + 2] = nz * 10;
 
-      alphas[i] = 0.3 + Math.random() * 0.5;
-      sizes[i] = 0.5 + Math.random() * 1.5;
+      alphas[i] = 0.5 + Math.random() * 0.5;  // 更亮
+      sizes[i] = 1.0 + Math.random() * 2.0;   // 更大
     }
 
     const geo = new THREE.BufferGeometry();
@@ -337,7 +392,7 @@ export class BlackHole {
           float sizeScale = 0.3 + distNorm * 0.7;
 
           vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
-          gl_PointSize = aSize * sizeScale * uPixelRatio * (300.0 / -mvPosition.z);
+          gl_PointSize = aSize * sizeScale * uPixelRatio * (500.0 / -mvPosition.z);
           gl_Position = projectionMatrix * mvPosition;
         }
       `,
@@ -350,13 +405,15 @@ export class BlackHole {
           float alpha = 1.0 - smoothstep(0.0, 1.0, d);
           alpha *= vAlpha;
           if (alpha < 0.01) discard;
-          // 颜色：远暗红 → 近白蓝
-          float t = clamp(vDist / 300.0, 0.0, 1.0);
-          vec3 farColor = vec3(0.5, 0.1, 0.05);
-          vec3 midColor = vec3(1.0, 0.6, 0.15);
-          vec3 nearColor = vec3(0.8, 0.9, 1.0);
-          vec3 color = mix(nearColor, midColor, smoothstep(0.0, 0.4, t));
-          color = mix(color, farColor, smoothstep(0.4, 1.0, t));
+          // 颜色：远暗红 → 中橙 → 近白蓝（与吸积盘橙色区分）
+          float t = clamp(vDist / 250.0, 0.0, 1.0);
+          vec3 farColor = vec3(0.6, 0.15, 0.05);  // 暗红
+          vec3 midColor = vec3(1.0, 0.7, 0.2);     // 亮橙
+          vec3 nearColor = vec3(1.0, 1.0, 1.0);    // 纯白（近处最亮）
+          vec3 color = mix(nearColor, midColor, smoothstep(0.0, 0.3, t));
+          color = mix(color, farColor, smoothstep(0.3, 1.0, t));
+          // 近处额外加亮
+          color *= (1.0 + (1.0 - t) * 1.5);
           gl_FragColor = vec4(color, alpha);
         }
       `,
@@ -474,8 +531,10 @@ export class BlackHole {
       this.diskMaterial.uniforms.uBrightnessPulse.value = this._diskBrightnessPulse;
     }
 
-    // 喷流脉冲
-    if (this.jetParticles) this.jetParticles.material.opacity = 0.5 + Math.sin(elapsed * 3) * 0.25;
+    // 喷流脉冲 (v12-fix6: Shader 驱动流动)
+    if (this._jetMaterial?.uniforms) {
+      this._jetMaterial.uniforms.uTime.value = elapsed;
+    }
 
     // 光子球
     if (this._photonSphere?.material?.uniforms) this._photonSphere.material.uniforms.uTime.value = elapsed;
@@ -530,43 +589,39 @@ export class BlackHole {
     const pos = this._infallParticles.geometry.attributes.position.array;
     const vel = this._infallVelocities;
     const count = pos.length / 3;
-    const G = cfg.infallGravity || 800;
     const ehR = cfg.eventHorizonRadius;
     const range = cfg.infallRange || cfg.accretionOuterRadius * 2;
     const dt = delta * motionScale;
+    const ehCheck = ehR * 1.5; // 粒子非常接近事件视界才消失
 
     for (let i = 0; i < count; i++) {
       const i3 = i * 3;
-      // 到黑洞中心距离
-      const dx = -pos[i3], dy = -pos[i3 + 1], dz = -pos[i3 + 2];
-      const distSq = dx * dx + dy * dy + dz * dz;
-      const dist = Math.sqrt(distSq);
-      if (dist < 0.1) continue;
+      const x = pos[i3], y = pos[i3 + 1], z = pos[i3 + 2];
+      const dist = Math.sqrt(x * x + y * y + z * z);
+      if (dist < ehCheck || dist > range * 2 || dist < 0.5) {
+        this._respawnInfallParticle(i, cfg, pos, vel);
+        continue;
+      }
 
-      // 引力加速度 a = G / r²
-      const acc = G / Math.max(distSq, ehR * ehR);
-      const ax = (dx / dist) * acc;
-      const ay = (dy / dist) * acc;
-      const az = (dz / dist) * acc;
+      const nx = -x / dist, ny = -y / dist, nz = -z / dist;
 
-      // 更新速度
-      vel[i3] += ax * dt;
-      vel[i3 + 1] += ay * dt;
-      vel[i3 + 2] += az * dt;
+      // v12-fix5: 直线坠入 — 速度直接指向黑洞中心，加随机扰动
+      // 速度 ∝ 1/√r，越近越快
+      const baseSpeed = 8 + 150 * Math.sqrt(ehR / dist); // 8~158
+      // 随机扰动（不规则轨迹，防止完美直线）
+      const jitter = 0.15;
+      const jx = (Math.random() - 0.5) * jitter * baseSpeed;
+      const jy = (Math.random() - 0.5) * jitter * baseSpeed;
+      const jz = (Math.random() - 0.5) * jitter * baseSpeed;
+
+      vel[i3]     = nx * baseSpeed + jx;
+      vel[i3 + 1] = ny * baseSpeed + jy;
+      vel[i3 + 2] = nz * baseSpeed + jz;
 
       // 更新位置
-      pos[i3] += vel[i3] * dt;
+      pos[i3]     += vel[i3] * dt;
       pos[i3 + 1] += vel[i3 + 1] * dt;
       pos[i3 + 2] += vel[i3 + 2] * dt;
-
-      // 跨越事件视界 → 重生
-      if (dist < ehR) {
-        this._respawnInfallParticle(i, cfg, pos, vel);
-      }
-      // 超出范围 → 重生
-      if (dist > range * 1.5) {
-        this._respawnInfallParticle(i, cfg, pos, vel);
-      }
     }
     this._infallParticles.geometry.attributes.position.needsUpdate = true;
   }
@@ -574,18 +629,18 @@ export class BlackHole {
   _respawnInfallParticle(i, cfg, pos, vel) {
     const i3 = i * 3;
     const range = cfg.infallRange || cfg.accretionOuterRadius * 2;
-    const r = cfg.eventHorizonRadius * 3 + Math.random() * (range - cfg.eventHorizonRadius * 3);
+    // 重生在外围
+    const r = range * (0.5 + Math.random() * 0.5);
     const theta = Math.random() * Math.PI * 2;
     const phi = Math.acos(2 * Math.random() - 1);
     pos[i3] = r * Math.sin(phi) * Math.cos(theta);
-    pos[i3 + 1] = r * Math.sin(phi) * Math.sin(theta) * 0.5;
+    pos[i3 + 1] = r * Math.sin(phi) * Math.sin(theta) * 0.4;
     pos[i3 + 2] = r * Math.cos(phi);
-    // 切向初速度
-    const tangent = new THREE.Vector3(-Math.sin(theta), 0, Math.cos(theta));
-    const speed = Math.sqrt(cfg.infallGravity / r) * (cfg.infallTangential || 0.6);
-    vel[i3] = tangent.x * speed + (Math.random() - 0.5) * speed * 0.3;
-    vel[i3 + 1] = (Math.random() - 0.5) * speed * 0.1;
-    vel[i3 + 2] = tangent.z * speed + (Math.random() - 0.5) * speed * 0.3;
+    // 初速度向内
+    const nx = -pos[i3] / r, ny = -pos[i3 + 1] / r, nz = -pos[i3 + 2] / r;
+    vel[i3]     = nx * 10;
+    vel[i3 + 1] = ny * 10;
+    vel[i3 + 2] = nz * 10;
   }
 
   // ==================== v12: 物质流线更新 ====================

@@ -185,9 +185,9 @@ export const config = {
     // v12: 吸收特效
     infallParticleCount: 2000, // 环境坠落粒子数
     infallRange: 400,          // 坠落粒子分布半径 (accretionOuterRadius*2)
-    infallGravity: 800,        // 坠落粒子引力常数
-    infallTangential: 0.6,     // 切向初速度系数 (越大螺旋越宽)
-    accretionInfallSpeed: 0.5, // 吸积盘内落速度
+    infallGravity: 2500,       // 坠落粒子引力常数 (v12-fix: 从800增到2500, 近处加速更剧烈)
+    infallTangential: 0.12,    // 切向初速度系数 (v12-fix: 从0.6降到0.12, 以坠入为主)
+    accretionInfallSpeed: 3.0, // 吸积盘内落速度 (v12-fix5: Kepler公式, 外缘~27秒走完)
     photonSphereRadius: 37.5,  // 光子球半径 (eventHorizonRadius*1.5)
     matterStreamCount: 6,      // 物质流线数
     matterStreamParticles: 80, // 每条流线粒子数
