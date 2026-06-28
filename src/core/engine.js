@@ -264,6 +264,24 @@ export class Engine {
     this.hud.updateWarpEffect(this.player.getSpeed(), 100);
     this.hud.updateSprint(this.player.isSprinting());
 
+    // v11: 更新天体后处理特效（每帧重置，由各天体自行设置强度）
+    const cPass = this.postprocessing.getCelestialPass();
+    if (cPass) {
+      const u = cPass.uniforms;
+      // 黑洞引力透镜
+      if (this.scene.objects.blackhole) {
+        this.scene.objects.blackhole.updatePostEffects(u, this.camera.camera);
+      }
+      // 脉冲星闪光+噪点
+      if (this.scene.objects.pulsar) {
+        this.scene.objects.pulsar.updatePostEffects(u, this.camera.camera, delta);
+      }
+      // 星云雾化
+      if (this.scene.objects.nebula) {
+        this.scene.objects.nebula.updatePostEffects(u, this.camera.camera);
+      }
+    }
+
     // v10.0: 银河宏观运动 — 太阳系公转 + 较差自转
     const gm = config.galaxyMotion;
     if (gm && gm.enabled !== false && !this.isMotionFrozen) {
@@ -291,9 +309,10 @@ export class Engine {
   applyQualityLevel() {
     const q = this.qualityLevel;
     if (this.scene && this.scene.objects) {
-      // 降低尘埃透明度
-      if (this.scene.objects.cosmicDust && this.scene.objects.cosmicDust.material) {
-        this.scene.objects.cosmicDust.material.opacity = 0.1 * q;
+      // v11: 降低尘埃透明度（新版三层结构）
+      const dust = this.scene.objects.cosmicDust;
+      if (dust && dust.layers) {
+        dust.layers.forEach(l => { if (l.material) l.material.opacity = (l.layerCfg?.opacity || 0.15) * q; });
       }
       // 降低速度线透明度
       if (this.scene.objects.speedLines && this.scene.objects.speedLines.material) {

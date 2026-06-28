@@ -21,6 +21,7 @@ export class HUD {
     this.createMessage();
     this.createControlsHint();
     this.createDangerOverlay();
+    this.createCelestialInfo();
 
     // 缓存常用 DOM 引用
     this._fpsEl = document.getElementById('fps');
@@ -192,6 +193,64 @@ export class HUD {
     warning.textContent = '⚠ 引力异常区域 ⚠';
     document.body.appendChild(warning);
     this.elements.dangerWarning = warning;
+  }
+
+  // v11: 天体信息面板
+  createCelestialInfo() {
+    const panel = document.createElement('div');
+    panel.id = 'celestial-info';
+    this.applyStyles(panel, {
+      position: 'fixed',
+      bottom: '80px',
+      right: '20px',
+      color: 'rgba(180, 210, 255, 0.9)',
+      fontFamily: "'JetBrains Mono', 'Fira Code', monospace",
+      fontSize: '12px',
+      lineHeight: '1.8',
+      zIndex: '1000',
+      pointerEvents: 'none',
+      padding: '14px 20px',
+      background: 'linear-gradient(135deg, rgba(10, 20, 40, 0.5), rgba(5, 10, 20, 0.3))',
+      border: '1px solid rgba(100, 150, 255, 0.2)',
+      borderRadius: '6px',
+      backdropFilter: 'blur(6px)',
+      opacity: '0',
+      transition: 'opacity 0.4s ease, transform 0.4s ease',
+      transform: 'translateY(10px)',
+      maxWidth: '280px',
+    });
+    panel.innerHTML = `
+      <div id="celestial-name" style="font-size: 14px; font-weight: bold; color: rgba(100, 200, 255, 0.95); margin-bottom: 4px;"></div>
+      <div id="celestial-type" style="font-size: 10px; color: rgba(150, 180, 220, 0.6); letter-spacing: 2px; text-transform: uppercase; margin-bottom: 8px;"></div>
+      <div id="celestial-details" style="color: rgba(160, 190, 230, 0.7); font-size: 11px;"></div>
+    `;
+    document.body.appendChild(panel);
+    this.elements.celestialInfo = panel;
+    this._celestialInfoVisible = false;
+  }
+
+  showCelestialInfo(name, type, details) {
+    const panel = this.elements.celestialInfo;
+    if (!panel) return;
+    const nameEl = panel.querySelector('#celestial-name');
+    const typeEl = panel.querySelector('#celestial-type');
+    const detailsEl = panel.querySelector('#celestial-details');
+    if (nameEl) nameEl.textContent = `◆ ${name}`;
+    if (typeEl) typeEl.textContent = type;
+    if (detailsEl) detailsEl.innerHTML = details;
+    if (!this._celestialInfoVisible) {
+      panel.style.opacity = '1';
+      panel.style.transform = 'translateY(0)';
+      this._celestialInfoVisible = true;
+    }
+  }
+
+  hideCelestialInfo() {
+    const panel = this.elements.celestialInfo;
+    if (!panel || !this._celestialInfoVisible) return;
+    panel.style.opacity = '0';
+    panel.style.transform = 'translateY(10px)';
+    this._celestialInfoVisible = false;
   }
 
   showMessage(text, duration = 3000) {

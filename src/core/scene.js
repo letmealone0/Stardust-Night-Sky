@@ -63,6 +63,11 @@ export class SceneManager {
       this.objects.planets.init(this.scene);
       this.objects.planets.setCamera(camera);
       this.objects.planets.setSceneObjects(this.objects);
+      // v11: 挂到 galaxyGroup 随银河较差自转
+      if (this.objects.planets.group) {
+        this.scene.remove(this.objects.planets.group);
+        this.galaxyGroup.add(this.objects.planets.group);
+      }
     } catch (e) { console.warn('[Scene] 行星初始化失败:', e); }
 
     try {
@@ -84,12 +89,22 @@ export class SceneManager {
     try {
       this.objects.blackhole = new BlackHole();
       this.objects.blackhole.init(this.scene, camera, this.objects.planets);
+      // v11: 挂到 galaxyGroup 随银河较差自转
+      if (this.objects.blackhole.group) {
+        this.scene.remove(this.objects.blackhole.group);
+        this.galaxyGroup.add(this.objects.blackhole.group);
+      }
     } catch (e) { console.warn('[Scene] 黑洞初始化失败:', e); }
 
     try {
       this.objects.pulsar = new Pulsar();
       this.objects.pulsar.init(this.scene);
       this.objects.pulsar.setCamera(camera);
+      // v11: 挂到 galaxyGroup 随银河较差自转
+      if (this.objects.pulsar.group) {
+        this.scene.remove(this.objects.pulsar.group);
+        this.galaxyGroup.add(this.objects.pulsar.group);
+      }
     } catch (e) { console.warn('[Scene] 脉冲星初始化失败:', e); }
 
     try {

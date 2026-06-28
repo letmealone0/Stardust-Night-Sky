@@ -4,21 +4,25 @@ import { randomRange, randomVector3 } from '../utils/random.js';
 import { hashCoords, seededRandom } from '../utils/seededRandom.js';
 
 /**
- * NebulaSystem - 体积光线步进星云
+ * NebulaSystem - 体积光线步进星云 v11
+ * 支持三类星云（发射/反射/暗星云）+ 湍流 + 飞入雾化
  */
 export class NebulaSystem {
   constructor() {
     this.nebulae = [];
     this.group = new THREE.Group();
     this._tempVec = new THREE.Vector3();
+    this._insideNebula = null; // v11
+    this._hud = null;          // v11
   }
 
   init(scene) {
-    const { count, scale, opacity, colors } = config.nebula;
-    const spread = config.stars.spread * 0.4; // 星云分布范围
+    const { count, scale, opacity } = config.nebula;
+    const types = config.nebula.types || ['emission', 'reflection', 'dark'];
+    const typeColors = config.nebula.typeColors;
+    const spread = config.stars.spread * 0.4;
 
     for (let i = 0; i < count; i++) {
-      // 所有星云随机分布在球壳内
       const theta = Math.random() * Math.PI * 2;
       const phi = Math.acos(2 * Math.random() - 1);
       const r = spread * (0.2 + Math.random() * 0.8);
@@ -27,16 +31,25 @@ export class NebulaSystem {
         r * Math.sin(phi) * Math.sin(theta) * 0.3,
         r * Math.cos(phi)
       );
-      const color = colors[i % colors.length];
-      const nebula = this.createNebula(scale, position, color, opacity);
+      // v11: 按类型选色
+      const nebType = types[i % types.length];
+      let color;
+      if (typeColors && typeColors[nebType]) {
+        color = typeColors[nebType];
+      } else {
+        const colors = config.nebula.colors;
+        color = colors[i % colors.length];
+      }
+      const nebula = this.createNebula(scale, position, color, opacity, nebType);
       this.group.add(nebula);
     }
 
     scene.add(this.group);
-    console.log('[NebulaSystem] 体积星云初始化完成');
+    this._hud = window.engine?.hud || null;
+    console.log('[NebulaSystem] v11 体积星云初始化完成');
   }
 
-  createNebula(scale, position, color, opacity) {
+  createNebula(scale, position, color, opacity, nebType = 'emission') {
     const group = new THREE.Group();
     group.position.copy(position);
 
@@ -106,15 +119,15 @@ export class NebulaSystem {
           float falloff = 1.0 - smoothstep(0.3, 1.0, r);
           if (falloff < 0.001) return 0.0;
 
-          // 3层FBM + 湍流
+          // v11: 增强湍流 — 使用配置中的湍流速度
           float n = 0.0, amp = 0.5;
-          vec3 q = np * 1.5 + uTime * 0.01;
+          vec3 q = np * 1.5 + uTime * 0.015;
           n += amp * noise(q); q = q * 2.1 + 50.0; amp *= 0.5;
           n += amp * noise(q); q = q * 2.1 + 80.0; amp *= 0.5;
           n += amp * noise(q); q = q * 2.1 + 110.0; amp *= 0.5;
-          n += amp * abs(noise(q * 1.5 + uTime * 0.006) * 2.0 - 1.0);
+          n += amp * abs(noise(q * 1.5 + uTime * 0.01) * 2.0 - 1.0);
 
-          float filaments = abs(noise(np * 3.5 + uTime * 0.005) * 2.0 - 1.0);
+          float filaments = abs(noise(np * 3.5 + uTime * 0.008) * 2.0 - 1.0);
           n = mix(n, filaments, 0.35);
           return n * falloff * uDensity;
         }
@@ -192,6 +205,8 @@ export class NebulaSystem {
       pulseSpeed: randomRange(0.05, 0.12),
       pulsePhase: Math.random() * Math.PI * 2,
       material,
+      nebType, // v11
+      scale,   // v11
     };
 
     this.nebulae.push(group);
@@ -210,28 +225,79 @@ export class NebulaSystem {
   update(delta, elapsed, camera) {
     if (!camera) return;
     const cfg = config.nebula;
+    const cm = config.celestialMotion;
+    const motionScale = (cm?.enabled !== false) ? (cm?.speedMultiplier || 1.0) : 0;
+
+    let closestNebula = null;
+    let closestDist = Infinity;
 
     this.nebulae.forEach((nebula, index) => {
       const data = nebula.userData;
-
-      // 星云重生：离相机太远时在新位置重生
       const dist = nebula.position.distanceTo(camera.position);
+
       if (dist > cfg.respawnDistance) {
         this.respawnNebula(nebula, index, camera, cfg);
         return;
       }
 
-      nebula.rotation.y += data.rotationSpeed;
+      // v11: 检测是否在星云内
+      const nebScale = data.scale || cfg.scale || 600;
+      if (dist < nebScale * 0.5 && dist < closestDist) {
+        closestDist = dist;
+        closestNebula = nebula;
+      }
 
+      nebula.rotation.y += data.rotationSpeed * motionScale;
       const pulse = Math.sin(elapsed * data.pulseSpeed + data.pulsePhase) * 0.05 + 1.0;
       nebula.scale.setScalar(pulse);
 
-      // 复用 _tempVec，零 GC
       this._tempVec.copy(camera.position);
       nebula.worldToLocal(this._tempVec);
       data.material.uniforms.uCameraLocalPos.value.copy(this._tempVec);
       data.material.uniforms.uTime.value = elapsed;
     });
+
+    // v11: 飞入星云信息显示
+    if (closestNebula && closestNebula !== this._insideNebula) {
+      this._insideNebula = closestNebula;
+      if (this._hud) {
+        const type = closestNebula.userData.nebType || '星云';
+        const typeNames = { emission: '发射星云', reflection: '反射星云', dark: '暗星云' };
+        this._hud.showMessage(`已进入 ${typeNames[type] || '星云'}`, 3000);
+      }
+    } else if (!closestNebula && this._insideNebula) {
+      this._insideNebula = null;
+    }
+  }
+
+  /**
+   * v11: 更新后处理特效（星云雾化）
+   */
+  updatePostEffects(uniforms, camera) {
+    const cfg = config.nebula;
+    if (!camera) return;
+
+    if (this._insideNebula) {
+      const data = this._insideNebula.userData;
+      const nebScale = data.scale || cfg.scale || 600;
+      const dist = this._insideNebula.position.distanceTo(camera.position);
+      const fogDist = cfg.fogDistance || 300;
+      const maxDensity = cfg.fogDensity || 0.5;
+      const density = (1 - dist / (nebScale * 0.5)) * maxDensity;
+      uniforms.uFogDensity.value = Math.max(0, Math.min(maxDensity, density));
+
+      // 根据星云类型设置雾色
+      const type = data.nebType;
+      if (type === 'emission') {
+        uniforms.uFogColor.value.set(0.3, 0.1, 0.05);
+      } else if (type === 'reflection') {
+        uniforms.uFogColor.value.set(0.05, 0.1, 0.3);
+      } else { // dark
+        uniforms.uFogColor.value.set(0.02, 0.02, 0.05);
+      }
+    } else {
+      uniforms.uFogDensity.value = 0;
+    }
   }
 
   /**

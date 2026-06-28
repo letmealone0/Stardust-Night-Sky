@@ -19,6 +19,7 @@ export class BlackHole {
     this.dangerLevel = 0;
     this._tempVec = new THREE.Vector3();
     this._absorbParticles = null; // 吸收粒子系统
+    this._infoShown = false; // v11
   }
 
   init(scene, camera, planetSystem) {
@@ -297,6 +298,11 @@ export class BlackHole {
       this.glowMaterial.uniforms.uTime.value = elapsed;
     }
 
+    // v11: 黑洞自转
+    const cm = config.celestialMotion;
+    const motionScale = (cm?.enabled !== false) ? (cm?.speedMultiplier || 1.0) : 0;
+    this.group.rotation.y += (cfg.selfRotationSpeed || 1.5) * delta * motionScale;
+
     // 引力效果 + 重生检测（合并距离计算）
     if (this.camera) {
       const dist = this.group.position.distanceTo(this.camera.position);
@@ -307,7 +313,8 @@ export class BlackHole {
         this.dangerLevel = 0;
       } else if (dist < cfg.dangerRadius) {
         this.dangerLevel = Math.max(0, Math.min(1, 1.0 - (dist - cfg.pullRadius) / (cfg.dangerRadius - cfg.pullRadius)));
-        if (dist < cfg.pullRadius && dist > cfg.eventHorizonRadius * 2) {
+        // v11: 引力开关检查
+        if (cfg.gravityEnabled !== false && dist < cfg.pullRadius && dist > cfg.eventHorizonRadius * 2) {
           const pullForce = (1 - dist / cfg.pullRadius) * cfg.pullStrength * delta;
           this._tempVec.subVectors(this.group.position, this.camera.position).normalize();
           this.camera.position.addScaledVector(this._tempVec, pullForce);
@@ -315,10 +322,63 @@ export class BlackHole {
       } else {
         this.dangerLevel = 0;
       }
+
+      // v11: 靠近显示信息
+      if (dist < (cfg.infoDistance || 800)) {
+        this._showInfo(cfg, dist);
+      } else if (this._infoShown) {
+        const hud = window.engine?.hud;
+        if (hud) hud.hideCelestialInfo();
+        this._infoShown = false;
+      }
     }
 
     // 行星吸收检测
     this.updatePlanetAbsorption(cfg, delta, elapsed);
+  }
+
+  /**
+   * v11: 更新后处理特效（引力透镜扭曲 + 屏幕边缘扭曲）
+   */
+  updatePostEffects(uniforms, camera) {
+    const cfg = config.blackhole;
+    if (!camera || !this.group) return;
+
+    const dist = this.group.position.distanceTo(camera.position);
+    const lensingRange = cfg.distorionRadius || 600;
+
+    if (dist < lensingRange && this.dangerLevel > 0) {
+      // 将黑洞世界坐标投影到屏幕坐标
+      this._tempVec.copy(this.group.position);
+      this._tempVec.project(camera);
+      const screenX = (this._tempVec.x + 1) * 0.5;
+      const screenY = (this._tempVec.y + 1) * 0.5;
+
+      // 只在屏幕内才应用透镜
+      if (screenX > -0.1 && screenX < 1.1 && screenY > -0.1 && screenY < 1.1) {
+        uniforms.uLensCenter.value.set(screenX, screenY);
+        const strength = (cfg.lensingStrength || 0.35) * this.dangerLevel;
+        uniforms.uLensStrength.value = strength;
+        uniforms.uLensRadius.value = 0.15 + this.dangerLevel * 0.15;
+      } else {
+        uniforms.uLensStrength.value = 0;
+      }
+    } else {
+      uniforms.uLensStrength.value = 0;
+    }
+  }
+
+  _showInfo(cfg, dist) {
+    const hud = window.engine?.hud;
+    if (!hud) return;
+    this._infoShown = true;
+    const details = [
+      `事件视界: ${cfg.eventHorizonRadius} AU`,
+      `吸积盘: ${cfg.accretionInnerRadius}~${cfg.accretionOuterRadius} AU`,
+      `引力范围: ${cfg.pullRadius} AU`,
+      `距离: ${dist.toFixed(0)} AU`,
+    ].join('<br>');
+    hud.showCelestialInfo('黑洞', 'Stellar Black Hole', details);
   }
 
   /**

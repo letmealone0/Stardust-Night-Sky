@@ -65,6 +65,15 @@ export const config = {
     respawnDistance: 8000,   // v8.0: 超出此距离重生行星
     respawnMin: 7000,        // v8.0: 严格远离太阳系
     respawnMax: 9000,        // v8.0
+    // v11: 5 类行星
+    types: ['rocky', 'gas', 'lava', 'ice', 'rogue'],
+    rogueRatio: 0.3,         // 流浪行星占比 (其余为恒星系统型)
+    moonChance: 0.2,         // 20% 概率带卫星
+    maxMoons: 3,             // 最多卫星数
+    asteroidBeltChance: 0.3, // 30% 概率带小行星带
+    asteroidBeltCount: 120,  // 小行星带粒子数
+    infoDistance: 600,        // 靠近显示天体信息的距离
+    hostStarRadius: 8,       // 宿主小恒星半径
   },
 
   // ---- 太阳系 ----
@@ -99,6 +108,16 @@ export const config = {
     respawnDistance: 8000,   // v8.2: 匹配更大世界
     respawnMin: 4000,        // v8.2
     respawnMax: 7000,        // v8.2
+    // v11: 三类星云 + 湍流 + 飞入
+    types: ['emission', 'reflection', 'dark'],
+    typeColors: {
+      emission:    { r: 0.8, g: 0.25, b: 0.1 },   // 暖红/橙
+      reflection:  { r: 0.15, g: 0.3, b: 0.8 },    // 冷蓝/紫
+      dark:        { r: 0.08, g: 0.06, b: 0.12 },   // 极暗
+    },
+    turbulenceSpeed: 0.015,  // 湍流流动速度
+    fogDensity: 0.5,         // 飞入时最大雾化密度
+    fogDistance: 300,         // 飞入检测半径
   },
 
   // ---- 后处理效果 ----
@@ -156,6 +175,13 @@ export const config = {
     respawnDistance: 3000,     // 超出此距离重生黑洞
     respawnMin: 800,           // 重生最小距离
     respawnMax: 2000,          // 重生最大距离
+    // v11: 新增
+    selfRotationSpeed: 1.5,    // 黑洞自转速度 (rad/s)
+    gravityEnabled: true,      // 引力效果开关
+    lensingStrength: 0.35,     // 引力透镜强度
+    absorbParticleCount: 800,  // 吸收粒子数（增强）
+    distorionRadius: 600,      // 屏幕扭曲生效半径
+    infoDistance: 800,         // 靠近显示信息距离
   },
 
   // ---- 脉冲星系统 ----
@@ -168,6 +194,13 @@ export const config = {
     respawnDistance: 3000,     // 超出此距离重生脉冲星
     respawnMin: 800,           // 重生最小距离
     respawnMax: 2000,          // 重生最大距离
+    // v11: 新增
+    beamSweepAngle: 0.25,      // 射束扫过触发角度 (cos阈值, ~15°)
+    flashIntensity: 0.8,       // 屏幕闪光最大强度
+    flashDecay: 4.0,           // 闪光衰减速度
+    noiseDistance: 400,        // 噪点干扰生效距离
+    maxNoiseIntensity: 0.5,    // 最大噪点强度
+    infoDistance: 500,         // 靠近显示信息距离
   },
 
   // ---- 宇宙尘埃 ----
@@ -175,6 +208,17 @@ export const config = {
     count: 2500,               // v8.0: 平衡性能与视觉
     spread: 6000,              // 分布范围
     recenterDistance: 3000,    // 超出此距离重新居中
+    // v11: 三层结构
+    layers: [
+      { count: 1000, spread: 6000, opacity: 0.08, speed: 0.3 },  // 远景
+      { count: 1000, spread: 4000, opacity: 0.12, speed: 0.7 },  // 中景
+      { count: 500,  spread: 1500, opacity: 0.20, speed: 1.5 },  // 近景
+    ],
+    turbulenceStrength: 0.5,   // 湍流扰动强度
+    armDistribution: true,     // 是否沿旋臂分布
+    armSpread: 0.25,           // 旋臂散布度
+    speedLineThreshold: 30,    // 速度线划过触发速度
+    speedLineStretch: 3.0,     // 速度线拉伸倍数
   },
 
   // ---- 全方向粒子流 ----
@@ -185,6 +229,31 @@ export const config = {
     streakLength: 5.0,         // v8.3: 更长拖尾
   },
 
+  // ---- 天体宏观运动控制 ----
+  celestialMotion: {
+    enabled: true,               // 全局天体运动总开关
+    speedMultiplier: 1.0,        // 全局速度倍率
+  },
+
+  // ---- 后处理: 自定义效果 ----
+  postEffects: {
+    distortion: {
+      enabled: true,
+      lensingStrength: 0.35,     // 黑洞引力透镜强度
+      lensingRadius: 0.25,       // 透镜影响屏幕范围 (0~0.5)
+      gravityNoiseMax: 0.6,      // 脉冲星靠近最大噪点强度
+    },
+    flash: {
+      enabled: true,
+      maxIntensity: 0.8,         // 脉冲星闪光最大亮度
+      decaySpeed: 4.0,           // 闪光衰减速度
+    },
+    nebulaFog: {
+      enabled: true,
+      maxDensity: 0.5,           // 星云内最大雾化
+    },
+  },
+
   // ---- 性能优化 ----
   performance: {
     lodDistances: [0, 800, 2000], // LOD 距离阈值
@@ -192,5 +261,6 @@ export const config = {
     minTargetFPS: 35,          // v8.0: 低于此FPS自动降质
     qualityDropThreshold: 3,   // v8.0: 持续低于阈值秒数
     warmupSeconds: 3,          // v8.0: 启动预热时间（期间不降质）
+    maxTotalParticles: 200000, // 粒子总数上限
   },
 };

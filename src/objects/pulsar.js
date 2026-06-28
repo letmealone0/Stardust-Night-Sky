@@ -13,6 +13,11 @@ export class Pulsar {
     this.beams = [];
     this.rotationSpeed = 0;
     this.camera = null;
+    this._infoShown = false;
+    this._flashDecay = 0;
+    this._tmpCamDir = new THREE.Vector3();
+    this._tmpBeamDir = new THREE.Vector3();
+    this._tmpUp = new THREE.Vector3(0, 1, 0);
   }
 
   setCamera(camera) {
@@ -127,11 +132,15 @@ export class Pulsar {
     }
 
     scene.add(this.group);
+    this._infoShown = false;
+    this._flashDecay = 0; // v11: 闪光衰减值
     console.log('[Pulsar] 脉冲星系统初始化完成');
   }
 
   update(delta, elapsed) {
     const cfg = config.pulsar;
+    const cm = config.celestialMotion;
+    const motionScale = (cm?.enabled !== false) ? (cm?.speedMultiplier || 1.0) : 0;
 
     // 脉冲星重生：离相机太远时在新位置重生
     if (this.camera) {
@@ -141,8 +150,8 @@ export class Pulsar {
       }
     }
 
-    // 自转
-    this.group.rotation.y += this.rotationSpeed * delta;
+    // 自转 (v11: 受全局运动控制)
+    this.group.rotation.y += this.rotationSpeed * delta * motionScale;
 
     // 更新所有 shader 的 uTime
     this.group.children.forEach((child) => {
@@ -150,6 +159,76 @@ export class Pulsar {
         child.userData.material.uniforms.uTime.value = elapsed;
       }
     });
+
+    // v11: 靠近显示信息
+    if (this.camera) {
+      const dist = this.group.position.distanceTo(this.camera.position);
+      const infoDist = cfg.infoDistance || 500;
+      if (dist < infoDist) {
+        this._showInfo(cfg, dist);
+      } else if (this._infoShown) {
+        const hud = window.engine?.hud;
+        if (hud) hud.hideCelestialInfo();
+        this._infoShown = false;
+      }
+    }
+  }
+
+  /**
+   * v11: 更新后处理特效（射束闪光 + 靠近噪点）
+   */
+  updatePostEffects(uniforms, camera, delta) {
+    const cfg = config.pulsar;
+    if (!camera || !this.group) return;
+
+    const dist = this.group.position.distanceTo(camera.position);
+    const time = performance.now() * 0.001;
+
+    // 射束扫过检测：检查光束方向是否朝向相机
+    this._tmpCamDir.subVectors(camera.position, this.group.position).normalize();
+    const rotY = this.group.rotation.y;
+    this._tmpBeamDir.set(0, 1, 0).applyAxisAngle(this._tmpUp, rotY);
+    const dot1 = Math.abs(this._tmpCamDir.dot(this._tmpBeamDir));
+    this._tmpBeamDir.set(0, -1, 0).applyAxisAngle(this._tmpUp, rotY);
+    const dot2 = Math.abs(this._tmpCamDir.dot(this._tmpBeamDir));
+    const maxDot = Math.max(dot1, dot2);
+
+    // 闪光检测（射束接近相机方向时）
+    const sweepThreshold = cfg.beamSweepAngle || 0.25;
+    if (maxDot > sweepThreshold && dist < (cfg.beamLength || 300) * 3) {
+      const flashStrength = ((maxDot - sweepThreshold) / (1 - sweepThreshold)) * (cfg.flashIntensity || 0.8);
+      this._flashDecay = Math.max(this._flashDecay, flashStrength);
+    }
+
+    // 闪光衰减
+    if (this._flashDecay > 0.001) {
+      this._flashDecay *= Math.pow(0.01, delta * (cfg.flashDecay || 4.0));
+      if (this._flashDecay < 0.001) this._flashDecay = 0;
+    }
+    uniforms.uFlashIntensity.value = this._flashDecay;
+
+    // 靠近噪点
+    const noiseRange = cfg.noiseDistance || 400;
+    if (dist < noiseRange) {
+      const noiseStrength = (1 - dist / noiseRange) * (cfg.maxNoiseIntensity || 0.5);
+      uniforms.uNoiseIntensity.value = noiseStrength;
+    } else {
+      uniforms.uNoiseIntensity.value = 0;
+    }
+  }
+
+  _showInfo(cfg, dist) {
+    const hud = window.engine?.hud;
+    if (!hud) return;
+    this._infoShown = true;
+    const period = (2 * Math.PI / cfg.rotationSpeed).toFixed(2);
+    const details = [
+      `中子星半径: ${cfg.radius} AU`,
+      `光束长度: ${cfg.beamLength} AU`,
+      `自转周期: ${period}s`,
+      `距离: ${dist.toFixed(0)} AU`,
+    ].join('<br>');
+    hud.showCelestialInfo('脉冲星', 'Neutron Star — Pulsar', details);
   }
 
   /**
