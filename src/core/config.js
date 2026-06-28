@@ -182,6 +182,17 @@ export const config = {
     absorbParticleCount: 800,  // 吸收粒子数（增强）
     distorionRadius: 600,      // 屏幕扭曲生效半径
     infoDistance: 800,         // 靠近显示信息距离
+    // v12: 吸收特效
+    infallParticleCount: 2000, // 环境坠落粒子数
+    infallRange: 400,          // 坠落粒子分布半径 (accretionOuterRadius*2)
+    infallGravity: 800,        // 坠落粒子引力常数
+    infallTangential: 0.6,     // 切向初速度系数 (越大螺旋越宽)
+    accretionInfallSpeed: 0.5, // 吸积盘内落速度
+    photonSphereRadius: 37.5,  // 光子球半径 (eventHorizonRadius*1.5)
+    matterStreamCount: 6,      // 物质流线数
+    matterStreamParticles: 80, // 每条流线粒子数
+    tidalStretchFactor: 3.0,   // 潮汐拉伸倍数
+    debrisCount: 40,           // 碎片喷射数量
   },
 
   // ---- 脉冲星系统 ----
