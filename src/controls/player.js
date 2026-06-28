@@ -36,6 +36,8 @@ export class PlayerController {
 
     this.sprintFactor = 0;
     this._tmpVec = new THREE.Vector3();
+    // v9.0-fix: 镜头抖动偏移量跟踪，防止累加导致位置漂移
+    this._shakeOffset = new THREE.Vector3();
   }
 
   /**
@@ -48,11 +50,12 @@ export class PlayerController {
     this.bindKeyboardEvents();
 
     // PointerLock 中断时重置按键状态（防止 Alt+Tab 后按键卡住）
-    document.addEventListener('pointerlockchange', () => {
+    this.onPointerLockChangeBound = () => {
       if (!this.controls.isLocked) {
         this.resetKeys();
       }
-    });
+    };
+    document.addEventListener('pointerlockchange', this.onPointerLockChangeBound);
 
     console.log('[PlayerController] 控制器初始化完成');
   }
@@ -74,8 +77,10 @@ export class PlayerController {
    * 绑定键盘事件
    */
   bindKeyboardEvents() {
-    window.addEventListener('keydown', (e) => this.onKeyDown(e));
-    window.addEventListener('keyup', (e) => this.onKeyUp(e));
+    this.onKeyDownBound = (e) => this.onKeyDown(e);
+    this.onKeyUpBound = (e) => this.onKeyUp(e);
+    window.addEventListener('keydown', this.onKeyDownBound);
+    window.addEventListener('keyup', this.onKeyUpBound);
   }
 
   /**
@@ -154,7 +159,11 @@ export class PlayerController {
    * v9.0: 惯性飞行 — 加速度+阻尼模型
    */
   update(delta) {
-    if (!this.controls.isLocked) return;
+    if (!this.controls.isLocked) {
+      // 未锁定时清空抖动偏移，避免恢复后误减
+      this._shakeOffset.set(0, 0, 0);
+      return;
+    }
 
     // 移动方向 (归一化)
     this.direction.set(
@@ -209,13 +218,22 @@ export class PlayerController {
     this.camera.fov += (targetFov - this.camera.fov) * fovDamp;
     this.camera.updateProjectionMatrix();
 
-    // 冲刺镜头抖动
+    // 冲刺镜头抖动（v9.0-fix: 先撤销上一帧抖动偏移，再施加新偏移，防止累加漂移）
+    this.camera.position.x -= this._shakeOffset.x;
+    this.camera.position.y -= this._shakeOffset.y;
     if (config.player.cameraShake !== false && speedFraction > 0.3) {
       const shakeAmp = (config.player.shakeAmplitude || 1.5) * speedFraction;
       const shakeFreq = config.player.shakeFrequency || 10.0;
       const t = performance.now() * 0.001;
-      this.camera.position.x += Math.sin(t * shakeFreq) * shakeAmp * delta;
-      this.camera.position.y += Math.cos(t * shakeFreq * 1.3) * shakeAmp * delta * 0.7;
+      this._shakeOffset.set(
+        Math.sin(t * shakeFreq) * shakeAmp * delta,
+        Math.cos(t * shakeFreq * 1.3) * shakeAmp * delta * 0.7,
+        0
+      );
+      this.camera.position.x += this._shakeOffset.x;
+      this.camera.position.y += this._shakeOffset.y;
+    } else {
+      this._shakeOffset.set(0, 0, 0);
     }
   }
 
@@ -279,6 +297,10 @@ export class PlayerController {
    * 销毁控制器
    */
   dispose() {
-    this.controls.dispose();
+    // 移除事件监听（防止重建时残留与内存泄漏）
+    if (this.onKeyDownBound) window.removeEventListener('keydown', this.onKeyDownBound);
+    if (this.onKeyUpBound) window.removeEventListener('keyup', this.onKeyUpBound);
+    if (this.onPointerLockChangeBound) document.removeEventListener('pointerlockchange', this.onPointerLockChangeBound);
+    if (this.controls) this.controls.dispose();
   }
 }

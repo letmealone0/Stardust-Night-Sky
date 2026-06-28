@@ -100,9 +100,9 @@ export class Engine {
       console.warn('[Config] fov 范围异常，已重置为 75');
       camera.fov = 75;
     }
-    if (player.moveSpeed <= 0) {
-      console.warn('[Config] moveSpeed 必须 > 0，已重置为 50');
-      player.moveSpeed = 50;
+    if (!player.maxSpeed || player.maxSpeed <= 0) {
+      console.warn('[Config] maxSpeed 必须 > 0，已重置为 80');
+      player.maxSpeed = 80;
     }
     if (planets.count < 1) {
       console.warn('[Config] planets.count 必须 > 0，已重置为 8');
@@ -115,39 +115,44 @@ export class Engine {
    */
   bindEvents() {
     // 窗口大小变化（rAF 节流）
-    let resizeTimeout = null;
-    window.addEventListener('resize', () => {
-      if (resizeTimeout) return;
-      resizeTimeout = requestAnimationFrame(() => {
+    this._resizeTimeout = null;
+    this.onResizeBound = () => {
+      if (this._resizeTimeout) return;
+      this._resizeTimeout = requestAnimationFrame(() => {
         this.onResize();
-        resizeTimeout = null;
+        this._resizeTimeout = null;
       });
-    });
+    };
+    window.addEventListener('resize', this.onResizeBound);
 
     // 锁定/解锁鼠标
-    document.addEventListener('click', () => {
-      if (!this.player.controls.isLocked) {
+    this.onDocumentClickBound = () => {
+      if (this.player && this.player.controls && !this.player.controls.isLocked) {
         this.player.controls.lock();
       }
-    });
+    };
+    document.addEventListener('click', this.onDocumentClickBound);
 
-    this.player.controls.addEventListener('lock', () => {
+    this.onLockBound = () => {
       this.isPaused = false;
-      this.hud.showMessage('已锁定鼠标 - WASD移动 Shift冲刺 Ctrl下降 空格上升');
-    });
+      this.hud.showMessage('已锁定鼠标 - WASD移动 Shift冲刺 C下降 空格上升');
+    };
+    this.player.controls.addEventListener('lock', this.onLockBound);
 
-    this.player.controls.addEventListener('unlock', () => {
+    this.onUnlockBound = () => {
       this.isPaused = true;
       this.hud.showMessage('点击屏幕继续探索');
-    });
+    };
+    this.player.controls.addEventListener('unlock', this.onUnlockBound);
 
     // v9.5: P键暂停/恢复所有天体运动
-    window.addEventListener('keydown', (e) => {
+    this.onKeyDownBound = (e) => {
       if (e.code === 'KeyP') {
         this.isMotionFrozen = !this.isMotionFrozen;
         this.hud.showMessage(this.isMotionFrozen ? '⏸ 天体运动已暂停' : '▶ 天体运动已恢复');
       }
-    });
+    };
+    window.addEventListener('keydown', this.onKeyDownBound);
   }
 
   /**
@@ -304,11 +309,22 @@ export class Engine {
    */
   dispose() {
     this.stop();
+
+    // 移除事件监听（防止重建时残留与内存泄漏）
+    window.removeEventListener('resize', this.onResizeBound);
+    document.removeEventListener('click', this.onDocumentClickBound);
+    window.removeEventListener('keydown', this.onKeyDownBound);
+    if (this.player && this.player.controls) {
+      this.player.controls.removeEventListener('lock', this.onLockBound);
+      this.player.controls.removeEventListener('unlock', this.onUnlockBound);
+    }
+
+    // 销毁子系统（postprocessing 依赖 renderer 上下文，需先于 renderer 销毁）
     if (this.scene) this.scene.dispose();
-    if (this.renderer) this.renderer.dispose();
     if (this.postprocessing) this.postprocessing.dispose();
     if (this.hud) this.hud.dispose();
-    if (this.camera) this.camera.dispose();
     if (this.player) this.player.dispose();
+    if (this.camera) this.camera.dispose();
+    if (this.renderer) this.renderer.dispose();
   }
 }

@@ -209,7 +209,7 @@ export class SpeedLines {
     this.material.opacity += (targetOpacity - this.material.opacity) * this.cfg.opacitySpeed;
 
     // v8.0: 冲刺线透明度（仅在高速时可见）
-    const sprintTarget = speed > config.player.moveSpeed * config.player.sprintMultiplier * 0.5 ? 1.2 : 0;
+    const sprintTarget = speed > config.player.maxSpeed * config.player.sprintMultiplier * 0.5 ? 1.2 : 0;
     if (this.sprintMaterial) {
       this.sprintMaterial.opacity += (sprintTarget - this.sprintMaterial.opacity) * 0.3;
     }

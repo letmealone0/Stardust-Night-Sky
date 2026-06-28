@@ -119,9 +119,9 @@ export class NebulaSystem {
           return n * falloff * uDensity;
         }
 
-        // 光线-盒子相交
+        // 光线-盒子相交（对 rd 分量做安全求倒数，避免除零产生 inf/NaN）
         vec2 boxHit(vec3 ro, vec3 rd, vec3 hs) {
-          vec3 m = 1.0 / rd;
+          vec3 m = 1.0 / max(abs(rd), 1e-6) * sign(rd);
           vec3 n = m * ro;
           vec3 k = abs(m) * hs;
           vec3 t1 = -n - k, t2 = -n + k;
@@ -133,7 +133,9 @@ export class NebulaSystem {
 
         void main() {
           vec3 ro = uCameraLocalPos;
-          vec3 rd = normalize(vLocalPos - uCameraLocalPos);
+          vec3 toFrag = vLocalPos - uCameraLocalPos;
+          // 防止相机与片元重合时 normalize 零向量产生 NaN
+          vec3 rd = (dot(toFrag, toFrag) < 1e-10) ? vec3(0.0, 0.0, 1.0) : normalize(toFrag);
 
           vec3 halfSize = vec3(uScale * 0.5);
           vec2 t = boxHit(ro, rd, halfSize);

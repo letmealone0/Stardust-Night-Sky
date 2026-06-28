@@ -64,7 +64,8 @@ async function init() {
     console.log('[Main] 初始化完成');
   } catch (error) {
     console.error('[Main] 初始化失败:', error);
-    showError(error.message);
+    const message = error instanceof Error ? error.message : String(error);
+    showError(message);
   }
 }
 

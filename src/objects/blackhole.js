@@ -18,7 +18,6 @@ export class BlackHole {
     this.glowMaterial = null;
     this.dangerLevel = 0;
     this._tempVec = new THREE.Vector3();
-    this._absorbedPlanets = []; // 被吸收的行星列表
     this._absorbParticles = null; // 吸收粒子系统
   }
 
@@ -389,7 +388,7 @@ export class BlackHole {
 
         // 完全吸收后移除行星
         if (data.absorbProgress >= 1.0) {
-          this.group.parent.remove(planet);
+          if (planet.parent) planet.parent.remove(planet);
           planet.traverse((child) => {
             if (child.geometry) child.geometry.dispose();
             if (child.material) {

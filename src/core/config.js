@@ -96,7 +96,9 @@ export const config = {
       { r: 0.08, g: 0.3, b: 0.65 },   // 深蓝
       { r: 0.5, g: 0.12, b: 0.2 },    // 暗红
     ],
-    respawnDistance: 8000,   // v8.2: 匹配更大世界\n    respawnMin: 4000,        // v8.2\n    respawnMax: 7000,        // v8.2
+    respawnDistance: 8000,   // v8.2: 匹配更大世界
+    respawnMin: 4000,        // v8.2
+    respawnMax: 7000,        // v8.2
   },
 
   // ---- 后处理效果 ----

@@ -217,7 +217,7 @@ export class ParticleFlow {
     uniforms.uTime.value = elapsed;
 
     // 冲刺因子平滑过渡
-    const isSprinting = speed > config.player.moveSpeed * config.player.sprintMultiplier * 0.8;
+    const isSprinting = speed > config.player.maxSpeed * config.player.sprintMultiplier * 0.8;
     const targetSprint = isSprinting ? 1.0 : 0.0;
     this._sprintFactor += (targetSprint - this._sprintFactor) * Math.min(1, delta * 5);
     uniforms.uSprintFactor.value = this._sprintFactor;

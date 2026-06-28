@@ -14,6 +14,7 @@ import { BlackHole } from '../objects/blackhole.js';
 import { Pulsar } from '../objects/pulsar.js';
 import { SolarSystem } from '../objects/solarSystem.js';
 import { ParticleFlow } from '../objects/particleFlow.js';
+import { disposeAllPlanetTextures } from '../objects/planetTextures.js';
 
 export class SceneManager {
   constructor() {
@@ -105,8 +106,8 @@ export class SceneManager {
     } catch (e) { console.warn('[Scene] 粒子流初始化失败:', e); }
 
     // v9.0: 微弱环境光 — 仅防暗部死黑，太阳是主光源
-    const ambientLight = new THREE.AmbientLight(0x111133, config.solarSystem.ambientIntensity || 0.05);
-    this.scene.add(ambientLight);
+    this.ambientLight = new THREE.AmbientLight(0x111133, config.solarSystem.ambientIntensity || 0.05);
+    this.scene.add(this.ambientLight);
 
     console.log('[SceneManager] v9.0 PBR场景初始化完成');
   }
@@ -130,6 +131,7 @@ export class SceneManager {
    * 销毁场景
    */
   dispose() {
+    // 销毁各子系统（释放 GPU 资源）
     if (this.objects.stars) this.objects.stars.dispose(this.scene);
     if (this.objects.planets) this.objects.planets.dispose(this.scene);
     if (this.objects.nebula) this.objects.nebula.dispose(this.scene);
@@ -139,5 +141,22 @@ export class SceneManager {
     if (this.objects.pulsar) this.objects.pulsar.dispose(this.scene);
     if (this.objects.solarSystem) this.objects.solarSystem.dispose(this.scene);
     if (this.objects.particleFlow) this.objects.particleFlow.dispose();
+
+    // 清理场景级资源：环境光、雾、背景、银河三级 Group
+    if (this.ambientLight && this.scene) {
+      this.scene.remove(this.ambientLight);
+      this.ambientLight = null;
+    }
+    if (this.galaxyGroup && this.scene) {
+      this.scene.remove(this.galaxyGroup);
+      this.galaxyGroup = null;
+    }
+    if (this.scene) {
+      this.scene.fog = null;
+      this.scene.background = null;
+      this.scene.clear();
+    }
+    // 释放共享的行星纹理缓存
+    disposeAllPlanetTextures();
   }
 }

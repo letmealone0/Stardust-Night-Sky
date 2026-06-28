@@ -15,6 +15,13 @@ export class PostProcessingManager {
   }
 
   init() {
+    // 防御重复初始化：若已存在 composer 先释放，避免 pass 叠加
+    if (this.composer) {
+      this.dispose();
+      this.composer = null;
+      this.bloomPass = null;
+    }
+
     const { width, height } = this.renderer.domElement;
     this.composer = new EffectComposer(this.renderer);
 
@@ -38,15 +45,20 @@ export class PostProcessingManager {
   }
 
   render() {
-    this.composer.render();
+    if (this.composer) this.composer.render();
   }
 
   onResize() {
+    if (!this.composer) return;
     const { width, height } = this.renderer.domElement;
     this.composer.setSize(width, height);
   }
 
   dispose() {
-    this.composer.dispose();
+    if (this.composer) {
+      this.composer.dispose();
+      this.composer = null;
+    }
+    this.bloomPass = null;
   }
 }

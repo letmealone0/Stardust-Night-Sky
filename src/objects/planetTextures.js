@@ -12,7 +12,7 @@ const TEXTURE_MANIFEST = {
   Sun:     { albedo: 'sun.jpg' },
   Mercury: { albedo: 'mercury.jpg' },
   Venus:   { albedo: 'venus.jpg' },
-  Earth:   { albedo: 'earth_day.jpg', clouds: 'earth_clouds.jpg' },
+  Earth:   { albedo: 'earth_day.jpg', clouds: 'earth_clouds.jpg', normal: 'earth_normal.jpg', spec: 'earth_spec.jpg' },
   Mars:    { albedo: 'mars.jpg' },
   Jupiter: { albedo: 'jupiter.jpg' },
   Saturn:  { albedo: 'saturn.jpg' },
@@ -129,14 +129,53 @@ async function loadPlanetTextures(name) {
     img.src = albedoUrl;
   });
 
-  if (img.width > 0) {
-    // 岩石行星 vs 气态行星
+  // 地球优先使用现成 normal/spec 贴图（质量远优于程序化生成）
+  if (manifest.normal) {
+    result.normalMap = await new Promise((resolve) => {
+      loader.load(BASE + manifest.normal, resolve, undefined, () => resolve(null));
+    });
+  }
+  if (manifest.spec) {
+    const specTex = await new Promise((resolve) => {
+      loader.load(BASE + manifest.spec, resolve, undefined, () => resolve(null));
+    });
+    // spec: 亮=光滑(海洋) 暗=粗糙(陆地)；roughnessMap: 亮=粗糙。故反相生成 roughnessMap
+    if (specTex) {
+      result.roughnessMap = invertToRoughnessMap(specTex);
+    }
+  }
+
+  // 无现成贴图时回退到程序化生成
+  if (!result.normalMap && img.width > 0) {
     const rocky = ['Mercury', 'Venus', 'Earth', 'Mars'].includes(name);
     result.normalMap = generateNormalMap(img);
-    result.roughnessMap = generateRoughnessMap(img, rocky);
+    if (!result.roughnessMap) result.roughnessMap = generateRoughnessMap(img, rocky);
   }
 
   return result;
+}
+
+/** 将 spec(镜面) 贴图反相为 roughness 贴图（亮→光滑即低 roughness） */
+function invertToRoughnessMap(specTex) {
+  const img = specTex.image;
+  if (!img || !img.width) return specTex;
+  const w = img.width, h = img.height;
+  const canvas = document.createElement('canvas');
+  canvas.width = w; canvas.height = h;
+  const ctx = canvas.getContext('2d');
+  ctx.drawImage(img, 0, 0);
+  const data = ctx.getImageData(0, 0, w, h);
+  for (let i = 0; i < data.data.length; i += 4) {
+    const lum = data.data[i] * 0.299 + data.data[i + 1] * 0.587 + data.data[i + 2] * 0.114;
+    const rough = 255 - lum; // 反相：spec 亮处→roughness 暗(光滑)
+    data.data[i] = data.data[i + 1] = data.data[i + 2] = rough;
+    data.data[i + 3] = 255;
+  }
+  ctx.putImageData(data, 0, 0);
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.wrapS = THREE.RepeatWrapping;
+  tex.wrapT = THREE.ClampToEdgeWrapping;
+  return tex;
 }
 
 /**
@@ -153,4 +192,16 @@ export async function loadAllPlanetTextures() {
 /** 获取已缓存的纹理 */
 export function getPlanetTextures(name) {
   return cache.get(name) || null;
+}
+
+/** 释放并清空所有缓存的行星纹理（引擎销毁时调用） */
+export function disposeAllPlanetTextures() {
+  cache.forEach((texSet) => {
+    if (!texSet) return;
+    ['map', 'normalMap', 'roughnessMap', 'cloudMap'].forEach((key) => {
+      if (texSet[key]) texSet[key].dispose();
+    });
+  });
+  cache.clear();
+  console.log('[PlanetTextures] 缓存已清空');
 }

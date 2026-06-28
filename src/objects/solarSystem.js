@@ -39,6 +39,8 @@ const MOON_DATA = {
 
 // 时间缩放：1 秒游戏时间 = 多少天
 const TIME_SCALE = 30; // v9.3: 地球公转~12秒，肉眼可见
+// 自转视觉倍率：自转也按 TIME_SCALE 换算，但全速会过快（地球每秒30圈会糊），故整体降速到"可见不晕"
+const ROT_SCALE = 0.08;
 
 export class SolarSystem {
   constructor() {
@@ -49,6 +51,7 @@ export class SolarSystem {
     this.camera = null;
     this._tempVec = new THREE.Vector3();
     this._textures = null; // v9.0: 纹理缓存
+    this._ownTextures = []; // v9.0-fix: 本实例创建的纹理（环/标签），dispose 时释放；行星共享纹理由 planetTextures 缓存管理
   }
 
   async init(scene, camera) {
@@ -94,7 +97,10 @@ export class SolarSystem {
     this.group.add(this.sun);
 
     // 太阳点光源 (v9.0: 场景唯一主光源)
+    // fix: Three.js v0.184 默认物理光照 decay=2 (1/d²)，轨道距离下衰减到几乎为0，行星全黑。
+    //      艺术化太阳系用 decay=0（无衰减），让所有轨道距离的行星都被均匀照亮。
     const sunLight = new THREE.PointLight(0xfff5e0, cfg.sunLightIntensity || 5.0, cfg.sunLightRange || 25000);
+    sunLight.decay = 0;
     sunLight.position.set(0, 0, 0);
     this.group.add(sunLight);
 
@@ -140,16 +146,12 @@ export class SolarSystem {
       roughness: isGas ? 0.35 : 0.5,
       metalness: 0.05,
       color: tex?.map ? 0xffffff : new THREE.Color(pData.color),
-      emissive: tex?.map ? new THREE.Color(0x444444) : new THREE.Color(0x000000),
-      emissiveIntensity: 1.0,
+      // fix: emissive 从 0x444444/1.0 降到 0x222222/0.3，仅防暗面死黑，不再冲淡纹理对比度
+      emissive: tex?.map ? new THREE.Color(0x222222) : new THREE.Color(0x000000),
+      emissiveIntensity: 0.3,
     };
 
-    // 岩石行星: displacementMap
-    if (isRocky && tex?.normalMap) {
-      matOpts.displacementMap = tex.normalMap; // 法线贴图兼做位移
-      matOpts.displacementScale = pData.radius * 0.02;
-    }
-
+    // fix: 移除 displacementMap 误用 normalMap（程序化法线当位移会让球面变"麻子"、扭曲 UV 纹理）
     const material = new THREE.MeshStandardMaterial(matOpts);
 
     const segments = pData.radius > 20 ? 64 : 32;
@@ -297,6 +299,7 @@ export class SolarSystem {
     const texture = new THREE.CanvasTexture(canvas);
     texture.wrapS = THREE.ClampToEdgeWrapping;
     texture.wrapT = THREE.ClampToEdgeWrapping;
+    this._ownTextures.push(texture); // 跟踪本实例纹理，dispose 时释放
 
     const material = new THREE.MeshBasicMaterial({
       map: texture,
@@ -330,6 +333,7 @@ export class SolarSystem {
     ctx.fillRect(0, 0, 256, 16);
 
     const texture = new THREE.CanvasTexture(canvas);
+    this._ownTextures.push(texture); // 跟踪本实例纹理，dispose 时释放
     const material = new THREE.MeshBasicMaterial({
       map: texture,
       side: THREE.DoubleSide,
@@ -473,6 +477,7 @@ export class SolarSystem {
     ctx.fillText(name, 256, 64);
     
     const texture = new THREE.CanvasTexture(canvas);
+    this._ownTextures.push(texture); // 跟踪本实例纹理，dispose 时释放
     const spriteMat = new THREE.SpriteMaterial({
       map: texture,
       transparent: true,
@@ -508,8 +513,9 @@ export class SolarSystem {
       planet.angle += orbitSpeed * delta;
       planet.orbitPivot.rotation.y = planet.angle;
 
-      const rotSpeed = (2 * Math.PI) / (Math.abs(d.rotationPeriod) * 10);
-      planet.rotAngle += rotSpeed * delta * Math.sign(d.rotationPeriod);
+      // fix: 自转时间基准与公转统一（除以 TIME_SCALE），再乘 ROT_SCALE 降到"可见不晕"
+      const rotSpeed = (2 * Math.PI) / (Math.abs(d.rotationPeriod) / TIME_SCALE);
+      planet.rotAngle += rotSpeed * delta * Math.sign(d.rotationPeriod) * ROT_SCALE;
       planet.mesh.rotation.y = planet.rotAngle;
 
       // v9.0: 地球云层独立自转
@@ -925,14 +931,19 @@ export class SolarSystem {
   // ==================== 销毁 ====================
 
   dispose(scene) {
-    scene.remove(this.group);
+    if (scene) scene.remove(this.group);
+    // 释放本实例创建的几何体与材质（材质仅 dispose 本身，不释放其共享的行星缓存纹理）
     this.group.traverse((child) => {
       if (child.geometry) child.geometry.dispose();
       if (child.material) {
-        if (child.material.map) child.material.map.dispose();
         child.material.dispose();
       }
     });
+    // 释放本实例创建的纹理（土星环/天王星环/标签 Sprite）
+    if (this._ownTextures) {
+      this._ownTextures.forEach((t) => t && t.dispose());
+      this._ownTextures = [];
+    }
     this.planets = [];
   }
 }
