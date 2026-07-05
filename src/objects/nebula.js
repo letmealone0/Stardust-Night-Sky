@@ -68,24 +68,24 @@ export class NebulaSystem {
   _createLayers(cfg, baseColor, nebType, seed) {
     const scale = cfg.scale || 800;
     const defs = [
-      { name:'outer', count:8000,  spMul:1.0,  opacity:0.4, size:1.5, cShift:0.0 },
-      { name:'mid',   count:12000, spMul:0.65, opacity:0.8, size:2.5, cShift:0.15 },
-      { name:'inner', count:5000,  spMul:0.35, opacity:1.5, size:4.0, cShift:0.3 },
+      { name:'outer', count:4000,  spMul:1.0,  opacity:0.6, size:5.0, cShift:0.0 },
+      { name:'mid',   count:6000,  spMul:0.65, opacity:1.2, size:8.0, cShift:0.15 },
+      { name:'inner', count:3000,  spMul:0.35, opacity:2.0, size:12.0, cShift:0.3 },
     ];
     return defs.map((def, li) => {
       const count = def.count, spread = scale*0.5*def.spMul;
       const pos = new Float32Array(count*3);
-      const alphas = new Float32Array(count);
+      const sizes = new Float32Array(count);
       const rands = new Float32Array(count);
       for (let i=0; i<count; i++) {
         const i3=i*3, th=Math.random()*Math.PI*2, ph=Math.acos(2*Math.random()-1);
         const r2=spread*(0.1+Math.random()*0.9);
         pos[i3]=r2*Math.sin(ph)*Math.cos(th); pos[i3+1]=r2*Math.sin(ph)*Math.sin(th); pos[i3+2]=r2*Math.cos(ph);
-        alphas[i]=0.3+Math.random()*0.7; rands[i]=Math.random();
+        sizes[i]=def.size*(0.5+Math.random()*0.5); rands[i]=Math.random();
       }
       const geo = new THREE.BufferGeometry();
       geo.setAttribute('position', new THREE.BufferAttribute(pos,3));
-      geo.setAttribute('aAlphaSeed', new THREE.BufferAttribute(alphas,1));
+      geo.setAttribute('aSize', new THREE.BufferAttribute(sizes,1));
       geo.setAttribute('aRandom', new THREE.BufferAttribute(rands,1));
 
       const mat = this._createMaterial(def, baseColor, spread, seed+li);
@@ -107,29 +107,27 @@ export class NebulaSystem {
         uCameraPos:{value:new THREE.Vector3()},
       },
       vertexShader: `
-        attribute float aAlphaSeed; attribute float aRandom;
+        attribute float aSize; attribute float aRandom;
         varying float vAlpha,vDensity,vDistFromCenter,vRand; varying vec3 vWorldPos;
         uniform float uTime,uScale,uTurbulence,uPixelRatio,uOpacity; uniform vec3 uCameraPos;
         ${NOISE_GLSL}
         void main() {
           vec3 pos=position; vRand=aRandom;
-          // 湍流位移
-          float turb=uTurbulence*uTime;
-          pos.x+=sin(pos.y*0.3+turb*0.7)*uScale*0.03;
-          pos.y+=cos(pos.z*0.3+turb*0.6)*uScale*0.03;
-          pos.z+=sin(pos.x*0.3+turb*0.5)*uScale*0.03;
-          // 差速旋转
+          float turb=uTurbulence*uTime*0.25;
+          pos.x+=sin(pos.y*0.15+turb*0.3)*uScale*0.008;
+          pos.y+=cos(pos.z*0.15+turb*0.25)*uScale*0.008;
+          pos.z+=sin(pos.x*0.15+turb*0.2)*uScale*0.008;
           float distC=length(position)/(uScale*0.5);
-          float lr=uTime*0.08*(1.0-distC*0.4),ca=cos(lr),sa=sin(lr);
+          float lr=uTime*0.025*(1.0-distC*0.3),ca=cos(lr),sa=sin(lr);
           float rx=pos.x*ca-pos.z*sa,rz=pos.x*sa+pos.z*ca;
           pos.x=rx; pos.z=rz;
           vec4 wp=modelMatrix*vec4(pos,1.0); vWorldPos=wp.xyz; vDistFromCenter=distC;
-          float n=fbm3(position/(uScale*0.15)+uTime*0.01); vDensity=n;
-          float rf=1.0-smoothstep(0.2,1.0,distC);
-          vAlpha=aAlphaSeed*rf*(0.5+n*0.5)*uOpacity;
+          float n=fbm3(position/(uScale*0.1)+uTime*0.004); vDensity=n;
+          float rf=1.0-smoothstep(0.1,1.0,distC);
+          vAlpha=rf*(0.3+n*0.7)*uOpacity;
           vec4 mv=modelViewMatrix*vec4(pos,1.0);
-          gl_PointSize=(1.0+aRandom*2.0)*uPixelRatio*(400.0/max(-mv.z,1.0));
-          gl_PointSize=clamp(gl_PointSize,0.8,12.0);
+          gl_PointSize=aSize*uPixelRatio*(500.0/max(-mv.z,1.0));
+          gl_PointSize=clamp(gl_PointSize,2.0,35.0);
           gl_Position=projectionMatrix*mv;
         }
       `,
@@ -141,8 +139,8 @@ export class NebulaSystem {
         void main() {
           float d=length(gl_PointCoord-0.5)*2.0;
           float da=1.0-smoothstep(0.0,1.0,d);
-          float th=0.05;
-          if(vDensity<th||da<0.01)discard;
+          float th=0.12+vDistFromCenter*0.15;
+          if(vDensity<th||da<0.005)discard;
           // 暗尘埃
           float dn=fbm3(vWorldPos/(uScale*0.08)+17.0);
           float isDark=smoothstep(0.08,0.18,dn);
