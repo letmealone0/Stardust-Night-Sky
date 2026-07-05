@@ -79,16 +79,16 @@ const CelestialEffectsShader = {
         }
       }
 
-      // 2. 运动模糊（沿速度方向多次采样混合）
+      // 2. 运动模糊（沿速度方向多次采样混合 — 轻量版）
       vec4 color = vec4(0.0);
-      if (uMotionBlurIntensity > 0.01) {
-        vec2 vel = uMotionDir * uMotionBlurIntensity;
-        float samples = 6.0;
-        for (float i = 0.0; i < 6.0; i++) {
-          float t = i / 5.0 - 0.5;
-          color += texture2D(tDiffuse, clamp(uv + vel * t, 0.0, 1.0));
-        }
-        color /= samples;
+      if (uMotionBlurIntensity > 0.005) {
+        vec2 vel = uMotionDir * uMotionBlurIntensity * 0.4;
+        color = texture2D(tDiffuse, uv);
+        color += texture2D(tDiffuse, clamp(uv + vel, 0.0, 1.0));
+        color += texture2D(tDiffuse, clamp(uv - vel, 0.0, 1.0));
+        color += texture2D(tDiffuse, clamp(uv + vel * 2.0, 0.0, 1.0));
+        color += texture2D(tDiffuse, clamp(uv - vel * 2.0, 0.0, 1.0));
+        color /= 5.0;
       } else {
         color = texture2D(tDiffuse, uv);
       }
@@ -206,7 +206,10 @@ export class PostProcessingManager {
     const velocity = camera.position.clone().sub(this._prevCamPos);
     const speed = velocity.length();
 
-    if (speed > (mbCfg.speedThreshold || 2.0) * delta) {
+    // 速度低于阈值时立即关闭模糊，避免残影
+    if (speed < 0.5) {
+      this.celestialPass.uniforms.uMotionBlurIntensity.value = 0;
+    } else if (speed > (mbCfg.speedThreshold || 2.0)) {
       // 将3D速度投影到屏幕空间
       const viewDir = camera.getWorldDirection(new THREE.Vector3());
       const right = new THREE.Vector3().crossVectors(viewDir, camera.up).normalize();
@@ -216,11 +219,16 @@ export class PostProcessingManager {
       const len = Math.sqrt(screenVelX * screenVelX + screenVelY * screenVelY);
       if (len > 0.01) {
         this.celestialPass.uniforms.uMotionDir.value.set(screenVelX / len, screenVelY / len);
+        // 限制模糊强度，避免过度重影
         this.celestialPass.uniforms.uMotionBlurIntensity.value =
-          Math.min(speed / (delta * 100), 1.0) * (mbCfg.intensity || 0.4);
+          Math.min(speed / 200, 0.25) * (mbCfg.intensity || 0.4);
       }
     } else {
-      this.celestialPass.uniforms.uMotionBlurIntensity.value *= 0.85; // 快速衰减
+      // 中间速度：快速衰减
+      this.celestialPass.uniforms.uMotionBlurIntensity.value *= 0.7;
+      if (this.celestialPass.uniforms.uMotionBlurIntensity.value < 0.005) {
+        this.celestialPass.uniforms.uMotionBlurIntensity.value = 0;
+      }
     }
 
     this._prevCamPos.copy(camera.position);

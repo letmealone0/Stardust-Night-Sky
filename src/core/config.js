@@ -159,9 +159,9 @@ export const config = {
     // v13: 运动模糊
     motionBlur: {
       enabled: true,
-      intensity: 0.4,          // 模糊强度
-      samples: 8,              // 采样次数
-      speedThreshold: 2.0,     // 速度阈值（低于此不模糊）
+      intensity: 0.15,          // 模糊强度 (降低避免重影)
+      samples: 5,              // 采样次数
+      speedThreshold: 15.0,    // 速度阈值（低于此不模糊）
     },
   },
 
