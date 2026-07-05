@@ -68,9 +68,9 @@ export class NebulaSystem {
   _createLayers(cfg, baseColor, nebType, seed) {
     const scale = cfg.scale || 800;
     const defs = [
-      { name:'outer', count:18000, spMul:1.0,  opacity:0.06, size:1.2, cShift:0.0 },
-      { name:'mid',   count:22000, spMul:0.65, opacity:0.12, size:1.8, cShift:0.15 },
-      { name:'inner', count:10000, spMul:0.35, opacity:0.20, size:2.5, cShift:0.3 },
+      { name:'outer', count:8000,  spMul:1.0,  opacity:0.4, size:1.5, cShift:0.0 },
+      { name:'mid',   count:12000, spMul:0.65, opacity:0.8, size:2.5, cShift:0.15 },
+      { name:'inner', count:5000,  spMul:0.35, opacity:1.5, size:4.0, cShift:0.3 },
     ];
     return defs.map((def, li) => {
       const count = def.count, spread = scale*0.5*def.spMul;
@@ -109,7 +109,7 @@ export class NebulaSystem {
       vertexShader: `
         attribute float aAlphaSeed; attribute float aRandom;
         varying float vAlpha,vDensity,vDistFromCenter,vRand; varying vec3 vWorldPos;
-        uniform float uTime,uScale,uTurbulence,uPixelRatio; uniform vec3 uCameraPos;
+        uniform float uTime,uScale,uTurbulence,uPixelRatio,uOpacity; uniform vec3 uCameraPos;
         ${NOISE_GLSL}
         void main() {
           vec3 pos=position; vRand=aRandom;
@@ -126,10 +126,10 @@ export class NebulaSystem {
           vec4 wp=modelMatrix*vec4(pos,1.0); vWorldPos=wp.xyz; vDistFromCenter=distC;
           float n=fbm3(position/(uScale*0.15)+uTime*0.01); vDensity=n;
           float rf=1.0-smoothstep(0.2,1.0,distC);
-          vAlpha=aAlphaSeed*rf*(0.3+n*0.7)*uOpacity;
+          vAlpha=aAlphaSeed*rf*(0.5+n*0.5)*uOpacity;
           vec4 mv=modelViewMatrix*vec4(pos,1.0);
-          gl_PointSize=(0.8+aRandom*1.5)*uPixelRatio*(350.0/max(-mv.z,1.0));
-          gl_PointSize=clamp(gl_PointSize,0.5,8.0);
+          gl_PointSize=(1.0+aRandom*2.0)*uPixelRatio*(400.0/max(-mv.z,1.0));
+          gl_PointSize=clamp(gl_PointSize,0.8,12.0);
           gl_Position=projectionMatrix*mv;
         }
       `,
@@ -141,8 +141,8 @@ export class NebulaSystem {
         void main() {
           float d=length(gl_PointCoord-0.5)*2.0;
           float da=1.0-smoothstep(0.0,1.0,d);
-          float th=0.15+vDistFromCenter*0.3;
-          if(vDensity<th||da<0.02)discard;
+          float th=0.05;
+          if(vDensity<th||da<0.01)discard;
           // 暗尘埃
           float dn=fbm3(vWorldPos/(uScale*0.08)+17.0);
           float isDark=smoothstep(0.08,0.18,dn);
