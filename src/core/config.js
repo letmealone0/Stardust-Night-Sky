@@ -51,7 +51,7 @@ export const config = {
       position: { x: -15000, y: 500, z: -30000 }, // 银河中心偏移，太阳系在旋臂中
       tilt: 50,               // 银道面倾角
       scale: 22.0,            // v8.2: 超大尺度，太阳系在旋臂中
-      hazeCount: 3000,        // 雾气粒子数
+      hazeCount: 5000,        // v15: 增加雾气粒子数让银河更壮观
     },
     // v13: 深场背景星星
     deepField: {
@@ -107,7 +107,7 @@ export const config = {
   nebula: {
     count: 3,                // v8.2: 减少数量，提升质量
     scale: 600,              // v8.2: 稍小但更精致
-    opacity: 1.5,            // v8.2: 更高透明度
+    opacity: 2.5,            // v15: 增大体积浓度让星云更浓密
     colors: [
       { r: 0.25, g: 0.08, b: 0.55 },  // 深紫
       { r: 0.08, g: 0.3, b: 0.65 },   // 深蓝

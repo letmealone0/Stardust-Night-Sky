@@ -54,7 +54,7 @@ export class NebulaSystem {
     group.position.copy(position);
 
     const secondColor = this._pickSecondColor(color);
-    const densityBase = randomRange(0.6, 1.2);
+    const densityBase = randomRange(0.8, 1.5);  // v15: 增大密度范围
 
     const material = new THREE.ShaderMaterial({
       uniforms: {
@@ -187,7 +187,7 @@ export class NebulaSystem {
               float miePhase = 0.5 * (1.0 + sunDot * sunDot); // Henyey-Greenstein近似
               col += uColor1 * miePhase * 0.25;
 
-              float alpha = d * stepSize * 0.18 * uOpacity;
+              float alpha = d * stepSize * 0.25 * uOpacity;  // v15: 增大alpha让星云更浓密
               accColor += col * alpha * (1.0 - accAlpha);
               accAlpha += alpha * (1.0 - accAlpha);
             }

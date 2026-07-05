@@ -104,18 +104,37 @@ export class SolarSystem {
     sunLight.position.set(0, 0, 0);
     this.group.add(sunLight);
 
-    // v14: 太阳光晕 — 指数衰减柔和边缘 (消除球状硬边界)
-    const glowGeo = new THREE.SphereGeometry(cfg.sunRadius * 2.5, 32, 32);
+    // v15: 太阳光晕 — 多层柔和辐射 (Space Engine 风格)
+    const glowGeo = new THREE.SphereGeometry(cfg.sunRadius * 4, 32, 32);
     const glowMat = new THREE.ShaderMaterial({
-      uniforms: {},
-      vertexShader: `varying vec3 vNormal; void main() { vNormal = normalize(normalMatrix * normal); gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
-      fragmentShader: `varying vec3 vNormal; void main() { float rim = 1.0 - max(0.0, dot(vNormal, vec3(0,0,1))); float glow = exp(-rim * rim * 3.0); float core = exp(-rim * 12.0); vec3 c = mix(vec3(1.0, 0.85, 0.4), vec3(1.0, 0.5, 0.15), rim); float a = glow * 0.7 + core * 0.4; gl_FragColor = vec4(c * a, a * 0.8); }`,
+      uniforms: { uTime: { value: 0 } },
+      vertexShader: `varying vec3 vNormal; varying vec3 vWorldPos; void main() { vNormal = normalize(normalMatrix * normal); vWorldPos = (modelMatrix * vec4(position,1.0)).xyz; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
+      fragmentShader: `
+        precision highp float;
+        varying vec3 vNormal; varying vec3 vWorldPos; uniform float uTime;
+        float hash(vec3 p){ return fract(sin(dot(p, vec3(127.1,311.7,74.7)))*43758.5453); }
+        float noise(vec3 p){ vec3 i=floor(p),f=fract(p); f=f*f*(3.0-2.0*f);
+          return mix(mix(mix(hash(i),hash(i+vec3(1,0,0)),f.x),mix(hash(i+vec3(0,1,0)),hash(i+vec3(1,1,0)),f.x),f.y),
+                     mix(mix(hash(i+vec3(0,0,1)),hash(i+vec3(1,0,1)),f.x),mix(hash(i+vec3(0,1,1)),hash(i+vec3(1,1,1)),f.x),f.y),f.z); }
+        void main() {
+          float rim = 1.0 - max(0.0, dot(vNormal, vec3(0,0,1)));
+          float inner = exp(-rim * rim * 6.0) * 1.2;
+          float mid = exp(-rim * 2.5) * 0.5;
+          float outer = exp(-rim * 1.2) * 0.15;
+          float n = noise(vWorldPos * 0.015 + uTime * 0.05) * 0.3;
+          float total = (inner + mid + outer) * (1.0 + n);
+          vec3 c = mix(vec3(1.0, 0.95, 0.7), vec3(1.0, 0.6, 0.15), smoothstep(0.2, 0.8, rim));
+          c = mix(c, vec3(0.8, 0.2, 0.05), smoothstep(0.7, 1.0, rim));
+          gl_FragColor = vec4(c * total, total * 0.85);
+        }
+      `,
       blending: THREE.AdditiveBlending, side: THREE.BackSide, transparent: true, depthWrite: false,
     });
+    this.glowMaterial = glowMat;
     this.group.add(new THREE.Mesh(glowGeo, glowMat));
 
-    // 日冕 (v13: 增强带Simplex Noise湍流)
-    const coronaGeo = new THREE.SphereGeometry(cfg.sunRadius * 4, 32, 32);
+    // v15: 日冕 — 大范围动态湍流 (6x 半径)
+    const coronaGeo = new THREE.SphereGeometry(cfg.sunRadius * 6, 32, 32);
     this.coronaMaterial = new THREE.ShaderMaterial({
       uniforms: { uTime: { value: 0 } },
       vertexShader: `
@@ -178,15 +197,19 @@ export class SolarSystem {
 
         void main() {
           float rim = 1.0 - max(0.0, dot(vNormal, vec3(0.0, 0.0, 1.0)));
-          float intensity = pow(rim, 3.5);
-          float pulse = 0.8 + sin(uTime * 0.5) * 0.2;
-          // 米粒组织噪声
-          float granulation = snoise(vWorldPos * 0.04 + uTime * 0.08) * 0.5 + 0.5;
-          float gran2 = snoise(vWorldPos * 0.12 + uTime * 0.15) * 0.5 + 0.5;
-          float granMix = granulation * 0.7 + gran2 * 0.3;
-          vec3 c = mix(vec3(1.0, 0.65, 0.2), vec3(1.0, 0.9, 0.5), granMix);
-          c = mix(c, vec3(1.0, 0.3, 0.08), pow(rim, 5.0));
-          gl_FragColor = vec4(c, intensity * 0.25 * pulse);
+          float intensity = pow(rim, 3.0);
+          // v15: 双频脉动 (快+慢)
+          float pulse = 0.75 + sin(uTime * 0.5) * 0.15 + sin(uTime * 1.7) * 0.1;
+          // v15: 4层 FBM 湍流
+          float n1 = snoise(vWorldPos * 0.03 + uTime * 0.06) * 0.5 + 0.5;
+          float n2 = snoise(vWorldPos * 0.08 + uTime * 0.12) * 0.5 + 0.5;
+          float n3 = snoise(vWorldPos * 0.2 + uTime * 0.2) * 0.5 + 0.5;
+          float n4 = snoise(vWorldPos * 0.5 + uTime * 0.35) * 0.5 + 0.5;
+          float granMix = n1 * 0.4 + n2 * 0.3 + n3 * 0.2 + n4 * 0.1;
+          // v15: 三段颜色渐变(亮黄→橙→暗红)
+          vec3 c = mix(vec3(1.0, 0.95, 0.6), vec3(1.0, 0.6, 0.15), granMix);
+          c = mix(c, vec3(0.8, 0.15, 0.02), pow(rim, 4.0));
+          gl_FragColor = vec4(c, intensity * 0.3 * pulse);
         }
       `,
       blending: THREE.AdditiveBlending, side: THREE.BackSide, transparent: true, depthWrite: false,
@@ -215,10 +238,14 @@ export class SolarSystem {
       roughness: isGas ? 0.35 : 0.5,
       metalness: 0.05,
       color: tex?.map ? 0xffffff : new THREE.Color(pData.color),
-      // fix: emissive 从 0x444444/1.0 降到 0x222222/0.3，仅防暗面死黑，不再冲淡纹理对比度
       emissive: tex?.map ? new THREE.Color(0x222222) : new THREE.Color(0x000000),
       emissiveIntensity: 0.3,
     };
+    // v15: 火星偏红 emissive
+    if (pData.name === 'Mars') {
+      matOpts.emissive = new THREE.Color(0x331100);
+      matOpts.emissiveIntensity = 0.5;
+    }
 
     // fix: 移除 displacementMap 误用 normalMap（程序化法线当位移会让球面变"麻子"、扭曲 UV 纹理）
     const material = new THREE.MeshStandardMaterial(matOpts);
@@ -251,9 +278,19 @@ export class SolarSystem {
       }
       // 大气层菲涅尔辉光
       this.addFresnelAtmosphere(planetGroup, pData.radius, new THREE.Color(0.3, 0.5, 1.0));
-    } else if (isGas || pData.name === 'Venus') {
+    } else if (pData.name === 'Venus') {
+      // v15: 金星浓密大气 (偏橙黄)
+      this.addFresnelAtmosphere(planetGroup, pData.radius, new THREE.Color(0.9, 0.75, 0.3));
+    } else if (isGas) {
       this.addFresnelAtmosphere(planetGroup, pData.radius,
         new THREE.Color(pData.color).multiplyScalar(0.6));
+    }
+    // v15: 天王星/海王星大气
+    if (pData.name === 'Uranus') {
+      this.addFresnelAtmosphere(planetGroup, pData.radius, new THREE.Color(0.4, 0.8, 0.8));
+    }
+    if (pData.name === 'Neptune') {
+      this.addFresnelAtmosphere(planetGroup, pData.radius, new THREE.Color(0.3, 0.4, 1.0));
     }
 
     // 土星环
@@ -588,6 +625,10 @@ export class SolarSystem {
     // 日冕动画
     if (this.coronaMaterial) {
       this.coronaMaterial.uniforms.uTime.value = elapsed;
+    }
+    // v15: 光晕动画
+    if (this.glowMaterial) {
+      this.glowMaterial.uniforms.uTime.value = elapsed;
     }
     // v13: 更新大气层太阳位置
     this.planets.forEach(planet => {

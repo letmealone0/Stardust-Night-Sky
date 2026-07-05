@@ -270,15 +270,15 @@ export class StarField {
 
         const normR = radius / armLength;
         if (normR < 0.12) {
-          const c = new THREE.Color().setHSL(0.1 + Math.random() * 0.04, 0.1 + Math.random() * 0.2, 0.75 + rand * 0.25);
+          const c = new THREE.Color().setHSL(0.1 + Math.random() * 0.04, 0.1 + Math.random() * 0.2, 0.85 + rand * 0.15);  // v15: 核球更亮
           colors[i3] = c.r; colors[i3 + 1] = c.g; colors[i3 + 2] = c.b;
           colorFactor = 1.0;
         } else if (normR < 0.55) {
-          const c = new THREE.Color().setHSL(0.55 + Math.random() * 0.1, 0.08 + Math.random() * 0.2, 0.55 + rand * 0.35);
+          const c = new THREE.Color().setHSL(0.55 + Math.random() * 0.1, 0.08 + Math.random() * 0.2, 0.65 + rand * 0.25);  // v15: 中段更亮
           colors[i3] = c.r; colors[i3 + 1] = c.g; colors[i3 + 2] = c.b;
           colorFactor = 0.8;
         } else {
-          const c = new THREE.Color().setHSL(0.58 + Math.random() * 0.08, 0.15 + Math.random() * 0.2, 0.2 + rand * 0.3);
+          const c = new THREE.Color().setHSL(0.58 + Math.random() * 0.08, 0.15 + Math.random() * 0.2, 0.3 + rand * 0.3);  // v15: 外段更亮
           colors[i3] = c.r; colors[i3 + 1] = c.g; colors[i3 + 2] = c.b;
           colorFactor = 0.35;
         }
@@ -341,7 +341,7 @@ export class StarField {
           pos.z = rz;
           // v10.0: 银心亮度脉动
           float corePulse = 1.0 + sin(uTime * 1.5) * 0.1 / (r * 0.0001 + 0.5);
-          vAlpha = (0.5 + sin(uTime * (0.5 + aRandom * 2.0) + aRandom * 6.28) * 0.3) * corePulse;
+          vAlpha = (0.6 + sin(uTime * (0.5 + aRandom * 2.0) + aRandom * 6.28) * 0.3) * corePulse;  // v15: 提升基础亮度
           vec4 mvPosition = modelViewMatrix * vec4(pos, 1.0);
           gl_PointSize = size * uPixelRatio * (300.0 / -mvPosition.z);
           gl_Position = projectionMatrix * mvPosition;
