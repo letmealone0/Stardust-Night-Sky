@@ -103,30 +103,24 @@ export const config = {
     solarOrbitSpeed: 0.0015,   // 太阳系公转角速度 (rad/s, ~70s一圈)
   },
 
-  // ---- 星云效果（体积光线步进）----
+  // ---- 星云效果（v20: 多层粒子系统）----
   nebula: {
     count: 3,
-    scale: 4000,
-    opacity: 6.0,             // v19.9-fix2: 增强可见度
-    colors: [
-      { r: 0.25, g: 0.08, b: 0.55 },
-      { r: 0.08, g: 0.3, b: 0.65 },
-      { r: 0.5, g: 0.12, b: 0.2 },
-    ],
-    respawnDistance: 15000,
-    respawnMin: 3000,
-    respawnMax: 9000,
-    // v11: 三类星云 + 湍流 + 飞入
+    scale: 2000,              // v20: 粒子云团范围
+    colors: [ /* 由 typeColors 覆盖 */ ],
+    respawnDistance: 10000,
+    respawnMin: 2500,
+    respawnMax: 7000,
+    // v20: 三类星云
     types: ['emission', 'reflection', 'dark'],
-    // v19.9: 三层渐变 — 核心/中间/边缘（参考真实星云光谱）
     typeColors: {
-      emission:    { r: 0.9, g: 0.18, b: 0.12 },   // 发射星云: 红/品红 (Hα 656nm)
-      reflection:  { r: 0.18, g: 0.35, b: 0.85 },   // 反射星云: 蓝 (Rayleigh散射)
-      dark:        { r: 0.06, g: 0.05, b: 0.10 },   // 暗星云: 极暗棕黑
+      emission:    { r: 0.55, g: 0.12, b: 0.45 },  // 粉紫红 (Hα)
+      reflection:  { r: 0.12, g: 0.22, b: 0.65 },  // 淡蓝
+      dark:        { r: 0.05, g: 0.04, b: 0.08 },  // 极暗
     },
-    turbulenceSpeed: 0.015,  // 湍流流动速度
-    fogDensity: 0.5,         // 飞入时最大雾化密度
-    fogDistance: 300,         // 飞入检测半径
+    turbulenceSpeed: 0.015,
+    fogDensity: 0.5,
+    fogDistance: 400,
   },
 
   // ---- 后处理效果 ----
