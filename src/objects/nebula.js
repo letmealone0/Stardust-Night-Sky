@@ -1,19 +1,23 @@
 /**
- * NebulaSystem v21 — 深空摄影风格发射星云
+ * NebulaSystem v22 — 深空摄影级星云渲染
  *
- * 改进：
- * - CPU端FBM噪声过滤粒子，源头打破球形
- * - 宏观自转 + 分层湍流
- * - 独立暗尘埃层(MultiplyBlending)，真实吸光遮挡
- * - 高频噪声细节(纤维/空洞/丝缕)
- * - 内层亮度噪声扰动，避免中心过曝
+ * v22 改进：
+ * - 宏观自转 × delta 时间解耦帧率
+ * - 暗尘埃层 renderOrder=0 先渲染，spMul=1.1 充分遮挡背景
+ * - CPU端高频噪声 + 轴向拉伸，彻底打破球形对称
+ * - 尘埃 5000 粒子，MultiplyBlending 斑驳遮挡
+ * - 4色阶噪声扰动混合，丰富局部色彩变化
+ * - 1-2 内部虚拟光源，距离衰减打造立体感
+ * - 增大粒子尺寸、降低单粒子透明度，弱化颗粒感
+ * - FBM 湍流替代 sin/cos，模拟自然气体流动
+ * - 视锥剔除 + LOD 三级分级
  */
 
 import * as THREE from 'three';
 import { config } from '../core/config.js';
 import { hashCoords, seededRandom } from '../utils/seededRandom.js';
 
-// ---- GLSL 噪声 ----
+// ---- GLSL 噪声（v22: 5-octave FBM）----
 const NOISE_GLSL = `
 float hash3D(vec3 p) { return fract(sin(dot(p,vec3(127.1,311.7,74.7)))*43758.5453); }
 float noise3D(vec3 p) {
@@ -21,10 +25,13 @@ float noise3D(vec3 p) {
   return mix(mix(mix(hash3D(i),hash3D(i+vec3(1,0,0)),f.x),mix(hash3D(i+vec3(0,1,0)),hash3D(i+vec3(1,1,0)),f.x),f.y),
              mix(mix(hash3D(i+vec3(0,0,1)),hash3D(i+vec3(1,0,1)),f.x),mix(hash3D(i+vec3(0,1,1)),hash3D(i+vec3(1,1,1)),f.x),f.y),f.z);
 }
-float fbm3(vec3 p) { float v=0.0,a=0.5; for(int j=0;j<4;j++){v+=a*noise3D(p);p=p*2.1+99.0;a*=0.5;} return v; }
+// v22: 5-octave FBM，更丰富的多尺度细节
+float fbm3(vec3 p) { float v=0.0,a=0.5; for(int j=0;j<5;j++){v+=a*noise3D(p);p=p*2.2+73.0;a*=0.48;} return v; }
+// v22: 低频平滑FBM，专用于湍流位移（避免抖动）
+float fbmSmooth(vec3 p) { float v=0.0,a=0.55; for(int j=0;j<3;j++){v+=a*noise3D(p);p=p*2.6+57.0;a*=0.35;} return v; }
 `;
 
-// CPU端 FBM 噪声（用于粒子位置过滤）
+// CPU端 FBM 噪声（用于粒子位置过滤，v22: 提高频率打破球形）
 function _cpuNoise3D(x, y, z) {
   const hash = (p) => { const n = Math.sin(p * 127.1 + 311.7) * 43758.5453; return n - Math.floor(n); };
   const ix = Math.floor(x), iy = Math.floor(y), iz = Math.floor(z);
@@ -38,16 +45,23 @@ function _cpuNoise3D(x, y, z) {
          mix2(hash(ix+(iy+1)*31+(iz+1)*71), hash(ix+1+(iy+1)*31+(iz+1)*71), sx), sy),
     sz);
 }
-function _cpuFbm(x, y, z, octaves = 3) {
+function _cpuFbm(x, y, z, octaves = 4) {
   let v = 0, a = 0.5, px = x, py = y, pz = z;
   for (let j = 0; j < octaves; j++) {
     v += a * _cpuNoise3D(px, py, pz);
-    px *= 2.1; py *= 2.1; pz *= 2.1;
-    px += 99; py += 99; pz += 99;
-    a *= 0.5;
+    px *= 2.2; py *= 2.2; pz *= 2.2;
+    px += 73; py += 73; pz += 73;
+    a *= 0.48;
   }
   return v;
 }
+
+// ---- LOD 配置 ----
+const LOD_LEVELS = [
+  { maxDist: 3000,  fraction: 1.0 },   // 近景：全粒子
+  { maxDist: 7000,  fraction: 0.55 },  // 中景：55%
+  { maxDist: Infinity, fraction: 0.25 }, // 远景：25%
+];
 
 export class NebulaSystem {
   constructor() {
@@ -76,31 +90,53 @@ export class NebulaSystem {
       const r = spread * (0.1+Math.random()*0.8);
       nebGroup.position.set(r*Math.sin(phi)*Math.cos(theta), r*Math.sin(phi)*Math.sin(theta)*0.3, r*Math.cos(phi));
 
+      // v22: 随机拉伸轴（打破球形对称）
+      const stretchAxis = new THREE.Vector3(
+        (Math.random()-0.5)*2, (Math.random()-0.5)*2, (Math.random()-0.5)*2
+      ).normalize();
+
+      // v22: 虚拟光源位置（星云内部新恒星照亮气体）
+      const scale = cfg.scale || 2000;
+      const light1 = new THREE.Vector3(
+        (Math.random()-0.5)*scale*0.35, (Math.random()-0.5)*scale*0.25, (Math.random()-0.5)*scale*0.35
+      );
+      const light2 = new THREE.Vector3(
+        (Math.random()-0.5)*scale*0.4, (Math.random()-0.5)*scale*0.3, (Math.random()-0.5)*scale*0.4
+      );
+
       nebGroup.userData = {
         layers, nebType, baseColor,
-        scale: cfg.scale || 2000,
-        rotSpeed: 0.0004 + Math.random() * 0.0012,
-        turbulence: 0.3 + Math.random() * 0.5,
+        scale,
+        rotSpeed: 0.08 + Math.random() * 0.22,        // v22: rad/s，配合 delta 使用
+        turbulence: 0.25 + Math.random() * 0.4,
         driftDir: new THREE.Vector3((Math.random()-0.5)*0.4,(Math.random()-0.5)*0.1,(Math.random()-0.5)*0.4).normalize(),
+        stretchAxis,
+        stretchAmount: 0.25 + Math.random() * 0.45,
+        lightPos1: light1, lightPos2: light2,
+        lightColor1: new THREE.Color().setHSL(0.12 + Math.random()*0.1, 0.6, 0.7 + Math.random()*0.3),
+        lightColor2: new THREE.Color().setHSL(0.55 + Math.random()*0.15, 0.5, 0.5 + Math.random()*0.4),
+        lightRange1: scale * (0.15 + Math.random()*0.2),
+        lightRange2: scale * (0.12 + Math.random()*0.18),
       };
       this.group.add(nebGroup);
       this.nebulae.push(nebGroup);
     }
     scene.add(this.group);
     this._hud = window.engine?.hud || null;
-    console.log('[NebulaSystem] v21 深空摄影星云初始化完成，共', count, '团');
+    console.log('[NebulaSystem] v22 深空摄影星云初始化完成，共', count, '团');
   }
 
-  // ==================== 创建多层粒子（v21: CPU FBM过滤） ====================
+  // ==================== 创建多层粒子 ====================
   _createLayers(cfg, baseColor, nebType, seed) {
     const scale = cfg.scale || 2000;
+    // v22: dust 放到第一位（renderOrder=0 先渲染），spMul 1.1，5000粒子
     const defs = [
+      // 暗尘埃层 — 最先渲染，遮挡背景
+      { name:'dust',  count:5000,  spMul:1.1,  opacity:0.55, size:12.0, noiseTh:0.26, turbMul:0.35, isDust:true,  renderOrder:0 },
       // 气体发光层
-      { name:'outer', count:6000,  spMul:1.0,  opacity:0.35, size:5.5,  noiseTh:0.20, turbMul:0.6 },
-      { name:'mid',   count:8000,  spMul:0.65, opacity:0.7,  size:8.0,  noiseTh:0.30, turbMul:1.0 },
-      { name:'inner', count:4000,  spMul:0.35, opacity:1.0,  size:11.0, noiseTh:0.42, turbMul:1.5 },
-      // v21: 暗尘埃层 (MultiplyBlending)
-      { name:'dust',  count:3000,  spMul:0.80, opacity:0.45, size:9.0,  noiseTh:0.28, turbMul:0.4, isDust:true },
+      { name:'outer', count:6000,  spMul:1.0,  opacity:0.28, size:8.0,  noiseTh:0.18, turbMul:0.55, isDust:false, renderOrder:1 },
+      { name:'mid',   count:8000,  spMul:0.65, opacity:0.55, size:11.0, noiseTh:0.28, turbMul:0.85, isDust:false, renderOrder:2 },
+      { name:'inner', count:4000,  spMul:0.35, opacity:0.75, size:15.0, noiseTh:0.40, turbMul:1.3,  isDust:false, renderOrder:3 },
     ];
 
     return defs.map((def, li) => {
@@ -109,35 +145,48 @@ export class NebulaSystem {
       const sizes = new Float32Array(count);
       const rands = new Float32Array(count);
 
-      // v21: CPU FBM 过滤 —— 只在噪声密度高于阈值处放置粒子
+      // v22: CPU 高频噪声过滤（频率提高 1.4×，更不规则）
       const th = def.noiseTh || 0.25;
-      const noiseScale = 1.0 / (spread * 0.18);
+      const noiseScale = 1.0 / (spread * 0.13); // v21: 0.18 → v22: 0.13（更高频）
       let placed = 0;
-      const maxAttempts = count * 4;
+      const maxAttempts = count * 5;
       for (let attempt = 0; attempt < maxAttempts && placed < count; attempt++) {
         const th2 = Math.random() * Math.PI * 2;
         const ph = Math.acos(2 * Math.random() - 1);
         const r2 = spread * (0.05 + Math.random() * 0.95);
-        const px = r2 * Math.sin(ph) * Math.cos(th2);
-        const py = r2 * Math.sin(ph) * Math.sin(th2);
-        const pz = r2 * Math.cos(ph);
-        const n = _cpuFbm(px * noiseScale, py * noiseScale, pz * noiseScale, 3);
-        if (n < th) continue; // 低于阈值：丢弃（形成空洞和不规则外形）
+        let px = r2 * Math.sin(ph) * Math.cos(th2);
+        let py = r2 * Math.sin(ph) * Math.sin(th2);
+        let pz = r2 * Math.cos(ph);
+        // v22: 轴向拉伸 — 沿拉伸轴拉长坐标
+        const ax = (seed * 0.37 + li * 0.13) % 1;
+        const stretchAxis = {
+          x: Math.sin(ax * 6.28), y: Math.cos(ax * 5.12), z: Math.sin(ax * 4.37 + 1.5)
+        };
+        const stretchMag = Math.sqrt(stretchAxis.x*stretchAxis.x+stretchAxis.y*stretchAxis.y+stretchAxis.z*stretchAxis.z);
+        const sx = stretchAxis.x/stretchMag, sy = stretchAxis.y/stretchMag, sz = stretchAxis.z/stretchMag;
+        const proj = px*sx + py*sy + pz*sz;
+        const stretchAmt = 0.3; // CPU端预拉伸
+        px += sx * proj * stretchAmt;
+        py += sy * proj * stretchAmt;
+        pz += sz * proj * stretchAmt;
+
+        const n = _cpuFbm(px * noiseScale, py * noiseScale, pz * noiseScale, 4);
+        if (n < th) continue;
 
         const i3 = placed * 3;
         pos[i3] = px; pos[i3 + 1] = py; pos[i3 + 2] = pz;
-        sizes[placed] = def.size * (0.4 + Math.random() * 0.6);
-        rands[placed] = n; // 复用为噪声种子
+        sizes[placed] = def.size * (0.5 + Math.random() * 0.5);
+        rands[placed] = n;
         placed++;
       }
-      // 如果没放够，用随机填充补足
+      // 填充剩余
       for (let i = placed; i < count; i++) {
         const i3 = i * 3, th2 = Math.random()*Math.PI*2, ph = Math.acos(2*Math.random()-1);
         const r2 = spread * (0.1 + Math.random() * 0.9);
         pos[i3] = r2 * Math.sin(ph) * Math.cos(th2);
         pos[i3+1] = r2 * Math.sin(ph) * Math.sin(th2);
         pos[i3+2] = r2 * Math.cos(ph);
-        sizes[i] = def.size * (0.4 + Math.random() * 0.6);
+        sizes[i] = def.size * (0.5 + Math.random() * 0.5);
         rands[i] = Math.random();
       }
 
@@ -145,11 +194,16 @@ export class NebulaSystem {
       geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
       geo.setAttribute('aSize', new THREE.BufferAttribute(sizes, 1));
       geo.setAttribute('aRandom', new THREE.BufferAttribute(rands, 1));
+      // v22: 存储总粒子数用于 LOD
+      geo.userData = { totalCount: count };
 
       const mat = this._createMaterial(def, baseColor, spread, seed + li);
       const pts = new THREE.Points(geo, mat);
-      pts.frustumCulled = false;
-      return { points: pts, material: mat, config: def };
+      // v22: 视锥剔除 + 宽松包围球
+      pts.frustumCulled = true;
+      geo.boundingSphere = new THREE.Sphere(new THREE.Vector3(0,0,0), spread * 1.3);
+      pts.renderOrder = def.renderOrder || 0;
+      return { points: pts, material: mat, config: def, geometry: geo };
     });
   }
 
@@ -158,34 +212,54 @@ export class NebulaSystem {
     const isDust = def.isDust === true;
 
     if (isDust) {
-      // v21: 暗尘埃层 — MultiplyBlending 真实吸光
-      const dustColor = new THREE.Color(0.18, 0.14, 0.10); // 灰褐
+      // v22: 暗尘埃层 — MultiplyBlending，renderOrder 0 先渲染遮挡背景
+      const dustColor = new THREE.Color(0.16, 0.12, 0.09); // 更深灰褐
       return new THREE.ShaderMaterial({
         uniforms: {
-          uTime: { value: 0 }, uScale: { value: spread * 2 },
-          uOpacity: { value: def.opacity }, uTurbulence: { value: 0.3 },
-          uColor: { value: dustColor }, uPixelRatio: { value: Math.min(window.devicePixelRatio, 2) },
+          uTime: { value: 0 }, uDelta: { value: 0.016 },
+          uScale: { value: spread * 2 },
+          uOpacity: { value: def.opacity },
+          uColor: { value: dustColor },
+          uPixelRatio: { value: Math.min(window.devicePixelRatio, 2) },
+          uStretchAxis: { value: new THREE.Vector3(0,1,0) },
+          uStretchAmount: { value: 0.3 },
+          uTurbulence: { value: 0.25 },
         },
         vertexShader: `
           attribute float aSize; attribute float aRandom;
           varying float vAlpha; varying float vDensity; varying float vRand;
-          uniform float uTime; uniform float uScale; uniform float uTurbulence;
-          uniform float uOpacity; uniform float uPixelRatio;
+          uniform float uTime; uniform float uDelta;
+          uniform float uScale; uniform float uOpacity; uniform float uPixelRatio;
+          uniform vec3 uStretchAxis; uniform float uStretchAmount;
+          uniform float uTurbulence;
           ${NOISE_GLSL}
           void main() {
             vec3 pos = position; vRand = aRandom;
+
+            // v22: 轴向拉伸（着色器端叠加）
+            float proj = dot(pos, uStretchAxis);
+            pos += uStretchAxis * proj * uStretchAmount;
+
+            // v22: 平滑FBM湍流（替代sin/cos，减少抖动）
+            float t = uTime * 0.025;
+            pos.x += fbmSmooth(pos * 0.07 + vec3(t, 0.0, 0.0)) * uScale * 0.006 * uTurbulence;
+            pos.y += fbmSmooth(pos * 0.07 + vec3(0.0, t, 0.0) + 51.0) * uScale * 0.006 * uTurbulence;
+            pos.z += fbmSmooth(pos * 0.07 + vec3(0.0, 0.0, t) + 103.0) * uScale * 0.006 * uTurbulence;
+
             float distC = length(position) / (uScale * 0.5);
-            float rf = 1.0 - smoothstep(0.1, 1.0, distC);
-            float n = fbm3(position / (uScale * 0.12) + uTime * 0.003);
-            float turb = uTurbulence * uTime * 0.15;
-            pos.x += sin(pos.y*0.1+turb*0.2) * uScale * 0.004;
-            pos.y += cos(pos.z*0.1+turb*0.15) * uScale * 0.004;
-            pos.z += sin(pos.x*0.1+turb*0.18) * uScale * 0.004;
+            float rf = 1.0 - smoothstep(0.05, 1.0, distC);
+            rf = pow(rf, 0.7);
+
+            // 尘埃密度：斑驳不均匀
+            float n = fbm3(position / (uScale * 0.09) + uTime * 0.002);
             vDensity = n;
-            vAlpha = rf * (0.15 + n * 0.85) * uOpacity;
+            // v22: 提高不透明度让遮挡更明显
+            vAlpha = rf * (0.2 + n * 0.8) * uOpacity;
+
             vec4 mv = modelViewMatrix * vec4(pos, 1.0);
-            gl_PointSize = aSize * uPixelRatio * (450.0 / max(-mv.z, 1.0));
-            gl_PointSize = clamp(gl_PointSize, 1.5, 30.0);
+            // v22: 更大粒子
+            gl_PointSize = aSize * uPixelRatio * (600.0 / max(-mv.z, 1.0));
+            gl_PointSize = clamp(gl_PointSize, 2.0, 40.0);
             gl_Position = projectionMatrix * mv;
           }
         `,
@@ -196,12 +270,15 @@ export class NebulaSystem {
           ${NOISE_GLSL}
           void main() {
             float d = length(gl_PointCoord - 0.5) * 2.0;
+            // v22: 更柔和的边缘（大粒子弱化颗粒感）
             float da = 1.0 - smoothstep(0.0, 1.0, d);
-            float th = 0.15 + (1.0 - vDensity) * 0.1;
-            if (vDensity < th || da < 0.003) discard;
+            da = pow(da, 0.7);
+            // 斑驳裁剪
+            float th = 0.12 + (1.0 - vDensity) * 0.12;
+            if (vDensity < th || da < 0.002) discard;
             float a = da * vAlpha;
             a = clamp(a, 0.0, 1.0);
-            if (a < 0.002) discard;
+            if (a < 0.0015) discard;
             gl_FragColor = vec4(uColor, a);
           }
         `,
@@ -210,79 +287,136 @@ export class NebulaSystem {
       });
     }
 
-    // v21: 气体发光层 — 蓝紫核心/粉紫中层/暗红边缘
-    const cCore = new THREE.Color(0.38, 0.10, 0.55);
-    const cMid  = new THREE.Color(0.55, 0.16, 0.48);
-    const cEdge = new THREE.Color(0.25, 0.07, 0.14);
+    // ============ 气体发光层 ============
+    // v22: 4色阶 + 虚拟光源 + 轴向拉伸 + FBM湍流
+    const cCore  = new THREE.Color(0.35, 0.12, 0.58); // 蓝紫核心
+    const cInner = new THREE.Color(0.50, 0.18, 0.52); // 品红内层
+    const cMid   = new THREE.Color(0.55, 0.22, 0.35); // 粉橙中层
+    const cEdge  = new THREE.Color(0.20, 0.06, 0.12); // 暗红边缘
     return new THREE.ShaderMaterial({
       uniforms: {
-        uTime: { value: 0 }, uScale: { value: spread * 2 }, uOpacity: { value: def.opacity },
-        uColor1: { value: cCore }, uColor2: { value: cMid }, uColor3: { value: cEdge },
-        uTurbulence: { value: 0.35 }, uTurbMul: { value: def.turbMul || 1.0 },
+        uTime: { value: 0 }, uDelta: { value: 0.016 },
+        uScale: { value: spread * 2 }, uOpacity: { value: def.opacity },
+        uColor1: { value: cCore }, uColor2: { value: cInner },
+        uColor3: { value: cMid }, uColor4: { value: cEdge },
+        uTurbulence: { value: 0.3 }, uTurbMul: { value: def.turbMul || 1.0 },
         uPixelRatio: { value: Math.min(window.devicePixelRatio, 2) },
+        // v22: 轴向拉伸
+        uStretchAxis: { value: new THREE.Vector3(0,1,0) },
+        uStretchAmount: { value: 0.35 },
+        // v22: 虚拟光源
+        uLightPos1: { value: new THREE.Vector3(0,0,0) },
+        uLightPos2: { value: new THREE.Vector3(0,0,0) },
+        uLightColor1: { value: new THREE.Color(1,0.9,0.7) },
+        uLightColor2: { value: new THREE.Color(0.7,0.8,1) },
+        uLightRange1: { value: 400 }, uLightRange2: { value: 350 },
       },
       vertexShader: `
         attribute float aSize; attribute float aRandom;
-        varying float vAlpha; varying float vDensity; varying float vDist; varying float vRand; varying vec3 vWPos;
-        uniform float uTime; uniform float uScale; uniform float uTurbulence; uniform float uTurbMul;
-        uniform float uOpacity; uniform float uPixelRatio;
+        varying float vAlpha; varying float vDensity; varying float vDist;
+        varying float vRand; varying vec3 vWPos;
+        varying float vLight1; varying float vLight2;
+        uniform float uTime; uniform float uDelta;
+        uniform float uScale; uniform float uOpacity; uniform float uPixelRatio;
+        uniform float uTurbulence; uniform float uTurbMul;
+        uniform vec3 uStretchAxis; uniform float uStretchAmount;
+        uniform vec3 uLightPos1; uniform vec3 uLightPos2;
+        uniform float uLightRange1; uniform float uLightRange2;
         ${NOISE_GLSL}
         void main() {
           vec3 pos = position; vRand = aRandom;
-          // v21: 增强湍流，分层差异化速度
-          float turb = uTurbulence * uTime * uTurbMul;
-          pos.x += sin(pos.y*0.18 + turb*0.35) * uScale * 0.012;
-          pos.y += cos(pos.z*0.18 + turb*0.3) * uScale * 0.012;
-          pos.z += sin(pos.x*0.18 + turb*0.28) * uScale * 0.012;
+
+          // v22: 轴向拉伸
+          float proj = dot(pos, uStretchAxis);
+          pos += uStretchAxis * proj * uStretchAmount;
+
+          // v22: 平滑FBM湍流（替代抖动sin/cos）
+          float t = uTime * 0.03 * uTurbMul;
+          float turbAmp = uScale * 0.01 * uTurbulence;
+          pos.x += fbmSmooth(pos * 0.06 + vec3(t, 0.0, 0.0)) * turbAmp;
+          pos.y += fbmSmooth(pos * 0.06 + vec3(0.0, t, 0.0) + 71.0) * turbAmp;
+          pos.z += fbmSmooth(pos * 0.06 + vec3(0.0, 0.0, t) + 137.0) * turbAmp;
+
           float distC = length(position) / (uScale * 0.5);
-          // 差速旋转（非刚体）
-          float lr = uTime * 0.02 * (1.0 - distC * 0.35);
+
+          // 差速旋转
+          float lr = uTime * 0.018 * (1.0 - distC * 0.3);
           float ca = cos(lr), sa = sin(lr);
           float rx = pos.x*ca - pos.z*sa, rz = pos.x*sa + pos.z*ca;
           pos.x = rx; pos.z = rz;
-          // v21: 4-octave FBM + 高频细节
-          float n = fbm3(position / (uScale * 0.08) + uTime * 0.003);
-          // 叠加高频噪声（纤维/空洞细节）
-          float hf = noise3D(position / (uScale * 0.03) + uTime * 0.006) * 0.15;
-          n = n * 0.85 + hf;
+
+          // 密度：5-octave FBM + 高频细节
+          float n = fbm3(position / (uScale * 0.07) + uTime * 0.0025);
+          float hf = noise3D(position / (uScale * 0.025) + uTime * 0.005) * 0.18;
+          n = n * 0.82 + hf;
           vDensity = n; vDist = distC;
+
+          // v22: 虚拟光源距离衰减
+          float dL1 = length(pos - uLightPos1);
+          float dL2 = length(pos - uLightPos2);
+          vLight1 = exp(-dL1 * dL1 / (uLightRange1 * uLightRange1));
+          vLight2 = exp(-dL2 * dL2 / (uLightRange2 * uLightRange2));
+
           vec4 wp = modelMatrix * vec4(pos, 1.0); vWPos = wp.xyz;
-          // 径向衰减 — 边缘极柔
+
           float rf = 1.0 - smoothstep(0.0, 1.0, distC);
-          rf = pow(rf, 0.65);
-          vAlpha = rf * (0.2 + n * 0.8) * uOpacity;
+          rf = pow(rf, 0.7);
+          // v22: 降低基础透明度（大粒子补偿）
+          vAlpha = rf * (0.15 + n * 0.85) * uOpacity;
+
           vec4 mv = modelViewMatrix * vec4(pos, 1.0);
-          gl_PointSize = aSize * uPixelRatio * (500.0 / max(-mv.z, 1.0));
-          gl_PointSize = clamp(gl_PointSize, 1.5, 32.0);
+          // v22: 增大粒子尺寸（×1.4）
+          gl_PointSize = aSize * uPixelRatio * (680.0 / max(-mv.z, 1.0));
+          gl_PointSize = clamp(gl_PointSize, 2.0, 45.0);
           gl_Position = projectionMatrix * mv;
         }
       `,
       fragmentShader: `
         precision highp float;
-        varying float vAlpha; varying float vDensity; varying float vDist; varying float vRand; varying vec3 vWPos;
-        uniform vec3 uColor1; uniform vec3 uColor2; uniform vec3 uColor3;
+        varying float vAlpha; varying float vDensity; varying float vDist;
+        varying float vRand; varying vec3 vWPos;
+        varying float vLight1; varying float vLight2;
+        uniform vec3 uColor1; uniform vec3 uColor2;
+        uniform vec3 uColor3; uniform vec3 uColor4;
+        uniform vec3 uLightColor1; uniform vec3 uLightColor2;
         uniform float uTime; uniform float uScale;
         ${NOISE_GLSL}
         void main() {
-          // 极柔光斑
+          // v22: 更柔光斑（大粒子弱化颗粒感）
           float d = length(gl_PointCoord - 0.5) * 2.0;
           float da = 1.0 - smoothstep(0.0, 1.0, d);
-          da = pow(da, 0.55);
-          // 密度裁剪 — 噪声决定不规则外形
-          float th = 0.10 + vDist * 0.2 - (1.0 - vDensity) * 0.05;
-          if (vDensity < th || da < 0.003) discard;
-          // v21: 噪声扰动亮度 — 打破中心对称过曝
-          float brightNoise = fbm3(vWPos / (uScale * 0.04) + 11.0);
-          float brightness = 0.6 + brightNoise * 0.4;
-          // 颜色：核心→中层→边缘 三层渐变
-          float ct = vDist * 0.55 + (1.0 - vDensity) * 0.45;
-          vec3 col = mix(uColor1, uColor2, smoothstep(0.12, 0.45, ct));
-          col = mix(col, uColor3, smoothstep(0.4, 0.8, ct));
-          // 应用亮度扰动
+          da = pow(da, 0.65);
+
+          float th = 0.08 + vDist * 0.22 - (1.0 - vDensity) * 0.06;
+          if (vDensity < th || da < 0.002) discard;
+
+          // v22: 噪声扰动颜色混合（丰富局部色彩变化）
+          float colorNoise = fbm3(vWPos / (uScale * 0.06) + uTime * 0.004 + 17.0);
+          float ct = vDist * 0.5 + (1.0 - vDensity) * 0.5;
+          // 噪声偏移混合参数
+          ct += (colorNoise - 0.5) * 0.25;
+          ct = clamp(ct, 0.0, 1.0);
+
+          // 4色阶渐变：核心→内层→中层→边缘
+          vec3 col = mix(uColor1, uColor2, smoothstep(0.08, 0.30, ct));
+          col = mix(col, uColor3, smoothstep(0.28, 0.55, ct));
+          col = mix(col, uColor4, smoothstep(0.50, 0.85, ct));
+
+          // v22: 亮度扰动
+          float brightNoise = fbm3(vWPos / (uScale * 0.035) + 13.0);
+          float brightness = 0.55 + brightNoise * 0.45;
+
+          // v22: 虚拟光源贡献（立体感）
+          float lightInfluence = vLight1 * 0.35 + vLight2 * 0.25;
+          col += uLightColor1 * vLight1 * 0.2;
+          col += uLightColor2 * vLight2 * 0.15;
+          brightness += lightInfluence;
+
           col *= brightness;
+
           float a = da * vAlpha;
           a = clamp(a, 0.0, 1.0);
-          if (a < 0.002) discard;
+          if (a < 0.0015) discard;
           gl_FragColor = vec4(col, a);
         }
       `,
@@ -297,6 +431,8 @@ export class NebulaSystem {
     const cfg = config.nebula || {};
     const cm = config.celestialMotion;
     const ms = (cm?.enabled !== false) ? (cm?.speedMultiplier || 1.0) : 0;
+    const pxr = Math.min(window.devicePixelRatio, 2);
+
     let closest = null, closestD = Infinity;
     this.nebulae.forEach((neb, idx) => {
       const d = neb.userData;
@@ -305,15 +441,41 @@ export class NebulaSystem {
       if (dist > (cfg.respawnDistance || 10000)) { this._respawn(neb, idx, camera, cfg); return; }
       if (dist < ns * 0.5 && dist < closestD) { closestD = dist; closest = neb; }
       if (d.driftDir) neb.position.addScaledVector(d.driftDir, 0.4 * delta * ms);
-      // v21: 宏观自转
-      neb.rotation.y += (d.rotSpeed || 0.0006) * ms;
+
+      // v22: 宏观自转 × delta（帧率解耦）
+      neb.rotation.y += delta * (d.rotSpeed || 0.12) * ms;
+
+      // v22: LOD 分级
+      const lod = LOD_LEVELS.find(l => dist < l.maxDist) || LOD_LEVELS[LOD_LEVELS.length-1];
+
       d.layers.forEach(l => {
         if (l.material?.uniforms) {
           l.material.uniforms.uTime.value = elapsed;
-          if (l.material.uniforms.uTurbulence) l.material.uniforms.uTurbulence.value = d.turbulence || 0.35;
+          l.material.uniforms.uDelta.value = Math.min(delta, 0.1);
+          if (l.material.uniforms.uTurbulence) l.material.uniforms.uTurbulence.value = d.turbulence || 0.3;
+          l.material.uniforms.uPixelRatio.value = pxr;
+          // v22: 传递拉伸参数
+          if (l.material.uniforms.uStretchAxis && d.stretchAxis) l.material.uniforms.uStretchAxis.value.copy(d.stretchAxis);
+          if (l.material.uniforms.uStretchAmount) l.material.uniforms.uStretchAmount.value = d.stretchAmount || 0.3;
+          // v22: 传递虚拟光源参数
+          if (l.material.uniforms.uLightPos1 && d.lightPos1) l.material.uniforms.uLightPos1.value.copy(d.lightPos1);
+          if (l.material.uniforms.uLightPos2 && d.lightPos2) l.material.uniforms.uLightPos2.value.copy(d.lightPos2);
+          if (l.material.uniforms.uLightColor1 && d.lightColor1) l.material.uniforms.uLightColor1.value.copy(d.lightColor1);
+          if (l.material.uniforms.uLightColor2 && d.lightColor2) l.material.uniforms.uLightColor2.value.copy(d.lightColor2);
+          if (l.material.uniforms.uLightRange1) l.material.uniforms.uLightRange1.value = d.lightRange1 || 400;
+          if (l.material.uniforms.uLightRange2) l.material.uniforms.uLightRange2.value = d.lightRange2 || 350;
+        }
+        // v22: LOD drawRange 调整
+        if (l.geometry && l.geometry.userData?.totalCount) {
+          const total = l.geometry.userData.totalCount;
+          const target = Math.max(Math.floor(total * lod.fraction), 100);
+          if (l.geometry.drawRange.count !== target) {
+            l.geometry.setDrawRange(0, target);
+          }
         }
       });
     });
+
     if (closest && closest !== this._insideNebula) {
       this._insideNebula = closest;
       if (this._hud) { const t = closest.userData.nebType, n = { emission: '发射星云', reflection: '反射星云', dark: '暗星云' }; this._hud.showMessage('已进入 ' + (n[t] || '星云'), 3000); }
@@ -343,6 +505,12 @@ export class NebulaSystem {
     const wp = new THREE.Vector3(cp.x + r * Math.sin(ph) * Math.cos(th), cp.y + r * Math.sin(ph) * Math.sin(th) * 0.3, cp.z + r * Math.cos(ph));
     if (nebula.parent) { const im = new THREE.Matrix4().copy(nebula.parent.matrixWorld).invert(); wp.applyMatrix4(im); }
     nebula.position.copy(wp);
+    // v22: 重生时重置 LOD
+    nebula.userData.layers.forEach(l => {
+      if (l.geometry && l.geometry.userData?.totalCount) {
+        l.geometry.setDrawRange(0, l.geometry.userData.totalCount);
+      }
+    });
   }
 
   dispose(scene) {
