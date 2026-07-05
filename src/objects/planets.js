@@ -335,17 +335,41 @@ export class PlanetSystem {
       if (dist > cfg.respawnDistance) { this._respawnPlanet(planet, cfg); return; }
       if (data.lod) data.lod.update(this.camera);
       if (data.atmLod) data.atmLod.update(this.camera);
+
+      // 自转
       const rot = data.rotationSpeed * ms;
-      if (data.lod) for (let i = 0; i < data.lod.levels.length; i++) { const m = data.lod.levels[i].object; if (m) m.rotation.y += rot; }
+      if (data.lod) for (let i = 0; i < data.lod.levels.length; i++) {
+        const m = data.lod.levels[i].object; if (m) m.rotation.y += rot;
+      }
+
+      // v19.6: 绕宿主恒星或原始位置公转
       if (!data.isRogue && data.orbitSpeed > 0) {
         data.orbitAngle += data.orbitSpeed * ms;
-        planet.position.x = data.originalPosition.x + Math.cos(data.orbitAngle) * data.orbitRadius * 0.4;
-        planet.position.z = data.originalPosition.z + Math.sin(data.orbitAngle) * data.orbitRadius * 0.4;
+        const center = data.originalPosition;
+        planet.position.x = center.x + Math.cos(data.orbitAngle) * data.orbitRadius;
+        planet.position.z = center.z + Math.sin(data.orbitAngle) * data.orbitRadius;
+        planet.position.y = center.y + Math.sin(data.orbitAngle * 0.7) * data.orbitRadius * 0.15;
+        // 宿主恒星保持在轨道中心不动
+        if (data.hostStar) {
+          data.hostStar.position.set(
+            -Math.cos(data.orbitAngle) * data.orbitRadius,
+            -Math.sin(data.orbitAngle * 0.7) * data.orbitRadius * 0.15,
+            -Math.sin(data.orbitAngle) * data.orbitRadius
+          );
+        }
       }
+
+      // v19.6: 流浪行星 — 缓慢漂移 + 自转翻滚
       if (data.isRogue && data.driftDirection) {
         planet.position.addScaledVector(data.driftDirection, data.driftSpeed * delta * ms);
         data.originalPosition.copy(planet.position);
+        // 缓慢翻滚
+        if (data.lod) for (let i = 0; i < data.lod.levels.length; i++) {
+          const m = data.lod.levels[i].object;
+          if (m) { m.rotation.x += rot * 0.15; m.rotation.z += rot * 0.1; }
+        }
       }
+
       if (data.moonInstances) this._updateMoons(data.moonInstances, ms);
       if (data.asteroidBelt) this._updateAsteroids(data.asteroidBelt, ms);
       // v13: 更新大气散射太阳位置
@@ -407,7 +431,31 @@ export class PlanetSystem {
     const selfIdx = existingPositions.findIndex(p => p.distanceToSquared(planet.position) < 1);
     if (selfIdx >= 0) existingPositions.splice(selfIdx, 1);
     const minDist = data.radius * 3 + 100;
-    const newPos = findValidPosition(existingPositions, minDist, camPos, cfg.respawnMin, cfg.respawnMax, 30, 0.3);
+
+    // v19.6: 获取相机前方方向
+    let camForward = new THREE.Vector3(0, 0, -1);
+    if (this.camera) {
+      camForward.set(0, 0, -1).applyQuaternion(this.camera.quaternion);
+    }
+
+    const newPos = findValidPosition(existingPositions, minDist, camPos,
+      cfg.respawnMin, cfg.respawnMax, 30, 0.3);
+
+    // v19.6: 如果生成位置在相机前方锥形内（30°），重试
+    let attempts = 0;
+    while (newPos && attempts < 10) {
+      const toPlanet = newPos.clone().sub(camPos).normalize();
+      const dot = toPlanet.dot(camForward);
+      if (dot > 0.85) { // cos(30°) ≈ 0.866，前方锥形
+        const theta = rng()*Math.PI*2, phi = Math.acos(2*rng()-1);
+        const r = cfg.respawnMin+rng()*(cfg.respawnMax-cfg.respawnMin);
+        newPos.set(camPos.x+r*Math.sin(phi)*Math.cos(theta),
+                   camPos.y+r*Math.sin(phi)*Math.sin(theta)*0.3,
+                   camPos.z+r*Math.cos(phi));
+        attempts++;
+      } else break;
+    }
+
     if (newPos) { planet.position.copy(newPos); } else {
       const theta = rng()*Math.PI*2, phi = Math.acos(2*rng()-1), r = cfg.respawnMin+rng()*(cfg.respawnMax-cfg.respawnMin);
       planet.position.set(camPos.x+r*Math.sin(phi)*Math.cos(theta), camPos.y+r*Math.sin(phi)*Math.sin(theta)*0.3, camPos.z+r*Math.cos(phi));
