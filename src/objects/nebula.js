@@ -95,66 +95,28 @@ export class NebulaSystem {
   }
 
   _createMaterial(def, baseColor, spread, seed) {
-    const c1 = baseColor.clone();
-    const c2 = baseColor.clone().multiplyScalar(0.55);
-    const cDark = new THREE.Color(0.12, 0.06, 0.04);
-    const cWarm = new THREE.Color(0.8, 0.28, 0.12);
-    return new THREE.ShaderMaterial({
-      uniforms: {
-        uTime:{value:0}, uScale:{value:spread*2}, uOpacity:{value:def.opacity},
-        uColor1:{value:c1}, uColor2:{value:c2}, uDarkDust:{value:cDark}, uWarmEdge:{value:cWarm},
-        uTurbulence:{value:0.4}, uPixelRatio:{value:Math.min(window.devicePixelRatio,2)},
-        uCameraPos:{value:new THREE.Vector3()},
-      },
-      vertexShader: `
-        attribute float aSize; attribute float aRandom;
-        varying float vAlpha,vDensity,vDistFromCenter,vRand; varying vec3 vWorldPos;
-        uniform float uTime,uScale,uTurbulence,uPixelRatio,uOpacity; uniform vec3 uCameraPos;
-        ${NOISE_GLSL}
-        void main() {
-          vec3 pos=position; vRand=aRandom;
-          float turb=uTurbulence*uTime*0.25;
-          pos.x+=sin(pos.y*0.15+turb*0.3)*uScale*0.008;
-          pos.y+=cos(pos.z*0.15+turb*0.25)*uScale*0.008;
-          pos.z+=sin(pos.x*0.15+turb*0.2)*uScale*0.008;
-          float distC=length(position)/(uScale*0.5);
-          float lr=uTime*0.025*(1.0-distC*0.3),ca=cos(lr),sa=sin(lr);
-          float rx=pos.x*ca-pos.z*sa,rz=pos.x*sa+pos.z*ca;
-          pos.x=rx; pos.z=rz;
-          vec4 wp=modelMatrix*vec4(pos,1.0); vWorldPos=wp.xyz; vDistFromCenter=distC;
-          float n=fbm3(position/(uScale*0.1)+uTime*0.004); vDensity=n;
-          float rf=1.0-smoothstep(0.1,1.0,distC);
-          vAlpha=rf*(0.3+n*0.7)*uOpacity;
-          vec4 mv=modelViewMatrix*vec4(pos,1.0);
-          gl_PointSize=aSize*uPixelRatio*(500.0/max(-mv.z,1.0));
-          gl_PointSize=clamp(gl_PointSize,2.0,35.0);
-          gl_Position=projectionMatrix*mv;
-        }
-      `,
-      fragmentShader: `
-        precision highp float;
-        varying float vAlpha,vDensity,vDistFromCenter,vRand; varying vec3 vWorldPos;
-        uniform vec3 uColor1,uColor2,uDarkDust,uWarmEdge; uniform float uTime,uScale; uniform vec3 uCameraPos;
-        ${NOISE_GLSL}
-        void main() {
-          float d=length(gl_PointCoord-0.5)*2.0;
-          float da=1.0-smoothstep(0.0,1.0,d);
-          float th=0.12+vDistFromCenter*0.15;
-          if(vDensity<th||da<0.005)discard;
-          // 暗尘埃
-          float dn=fbm3(vWorldPos/(uScale*0.08)+17.0);
-          float isDark=smoothstep(0.08,0.18,dn);
-          // 颜色混合
-          float ct=vDistFromCenter*0.7+(1.0-vDensity)*0.3;
-          vec3 col=mix(uColor1,mix(uColor1,uColor2,0.5),smoothstep(0.1,0.5,ct));
-          col=mix(col,mix(uColor2,uWarmEdge,0.5),smoothstep(0.4,0.85,ct));
-          col=mix(col,uDarkDust,isDark*0.65);
-          float a=da*vAlpha*(1.0-isDark*0.3);
-          a=clamp(a,0.0,1.0); if(a<0.003)discard;
-          gl_FragColor=vec4(col,a);
-        }
-      `,
-      transparent:true, depthWrite:false, blending:THREE.AdditiveBlending,
+    // v20.2: PointsMaterial — 稳定可靠，用canvas纹理做软光斑
+    const sz = 128;
+    const cv = document.createElement('canvas'); cv.width = sz; cv.height = sz;
+    const cx = cv.getContext('2d');
+    const g = cx.createRadialGradient(sz/2, sz/2, 0, sz/2, sz/2, sz/2);
+    g.addColorStop(0, 'rgba(255,255,255,1)');
+    g.addColorStop(0.1, 'rgba(255,255,255,0.9)');
+    g.addColorStop(0.3, 'rgba(255,220,255,0.4)');
+    g.addColorStop(0.6, 'rgba(200,150,220,0.08)');
+    g.addColorStop(1, 'rgba(0,0,0,0)');
+    cx.fillStyle = g; cx.fillRect(0, 0, sz, sz);
+    const tex = new THREE.CanvasTexture(cv);
+
+    let clr;
+    if (def.name === 'inner') clr = new THREE.Color(0.40, 0.12, 0.58);
+    else if (def.name === 'mid') clr = new THREE.Color(0.55, 0.18, 0.50);
+    else clr = new THREE.Color(0.22, 0.08, 0.18);
+
+    return new THREE.PointsMaterial({
+      map: tex, color: clr, size: def.size * 5,
+      transparent: true, opacity: def.opacity * 0.5,
+      blending: THREE.AdditiveBlending, depthWrite: false, sizeAttenuation: true,
     });
   }
 
@@ -172,11 +134,7 @@ export class NebulaSystem {
       if (dist < ns*0.5 && dist < closestD) { closestD = dist; closest = neb; }
       if (d.driftDir) neb.position.addScaledVector(d.driftDir, 0.4*delta*ms);
       d.layers.forEach(l => {
-        if (l.material?.uniforms) {
-          l.material.uniforms.uTime.value = elapsed;
-          l.material.uniforms.uTurbulence.value = d.turbulence || 0.4;
-          l.material.uniforms.uCameraPos.value.copy(camera.position);
-        }
+        // PointsMaterial不需要uniform更新
       });
     });
     if (closest && closest !== this._insideNebula) {

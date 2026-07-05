@@ -114,9 +114,9 @@ export const config = {
     // v20: 三类星云
     types: ['emission', 'reflection', 'dark'],
     typeColors: {
-      emission:    { r: 0.55, g: 0.12, b: 0.45 },  // 粉紫红 (Hα)
-      reflection:  { r: 0.12, g: 0.22, b: 0.65 },  // 淡蓝
-      dark:        { r: 0.05, g: 0.04, b: 0.08 },  // 极暗
+      emission:    { r: 0.42, g: 0.10, b: 0.55 },
+      reflection:  { r: 0.10, g: 0.20, b: 0.60 },
+      dark:        { r: 0.04, g: 0.03, b: 0.07 },
     },
     turbulenceSpeed: 0.015,
     fogDensity: 0.5,
