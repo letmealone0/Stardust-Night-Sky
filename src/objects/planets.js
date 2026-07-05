@@ -300,12 +300,28 @@ export class PlanetSystem {
   }
 
   _createLabel(type, radius) {
-    const canvas = document.createElement('canvas'); canvas.width = 256; canvas.height = 64;
+    const canvas = document.createElement('canvas'); canvas.width = 384; canvas.height = 96;
     const ctx = canvas.getContext('2d');
-    ctx.fillStyle = '#ffffff'; ctx.font = 'bold 28px Arial'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.fillText(type.toUpperCase(), 128, 32);
-    const sprite = new THREE.Sprite(new THREE.SpriteMaterial({map: new THREE.CanvasTexture(canvas), transparent: true, depthWrite: false, depthTest: false}));
-    sprite.position.y = radius*2.2; sprite.scale.set(radius*2.5, radius*2.5*0.25, 1);
+    // 半透明背景
+    ctx.fillStyle = 'rgba(0,0,10,0.45)';
+    ctx.beginPath();
+    ctx.moveTo(48,16); ctx.lineTo(336,16); ctx.arcTo(384,16,384,32,20);
+    ctx.lineTo(384,64); ctx.arcTo(384,80,336,80,20);
+    ctx.lineTo(48,80); ctx.arcTo(0,80,0,64,20);
+    ctx.lineTo(0,32); ctx.arcTo(0,16,48,16,20);
+    ctx.fill();
+    // 描边 + 填充
+    ctx.font = 'bold 38px "Segoe UI", Arial, sans-serif';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.strokeStyle = 'rgba(0,0,10,0.8)'; ctx.lineWidth = 4;
+    ctx.strokeText(type.toUpperCase(), 192, 48);
+    ctx.fillStyle = 'rgba(220,235,255,0.95)';
+    ctx.fillText(type.toUpperCase(), 192, 48);
+    const sprite = new THREE.Sprite(new THREE.SpriteMaterial({
+      map: new THREE.CanvasTexture(canvas), transparent: true, depthWrite: false, depthTest: true,
+    }));
+    sprite.position.y = radius * 2.6 + 6;
+    sprite.scale.set(radius * 3.0, radius * 3.0 * 0.25, 1);
     return sprite;
   }
 

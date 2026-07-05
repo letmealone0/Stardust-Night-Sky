@@ -255,8 +255,9 @@ export class SolarSystem {
     const mesh = new THREE.Mesh(geometry, material);
     planetGroup.add(mesh);
 
-    // v9.4-tmp: 行星名字标签 (Sprite)
-    const labelSprite = this.createNameLabel(pData.name, pData.radius);
+    // v19.5: 行星名字标签 (带环行星留更多空间)
+    const hasRings = (pData.name === 'Saturn');
+    const labelSprite = this.createNameLabel(pData.name, pData.radius, hasRings);
     planetGroup.add(labelSprite);
 
     // 特化行星细节
@@ -593,20 +594,49 @@ export class SolarSystem {
     this.sunFlares = { points: flares, material: mat };
   }
 
-  /** v9.4-tmp: 行星名字标签 */
-  createNameLabel(name, radius) {
+  /** v19.5: 行星名字标签 — 描边轮廓 + 半透明背景，确保可读性 */
+  createNameLabel(name, radius, hasRings = false) {
     const canvas = document.createElement('canvas');
     canvas.width = 512;
     canvas.height = 128;
     const ctx = canvas.getContext('2d');
-    ctx.fillStyle = '#ffffff';
-    ctx.font = 'bold 52px Arial';
+
+    // 半透明深色背景 pill
+    ctx.font = 'bold 48px "Segoe UI", Arial, sans-serif';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
+    const metrics = ctx.measureText(name);
+    const tw = metrics.width;
+    const padX = 20, padY = 12;
+    const rx = 256 - tw / 2 - padX;
+    const ry = 64 - 24 - padY;
+    const rw = tw + padX * 2;
+    const rh = 48 + padY * 2;
+    const cr = 16;
+    // 圆角矩形
+    ctx.fillStyle = 'rgba(0, 0, 10, 0.5)';
+    ctx.beginPath();
+    ctx.moveTo(rx + cr, ry);
+    ctx.lineTo(rx + rw - cr, ry);
+    ctx.arcTo(rx + rw, ry, rx + rw, ry + cr, cr);
+    ctx.lineTo(rx + rw, ry + rh - cr);
+    ctx.arcTo(rx + rw, ry + rh, rx + rw - cr, ry + rh, cr);
+    ctx.lineTo(rx + cr, ry + rh);
+    ctx.arcTo(rx, ry + rh, rx, ry + rh - cr, cr);
+    ctx.lineTo(rx, ry + cr);
+    ctx.arcTo(rx, ry, rx + cr, ry, cr);
+    ctx.fill();
+
+    // 文字描边
+    ctx.strokeStyle = 'rgba(0, 0, 10, 0.8)';
+    ctx.lineWidth = 5;
+    ctx.strokeText(name, 256, 64);
+    // 主填充
+    ctx.fillStyle = 'rgba(220, 235, 255, 0.95)';
     ctx.fillText(name, 256, 64);
-    
+
     const texture = new THREE.CanvasTexture(canvas);
-    this._ownTextures.push(texture); // 跟踪本实例纹理，dispose 时释放
+    this._ownTextures.push(texture);
     const spriteMat = new THREE.SpriteMaterial({
       map: texture,
       transparent: true,
@@ -614,8 +644,9 @@ export class SolarSystem {
       depthTest: true,
     });
     const sprite = new THREE.Sprite(spriteMat);
-    sprite.position.y = radius * 2.0;
-    sprite.scale.set(radius * 2.5, radius * 2.5 * 0.25, 1);
+    const offsetMult = hasRings ? 3.2 : 2.6;
+    sprite.position.y = radius * offsetMult + 8;
+    sprite.scale.set(radius * 3.0, radius * 3.0 * 0.25, 1);
     return sprite;
   }
 
@@ -675,6 +706,50 @@ export class SolarSystem {
         moon.group.rotation.y = moon.angle;
       });
     });
+
+    // v19.5: 靠近行星时显示信息面板
+    this._updateProximityInfo();
+  }
+
+  /** v19.5: 检测玩家是否靠近行星，显示描述信息 */
+  _updateProximityInfo() {
+    if (!this.camera) return;
+    const hud = window.engine?.hud;
+    if (!hud) return;
+
+    let closest = null;
+    let closestDist = Infinity;
+
+    this.planets.forEach((planet) => {
+      const worldPos = new THREE.Vector3();
+      planet.group.getWorldPosition(worldPos);
+      const dist = this.camera.position.distanceTo(worldPos) - planet.data.radius;
+      const threshold = planet.data.radius * 5 + 80;
+      if (dist < threshold && dist < closestDist) {
+        closestDist = dist;
+        closest = planet;
+      }
+    });
+
+    if (closest) {
+      const d = closest.data;
+      const planetTypes = {
+        'Mercury': 'Rocky Planet — 太阳系最内层',
+        'Venus': 'Rocky Planet — 浓密大气层',
+        'Earth': 'Rocky Planet — 我们的家园',
+        'Mars': 'Rocky Planet — 红色星球',
+        'Jupiter': 'Gas Giant — 太阳系最大行星',
+        'Saturn': 'Gas Giant — 壮丽环系统',
+        'Uranus': 'Ice Giant — 侧躺的行星',
+        'Neptune': 'Ice Giant — 太阳系最外层',
+      };
+      hud.showCelestialInfo(d.name, planetTypes[d.name] || 'Planet', [
+        `半径: ${d.radius}`, `距离: ${closestDist.toFixed(0)}`,
+        `公转周期: ${d.orbitPeriod} 天`,
+      ].join('<br>'));
+    } else {
+      hud.hideCelestialInfo();
+    }
   }
 
   // ==================== 纹理生成 ====================
