@@ -177,11 +177,11 @@ export const config = {
 
   // ---- 速度线 ----
   speedLines: {
-    count: 1000,             // v8.0: 大幅增加线数
+    count: 1200,             // v16: 增加速度线数量
     minRadius: 1.0,          // 最小分布半径
     maxRadius: 18.0,         // v8.0: 更大分布范围
-    minLength: 15,           // v8.0: 更长线段
-    maxLength: 80,           // v8.0: 更长
+    minLength: 25,           // v16: 更长的速度线
+    maxLength: 120,          // v16: 更长
     zStart: -100,            // v8.0
     zEnd: -10,               // v8.0
     speedThreshold: 1.5,     // v8.0: 更易触发
@@ -264,7 +264,7 @@ export const config = {
 
   // ---- 全方向粒子流 ----
   particleFlow: {
-    count: 8000,               // v8.3: 更多粒子增强穿越感
+    count: 12000,             // v16: 增加粒子数让流动更密集
     spread: 150,               // v8.3: 更集中，粒子密度更高
     sprintColorBoost: 1.5,
     streakLength: 5.0,         // v8.3: 更长拖尾

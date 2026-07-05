@@ -104,20 +104,21 @@ export class ParticleFlow {
           pos.y += cos(t * 0.7 + aRandom * 6.28) * 1.2;
           pos.z += sin(t * 0.5 + aRandom * 6.28) * 1.2;
 
-          // v8.3: 提高透明度
-          float baseAlpha = 0.18;
-          vAlpha = baseAlpha + speedFactor * (0.55 + aRandom * 0.4);
-          vAlpha *= (0.6 + vSpeedLayer * 0.6);
+          // v16: 提升透明度让粒子更明显
+          float baseAlpha = 0.35;
+          vAlpha = baseAlpha + speedFactor * (0.6 + aRandom * 0.35);
+          vAlpha *= (0.7 + vSpeedLayer * 0.5);
           vAlpha *= (1.0 + uSprintFactor * 1.8);
           vSprint = uSprintFactor;
 
-          // v8.0: 传递屏幕空间拖尾方向
+          // v16: 传递屏幕空间拖尾方向
           vec4 mvPosition = modelViewMatrix * vec4(pos, 1.0);
           vec4 streakEnd = modelViewMatrix * vec4(pos + streakOffset * 0.5, 1.0);
           vec2 screenStreak = (streakEnd.xy / streakEnd.w - mvPosition.xy / mvPosition.w);
           vStreakDir = normalize(screenStreak) * length(screenStreak) * 0.3;
 
-          gl_PointSize = aSize * uPixelRatio * (500.0 / -mvPosition.z) * (1.0 + uSprintFactor * 1.2);
+          // v16: 增大粒子尺寸
+          gl_PointSize = aSize * 2.5 * uPixelRatio * (500.0 / -mvPosition.z) * (1.0 + uSprintFactor * 1.2);
           gl_Position = projectionMatrix * mvPosition;
         }
       `,
@@ -146,12 +147,12 @@ export class ParticleFlow {
           alpha *= vAlpha;
           if (alpha < 0.01) discard;
 
-          // v8.0: 冲刺时色彩偏向青蓝
-          vec3 bgColor = vec3(0.9, 0.9, 1.0);
-          vec3 midColor = vec3(0.7, 0.8, 1.0);
-          vec3 fgColor = vec3(0.5, 0.7, 1.0);
-          vec3 sprintColor = vec3(0.3, 0.7, 1.0);
-          vec3 hyperColor = vec3(0.2, 0.9, 1.0);
+          // v16: 更亮的粒子颜色
+          vec3 bgColor = vec3(1.0, 1.0, 1.0);
+          vec3 midColor = vec3(0.85, 0.9, 1.0);
+          vec3 fgColor = vec3(0.7, 0.85, 1.0);
+          vec3 sprintColor = vec3(0.5, 0.85, 1.0);
+          vec3 hyperColor = vec3(0.3, 0.95, 1.0);
 
           vec3 color = mix(bgColor, midColor, smoothstep(0.0, 0.5, vSpeedLayer));
           color = mix(color, fgColor, smoothstep(0.5, 1.0, vSpeedLayer));

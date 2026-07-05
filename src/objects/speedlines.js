@@ -141,16 +141,16 @@ export class SpeedLines {
     this.positions[i3_1 + 1] = y + dy * (offset - length);
     this.positions[i3_1 + 2] = z + dz * (offset - length);
 
-    // 颜色渐变：起点偏蓝 → 终点偏白
-    const brightness = 0.7 + Math.random() * 0.3;
-    const blueShift = Math.random() * 0.3;
+    // 颜色渐变：起点偏蓝 → 终点偏白 (v16: 更亮)
+    const brightness = 0.8 + Math.random() * 0.2;
+    const blueShift = Math.random() * 0.2;
 
-    this.colors[i3_0] = 0.4 + blueShift;
-    this.colors[i3_0 + 1] = 0.5 + blueShift * 0.5;
+    this.colors[i3_0] = 0.5 + blueShift;
+    this.colors[i3_0 + 1] = 0.6 + blueShift * 0.5;
     this.colors[i3_0 + 2] = 1.0;
 
-    this.colors[i3_1] = 0.7 + brightness * 0.3;
-    this.colors[i3_1 + 1] = 0.8 + brightness * 0.2;
+    this.colors[i3_1] = 0.85 + brightness * 0.15;
+    this.colors[i3_1 + 1] = 0.9 + brightness * 0.1;
     this.colors[i3_1 + 2] = 1.0;
 
     if (this.geometry) {
