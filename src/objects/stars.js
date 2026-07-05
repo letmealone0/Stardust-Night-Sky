@@ -421,14 +421,51 @@ export class StarField {
     geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
     geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
 
-    const hazeMat = new THREE.PointsMaterial({
-      size: 5.0,              // v14: 更大粒子
-      vertexColors: true,
+    // v19.5: ShaderMaterial 让雾气随银河差速自转，与主盘同步
+    const hazeMat = new THREE.ShaderMaterial({
+      uniforms: {
+        uTime: { value: 0 },
+        uCoreRotSpeed: { value: 0.008 },
+        uRadiusFalloff: { value: 0.00004 },
+        uTimeScale: { value: 1.0 },
+        uPixelRatio: { value: Math.min(window.devicePixelRatio, 2) },
+      },
+      vertexShader: `
+        varying vec3 vColor;
+        uniform float uTime;
+        uniform float uCoreRotSpeed;
+        uniform float uRadiusFalloff;
+        uniform float uTimeScale;
+        uniform float uPixelRatio;
+        void main() {
+          vColor = color;
+          float r = length(position.xz) + 0.01;
+          float localSpeed = uCoreRotSpeed / (0.1 + r * uRadiusFalloff);
+          float angle = uTime * localSpeed * uTimeScale;
+          float cosA = cos(angle), sinA = sin(angle);
+          vec3 pos = position;
+          pos.x = position.x * cosA - position.z * sinA;
+          pos.z = position.x * sinA + position.z * cosA;
+          vec4 mvPosition = modelViewMatrix * vec4(pos, 1.0);
+          gl_PointSize = 5.0 * uPixelRatio * (300.0 / -mvPosition.z);
+          gl_Position = projectionMatrix * mvPosition;
+        }
+      `,
+      fragmentShader: `
+        precision highp float;
+        varying vec3 vColor;
+        void main() {
+          float d = length(gl_PointCoord - 0.5) * 2.0;
+          float alpha = 1.0 - smoothstep(0.0, 1.0, d);
+          alpha *= 0.12;
+          if (alpha < 0.005) discard;
+          gl_FragColor = vec4(vColor, alpha);
+        }
+      `,
       transparent: true,
-      opacity: 0.12,          // v14: 提高可见度
-      sizeAttenuation: true,
-      blending: THREE.AdditiveBlending,
       depthWrite: false,
+      blending: THREE.AdditiveBlending,
+      vertexColors: true,
     });
 
     const hazePoints = new THREE.Points(geo, hazeMat);
@@ -500,17 +537,24 @@ export class StarField {
   }
 
   update(delta, elapsed) {
-    // 亮星闪烁已迁移到 GPU（ShaderMaterial），只需更新时间 uniform
-    this.brightStars.forEach(({ points, material }) => {
-      if (material.uniforms) {
-        material.uniforms.uTime.value = elapsed;
-      }
+    // 亮星闪烁 + 银河 + 雾气：更新所有 ShaderMaterial 的 uTime
+    this.brightStars.forEach(({ material }) => {
+      if (material.uniforms) material.uniforms.uTime.value = elapsed;
     });
 
-    // 银河自转动画
-    if (this.galaxyMaterial && this.galaxyMaterial.uniforms) {
+    if (this.galaxyMaterial?.uniforms) {
       this.galaxyMaterial.uniforms.uTime.value = elapsed;
     }
+
+    // v19.5: 银河雾气 ShaderMaterial 同步旋转
+    this.materials.forEach((m) => {
+      if (m.uniforms?.uTime && m !== this.galaxyMaterial) {
+        m.uniforms.uTime.value = elapsed;
+        if (m.uniforms.uTimeScale) m.uniforms.uTimeScale.value = config.galaxyMotion?.timeScale || 1.0;
+        if (m.uniforms.uCoreRotSpeed) m.uniforms.uCoreRotSpeed.value = config.galaxyMotion?.coreRotSpeed || 0.008;
+        if (m.uniforms.uRadiusFalloff) m.uniforms.uRadiusFalloff.value = config.galaxyMotion?.radiusFalloff || 0.00004;
+      }
+    });
   }
 
   dispose(scene) {

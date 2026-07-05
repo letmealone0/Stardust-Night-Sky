@@ -160,8 +160,8 @@ export class NebulaSystem {
           if (t.x < 0.0) discard;
 
           float len = t.y - t.x;
-          const int MAX_STEPS = 28;
-          int steps = int(clamp(len / (uScale * 0.05), 5.0, float(MAX_STEPS)));
+          const int MAX_STEPS = 18;
+          int steps = int(clamp(len / (uScale * 0.06), 4.0, float(MAX_STEPS)));
           float stepSize = len / float(steps);
 
           vec3 accColor = vec3(0.0);
@@ -197,7 +197,7 @@ export class NebulaSystem {
           }
 
           if (accAlpha < 0.002) discard;
-          gl_FragColor = vec4(accColor, accAlpha * 0.7);
+          gl_FragColor = vec4(accColor, clamp(accAlpha, 0.0, 1.0));
         }
       `,
       blending: THREE.AdditiveBlending,

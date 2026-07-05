@@ -202,7 +202,7 @@ export class Pulsar {
 
     // 闪光衰减
     if (this._flashDecay > 0.001) {
-      this._flashDecay *= Math.pow(0.01, delta * (cfg.flashDecay || 4.0));
+      this._flashDecay *= Math.exp(-(cfg.flashDecay || 4.0) * delta);
       if (this._flashDecay < 0.001) this._flashDecay = 0;
     }
     uniforms.uFlashIntensity.value = this._flashDecay;

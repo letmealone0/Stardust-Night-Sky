@@ -611,7 +611,7 @@ export class SolarSystem {
       map: texture,
       transparent: true,
       depthWrite: false,
-      depthTest: false,
+      depthTest: true,
     });
     const sprite = new THREE.Sprite(spriteMat);
     sprite.position.y = radius * 2.0;

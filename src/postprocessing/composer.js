@@ -65,6 +65,13 @@ const CelestialEffectsShader = {
     void main() {
       vec2 uv = vUv;
 
+      // v19.5: 无任何特效时直接输出，避免无效采样
+      if (uMotionBlurIntensity < 0.005 && uLensStrength < 0.001 && uNoiseIntensity < 0.001
+          && uFlashIntensity < 0.001 && uFogDensity < 0.001 && uChromaticAberration < 0.001) {
+        gl_FragColor = texture2D(tDiffuse, vUv);
+        return;
+      }
+
       // 1. 引力透镜扭曲
       if (uLensStrength > 0.001) {
         vec2 toCenter = uv - uLensCenter;

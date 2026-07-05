@@ -83,17 +83,22 @@ export class BlackHole {
       },
       vertexShader: `
         varying vec3 vNormal;
+        varying vec3 vWorldPos;
         void main() {
-          vNormal = normalize(normalMatrix * normal);
+          vec4 worldPos = modelMatrix * vec4(position, 1.0);
+          vWorldPos = worldPos.xyz;
+          vNormal = normalize(mat3(modelMatrix) * normal);
           gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
         }
       `,
       fragmentShader: `
         varying vec3 vNormal;
+        varying vec3 vWorldPos;
         uniform float uTime;
         uniform vec3 uColor;
         void main() {
-          float rim = 1.0 - max(0.0, dot(vNormal, vec3(0,0,1)));
+          vec3 viewDir = normalize(cameraPosition - vWorldPos);
+          float rim = 1.0 - max(0.0, abs(dot(vNormal, viewDir)));
           float intensity = pow(rim, 4.0);
           float pulse = 0.7 + sin(uTime * 3.0) * 0.3;
           float rotate = sin(uTime * 8.0 + vNormal.x * 10.0) * 0.3 + 0.7;
@@ -546,7 +551,7 @@ export class BlackHole {
     this.group.rotation.y += (cfg.selfRotationSpeed || 1.5) * delta * motionScale;
 
     // v12: 环境坠落粒子
-    this.updateInfallParticles(cfg, delta, motionScale);
+    this.updateInfallParticles(cfg, delta, elapsed, motionScale);
 
     // v12: 物质流线动画
     this.updateMatterStreams(cfg, delta, elapsed, motionScale);
@@ -584,7 +589,7 @@ export class BlackHole {
   }
 
   // ==================== v12: 坠落粒子更新 ====================
-  updateInfallParticles(cfg, delta, motionScale) {
+  updateInfallParticles(cfg, delta, elapsed, motionScale) {
     if (!this._infallParticles) return;
     const pos = this._infallParticles.geometry.attributes.position.array;
     const vel = this._infallVelocities;
@@ -605,14 +610,13 @@ export class BlackHole {
 
       const nx = -x / dist, ny = -y / dist, nz = -z / dist;
 
-      // v12-fix5: 直线坠入 — 速度直接指向黑洞中心，加随机扰动
-      // 速度 ∝ 1/√r，越近越快
-      const baseSpeed = 8 + 150 * Math.sqrt(ehR / dist); // 8~158
-      // 随机扰动（不规则轨迹，防止完美直线）
+      // 基于粒子索引的确定性抖动（避免每帧 Math.random）
+      const baseSpeed = 8 + 150 * Math.sqrt(ehR / dist);
       const jitter = 0.15;
-      const jx = (Math.random() - 0.5) * jitter * baseSpeed;
-      const jy = (Math.random() - 0.5) * jitter * baseSpeed;
-      const jz = (Math.random() - 0.5) * jitter * baseSpeed;
+      const seed = i * 0.123 + elapsed * 0.5;
+      const jx = (Math.sin(seed * 127.1) * 0.5 + Math.sin(seed * 311.7) * 0.5) * jitter * baseSpeed;
+      const jy = (Math.sin(seed * 74.7 + 50.0) * 0.5 + Math.sin(seed * 183.3 + 50.0) * 0.5) * jitter * baseSpeed;
+      const jz = (Math.sin(seed * 269.5 + 100.0) * 0.5 + Math.sin(seed * 437.5 + 100.0) * 0.5) * jitter * baseSpeed;
 
       vel[i3]     = nx * baseSpeed + jx;
       vel[i3 + 1] = ny * baseSpeed + jy;
