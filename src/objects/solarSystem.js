@@ -104,12 +104,12 @@ export class SolarSystem {
     sunLight.position.set(0, 0, 0);
     this.group.add(sunLight);
 
-    // 太阳光晕 (AdditiveBlending)
-    const glowGeo = new THREE.SphereGeometry(cfg.sunRadius * 1.5, 32, 32);
+    // v14: 太阳光晕 — 指数衰减柔和边缘 (消除球状硬边界)
+    const glowGeo = new THREE.SphereGeometry(cfg.sunRadius * 2.5, 32, 32);
     const glowMat = new THREE.ShaderMaterial({
       uniforms: {},
       vertexShader: `varying vec3 vNormal; void main() { vNormal = normalize(normalMatrix * normal); gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
-      fragmentShader: `varying vec3 vNormal; void main() { float intensity = pow(0.65 - dot(vNormal, vec3(0,0,1)), 2.0); gl_FragColor = vec4(1.0, 0.8, 0.3, intensity * 0.5); }`,
+      fragmentShader: `varying vec3 vNormal; void main() { float rim = 1.0 - max(0.0, dot(vNormal, vec3(0,0,1))); float glow = exp(-rim * rim * 3.0); float core = exp(-rim * 12.0); vec3 c = mix(vec3(1.0, 0.85, 0.4), vec3(1.0, 0.5, 0.15), rim); float a = glow * 0.7 + core * 0.4; gl_FragColor = vec4(c * a, a * 0.8); }`,
       blending: THREE.AdditiveBlending, side: THREE.BackSide, transparent: true, depthWrite: false,
     });
     this.group.add(new THREE.Mesh(glowGeo, glowMat));

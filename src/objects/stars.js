@@ -422,10 +422,10 @@ export class StarField {
     geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
 
     const hazeMat = new THREE.PointsMaterial({
-      size: 3.5,
+      size: 5.0,              // v14: 更大粒子
       vertexColors: true,
       transparent: true,
-      opacity: 0.07,
+      opacity: 0.12,          // v14: 提高可见度
       sizeAttenuation: true,
       blending: THREE.AdditiveBlending,
       depthWrite: false,

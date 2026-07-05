@@ -132,6 +132,11 @@ const CelestialEffectsShader = {
       color.rgb = mix(vec3(gray), color.rgb, uSaturation);
       color.rgb = (color.rgb - 0.5) * uContrast + 0.5;
 
+      // v14: 边缘保护 — 防止bloom溢出产生亮线
+      float edgeFade = smoothstep(0.0, 0.03, vUv.x) * smoothstep(1.0, 0.97, vUv.x)
+                     * smoothstep(0.0, 0.03, vUv.y) * smoothstep(1.0, 0.97, vUv.y);
+      color.rgb *= edgeFade;
+
       gl_FragColor = color;
     }
   `,

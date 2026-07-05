@@ -44,10 +44,10 @@ export const config = {
     ],
     // v8.2: 银河系包围太阳系 — 太阳系在旋臂~2/3处
     galaxy: {
-      count: 18000,            // 银河粒子数
+      count: 30000,           // v14: 增加粒子数让银河更壮观
       armCount: 5,            // 旋臂数
-      spin: 2.5,              // 螺旋紧密度
-      armSpread: 0.25,        // 旋臂散开度
+      spin: 3.0,              // v14: 增加螺旋紧密度
+      armSpread: 0.2,          // v14: 收紧旋臂让结构更清晰
       position: { x: -15000, y: 500, z: -30000 }, // 银河中心偏移，太阳系在旋臂中
       tilt: 50,               // 银道面倾角
       scale: 22.0,            // v8.2: 超大尺度，太阳系在旋臂中
@@ -97,7 +97,7 @@ export const config = {
   galaxyMotion: {
     enabled: true,             // 一键开关所有宏观运动
     timeScale: 1.0,            // 全局速度倍率
-    coreRotSpeed: 0.008,       // 银心基准角速度 (rad/s)
+    coreRotSpeed: 0.015,      // v14: 加速差速自转让银河更有动感
     radiusFalloff: 0.00004,    // 较差自转衰减系数
     solarOrbitRadius: 50000,   // 太阳系绕银心半径 (~2/3旋臂)
     solarOrbitSpeed: 0.0015,   // 太阳系公转角速度 (rad/s, ~70s一圈)
@@ -131,13 +131,13 @@ export const config = {
   // ---- 后处理效果 ----
   postprocessing: {
     bloom: {
-      strength: 0.7,         // v9.0: 适中辉光，突出太阳
-      radius: 0.4,           // v9.0
-      threshold: 0.65,       // v9.0: 仅太阳/亮行星发光
+      strength: 0.9,         // v14: 增强辉光让画面更明亮
+      radius: 0.5,           // v14: 更柔和的辉光扩散
+      threshold: 0.4,        // v14: 降低阈值让更多物体发光
     },
     vignette: {
       offset: 0.5,
-      darkness: 0.25,        // v9.0: 轻微暗角
+      darkness: 0.15,        // v14: 降低暗角避免过暗
     },
     filmGrain: {             // v9.0: 可选胶片颗粒
       enabled: false,
@@ -170,9 +170,9 @@ export const config = {
     antialias: true,
     alpha: false,
     powerPreference: 'high-performance',
-    toneMappingExposure: 1.2, // v8.0: 提高曝光，适应更亮的太阳
-    contrast: 1.08,            // v13: 对比度增强
-    saturation: 1.12,          // v13: 饱和度增强
+    toneMappingExposure: 1.5, // v14: 提高曝光让整体更明亮
+    contrast: 1.05,            // v14: 微调对比度
+    saturation: 1.15,          // v14: 增强饱和度让色彩更鲜艳
   },
 
   // ---- 速度线 ----
