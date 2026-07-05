@@ -106,8 +106,8 @@ export const config = {
   // ---- 星云效果（体积光线步进）----
   nebula: {
     count: 3,
-    scale: 4000,              // v19.9: 5倍增大，5万距离可见
-    opacity: 4.0,             // 更浓密
+    scale: 4000,
+    opacity: 6.0,             // v19.9-fix2: 增强可见度
     colors: [
       { r: 0.25, g: 0.08, b: 0.55 },
       { r: 0.08, g: 0.3, b: 0.65 },
