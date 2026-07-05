@@ -15,7 +15,7 @@ const TYPE_PARAMS = {
   rocky:  { color: [0.50,0.42,0.35], emissive: [0.02,0.02,0.03], roughness: 0.80, metalness: 0.10, hasAtm: true,  atmColor: [0.3,0.5,0.9], atmAlpha: 0.55, ringChance: 0.05 },
   gas:    { color: [0.70,0.60,0.40], emissive: [0.05,0.03,0.01], roughness: 0.30, metalness: 0.0,  hasAtm: true,  atmColor: [0.8,0.65,0.35], atmAlpha: 0.7, ringChance: 0.35 },
   lava:   { color: [0.60,0.25,0.10], emissive: [0.25,0.10,0.02], roughness: 0.60, metalness: 0.0,  hasAtm: true,  atmColor: [0.9,0.35,0.12], atmAlpha: 0.4, ringChance: 0.02 },
-  ice:    { color: [0.80,0.85,1.00], emissive: [0.02,0.03,0.05], roughness: 0.20, metalness: 0.30, hasAtm: true,  atmColor: [0.45,0.65,1.0], atmAlpha: 0.5, ringChance: 0.10 },
+  ice:    { color: [0.55,0.60,0.72], emissive: [0.01,0.02,0.04], roughness: 0.35, metalness: 0.15, hasAtm: true,  atmColor: [0.35,0.55,0.85], atmAlpha: 0.35, ringChance: 0.10 },
   rogue:  { color: [0.25,0.22,0.20], emissive: [0.01,0.01,0.02], roughness: 0.90, metalness: 0.05, hasAtm: false, atmColor: [0,0,0],         atmAlpha: 0,   ringChance: 0.0 },
 };
 
