@@ -80,7 +80,7 @@ export class ParticleFlow {
         void main() {
           vec3 pos = position;
 
-          float speedFactor = min(uSpeed / 50.0, 1.0);
+          float speedFactor = min(uSpeed / 40.0, 3.0);  // v17-fix: 不再限制在1.0，冲刺时更强
 
           // === 三层速度分级（视差效果）===
           float layerSpeed;
@@ -97,8 +97,9 @@ export class ParticleFlow {
 
           // v16: 修正流向 — 取反Y/Z得到正确的摄像机相对流向
           vec3 streamDir = vec3(velDir.x, -velDir.y, -velDir.z);
-          float flowStrength = speedFactor * 30.0 * layerSpeed;
-          vec3 streakOffset = streamDir * flowStrength * aRandom * uStreakLength;
+          // v17-fix: streak更强，冲刺时粒子更长
+          float flowStrength = speedFactor * 20.0 * layerSpeed;
+          vec3 streakOffset = streamDir * flowStrength * aRandom * uStreakLength * (1.0 + uSprintFactor * 1.5);
           // v16-fix: 不修改pos，streak只影响视觉形状不改变位置
           // (旧代码 pos -= streakOffset 会把粒子推离摄像机300单位，完全压过CPU移动的12.8单位)
 
@@ -108,11 +109,11 @@ export class ParticleFlow {
           pos.y += cos(t * 0.7 + aRandom * 6.28) * 1.2;
           pos.z += sin(t * 0.5 + aRandom * 6.28) * 1.2;
 
-          // v16: 提升透明度让粒子更明显
-          float baseAlpha = 0.35;
-          vAlpha = baseAlpha + speedFactor * (0.6 + aRandom * 0.35);
-          vAlpha *= (0.7 + vSpeedLayer * 0.5);
-          vAlpha *= (1.0 + uSprintFactor * 1.8);
+          // v17-fix: 更亮的粒子，冲刺时更明显
+          float baseAlpha = 0.5;
+          vAlpha = baseAlpha + speedFactor * (0.3 + aRandom * 0.2);
+          vAlpha *= (0.8 + vSpeedLayer * 0.4);
+          vAlpha *= (1.0 + uSprintFactor * 2.0);
           vSprint = uSprintFactor;
 
           // v16: 传递屏幕空间拖尾方向
@@ -224,10 +225,10 @@ export class ParticleFlow {
       this._velocity.copy(velocity);
     }
 
-    // 更新 Shader uniforms
+    // 更新 Shader uniforms — 用局部空间速度
     const uniforms = this.material.uniforms;
     uniforms.uSpeed.value = speed;
-    uniforms.uVelocity.value.copy(this._velocity);
+    uniforms.uVelocity.value.copy(this._localVelocity || this._velocity);
     uniforms.uTime.value = elapsed;
 
     // 冲刺因子平滑过渡
@@ -240,20 +241,25 @@ export class ParticleFlow {
     const spread = config.particleFlow?.spread || 200;
     const pos = this.positions;
     const vel = this._velocity;
-    const speedNorm = Math.min(speed / 50, 1.0);
+    // v17-fix: 不再限制speedNorm，让冲刺和普通速度有区别
+    const speedNorm = Math.min(speed / 40, 3.0);
 
-    // v17: 运动方向实时生成粒子 — 每帧在运动方向锥形区域重生一部分粒子
-    const vLen = Math.sqrt(vel.x * vel.x + vel.y * vel.y + vel.z * vel.z);
-    const streamX = vel.x, streamY = -vel.y, streamZ = -vel.z; // 修正后的流向
+    // v17-fix: 将velocity变换到摄像机当前局部空间，解决转身时粒子方向错误
+    const camQuat = this.camera.quaternion.clone().invert();
+    const localVel = vel.clone().applyQuaternion(camQuat);
+    this._localVelocity = localVel; // 存储供shader使用
+    const vLen = localVel.length();
+    // 流向：摄像机局部空间中粒子应移动的方向
+    const streamX = localVel.x, streamY = -localVel.y, streamZ = -localVel.z;
     const streamLen = Math.sqrt(streamX*streamX + streamY*streamY + streamZ*streamZ);
     
     for (let i = 0; i < this.count; i++) {
       const i3 = i * 3;
 
-      // 移动粒子（沿流向）
-      pos[i3]     += vel.x * delta * speedNorm * 10;
-      pos[i3 + 1] -= vel.y * delta * speedNorm * 10;
-      pos[i3 + 2] -= vel.z * delta * speedNorm * 10;
+      // v17-fix: 用局部空间速度移动粒子
+      pos[i3]     += localVel.x * delta * speedNorm * 8;
+      pos[i3 + 1] -= localVel.y * delta * speedNorm * 8;
+      pos[i3 + 2] -= localVel.z * delta * speedNorm * 8;
 
       const distSq = pos[i3] * pos[i3] + pos[i3+1] * pos[i3+1] + pos[i3+2] * pos[i3+2];
       
@@ -261,18 +267,16 @@ export class ParticleFlow {
       if (distSq > spread * spread * 1.5 || 
           (vLen > 0.5 && distSq < spread * spread * 0.02)) {
         if (vLen > 0.5) {
-          this.resetParticleAhead(i, spread, vel);
+          this.resetParticleAhead(i, spread, localVel);
         } else {
           this.resetParticle(i, spread);
         }
       }
       // v17: 运动时，每帧主动重生30%粒子到运动方向前方
       else if (vLen > 2.0 && Math.random() < 0.30) {
-        // 计算粒子是否在运动方向的后方（远离运动方向）
         const dotProduct = (pos[i3] * streamX + pos[i3+1] * streamY + pos[i3+2] * streamZ) / (streamLen + 0.01);
-        // 后方粒子优先重生
         if (dotProduct < 0 || Math.random() < 0.3) {
-          this.resetParticleAhead(i, spread, vel);
+          this.resetParticleAhead(i, spread, localVel);
         }
       }
     }
