@@ -211,12 +211,17 @@ export class NebulaSystem {
     group.add(mesh);
 
     group.userData = {
-      rotationSpeed: randomRange(0.0001, 0.0003),
-      pulseSpeed: randomRange(0.05, 0.12),
+      rotationSpeed: randomRange(0.0005, 0.0015),   // v19.7: 可见的缓慢旋转
+      pulseSpeed: randomRange(0.08, 0.18),           // 稍快呼吸
       pulsePhase: Math.random() * Math.PI * 2,
+      driftDir: new THREE.Vector3(                   // v19.7: 缓慢漂移
+        (Math.random() - 0.5) * 0.3,
+        (Math.random() - 0.5) * 0.1,
+        (Math.random() - 0.5) * 0.3
+      ).normalize(),
       material,
-      nebType, // v11
-      scale,   // v11
+      nebType,
+      scale,
     };
 
     this.nebulae.push(group);
@@ -257,9 +262,16 @@ export class NebulaSystem {
         closestNebula = nebula;
       }
 
+      // v19.7: 缓慢旋转 + 呼吸脉冲 + 漂移
       nebula.rotation.y += data.rotationSpeed * motionScale;
-      const pulse = Math.sin(elapsed * data.pulseSpeed + data.pulsePhase) * 0.05 + 1.0;
+      nebula.rotation.x += data.rotationSpeed * 0.3 * motionScale;
+      const pulse = Math.sin(elapsed * data.pulseSpeed + data.pulsePhase) * 0.08 + 1.0;
       nebula.scale.setScalar(pulse);
+
+      // 缓慢空间漂移
+      if (data.driftDir) {
+        nebula.position.addScaledVector(data.driftDir, 0.5 * delta * motionScale);
+      }
 
       this._tempVec.copy(camera.position);
       nebula.worldToLocal(this._tempVec);
