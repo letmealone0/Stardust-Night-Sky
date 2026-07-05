@@ -95,8 +95,8 @@ export class ParticleFlow {
             vSpeedLayer = 1.0;
           }
 
-          // v8.5: 按W时velocity.z=-50, -=(-50)=+50→粒子流向相机
-          vec3 velDir = length(uVelocity) > 0.1 ? normalize(uVelocity) : vec3(0.0, 0.0, 1.0);\n          float flowStrength = speedFactor * 30.0 * layerSpeed;\n          vec3 streakOffset = velDir * flowStrength * aRandom * uStreakLength;\n          pos -= streakOffset;
+          // v16: 修正流向 — 取反Y/Z得到正确的摄像机相对流向
+          vec3 streamDir = vec3(velDir.x, -velDir.y, -velDir.z);\n          float flowStrength = speedFactor * 30.0 * layerSpeed;\n          vec3 streakOffset = streamDir * flowStrength * aRandom * uStreakLength;\n          pos -= streakOffset;
 
           // 静止时微小漂浮
           float t = uTime * 0.5 * layerSpeed;
@@ -187,17 +187,22 @@ export class ParticleFlow {
 
   /**
    * v8.4: 在运动方向前方锥形区域生成粒子
+   * v16: 修正流向 — 取反Y/Z得到正确的摄像机相对流向
    */
   resetParticleAhead(i, spread, velDir) {
     const i3 = i * 3;
     const r = spread * (0.2 + Math.random() * 0.8);
-    // 粒子在 -v 方向生成（相机前方）
+    // v16: 用修正后的流向（取反Y/Z）在前方生成粒子
+    const streamX = velDir.x;
+    const streamY = -velDir.y;
+    const streamZ = -velDir.z;
     if (velDir.lengthSq() > 0.5) {
-      const invLen = 1 / Math.sqrt(velDir.x*velDir.x + velDir.y*velDir.y + velDir.z*velDir.z);
-      const vx = velDir.x * invLen, vy = velDir.y * invLen, vz = velDir.z * invLen;
-      this.positions[i3]     = -vx * r + (Math.random() - 0.5) * spread * 0.6;
-      this.positions[i3 + 1] = -vy * r + (Math.random() - 0.5) * spread * 0.6;
-      this.positions[i3 + 2] = -vz * r + (Math.random() - 0.5) * spread * 0.6;
+      const invLen = 1 / Math.sqrt(streamX*streamX + streamY*streamY + streamZ*streamZ);
+      const sx = streamX * invLen, sy = streamY * invLen, sz = streamZ * invLen;
+      // 在流向的反方向（前方）生成粒子
+      this.positions[i3]     = -sx * r + (Math.random() - 0.5) * spread * 0.6;
+      this.positions[i3 + 1] = -sy * r + (Math.random() - 0.5) * spread * 0.6;
+      this.positions[i3 + 2] = -sz * r + (Math.random() - 0.5) * spread * 0.6;
     } else {
       this.resetParticle(i, spread);
     }
@@ -232,7 +237,8 @@ export class ParticleFlow {
     for (let i = 0; i < this.count; i++) {
       const i3 = i * 3;
 
-      pos[i3]     -= vel.x * delta * speedNorm * 10;
+      // v16: 修正流向 — X保持, Y/Z取反得到正确的摄像机相对流向
+      pos[i3]     += vel.x * delta * speedNorm * 10;
       pos[i3 + 1] -= vel.y * delta * speedNorm * 10;
       pos[i3 + 2] -= vel.z * delta * speedNorm * 10;
 

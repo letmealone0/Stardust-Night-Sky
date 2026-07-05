@@ -216,9 +216,9 @@ export class SpeedLines {
 
     if (speed < this.cfg.speedThreshold) return;
 
-    // 计算主移动方向（相机空间）— 复用缓存向量
+    // v16: 修正流向 — 取反Y/Z得到正确的摄像机相对流向
     if (!this._dirCache) this._dirCache = new THREE.Vector3();
-    this._dirCache.copy(this._velocity);
+    this._dirCache.set(this._velocity.x, -this._velocity.y, -this._velocity.z);
     const dir = this._dirCache;
     if (dir.lengthSq() < 0.01) dir.set(0, 0, -1);
 
