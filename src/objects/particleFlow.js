@@ -1,7 +1,16 @@
 /**
- * 全方向粒子流系统 v8.0
- * 三层视差架构 + 粒子拉伸拖尾 + 冲刺色彩增强
- * 核心功能：穿越星际的沉浸式粒子流动
+ * 全方向粒子流系统 v19.1
+ *
+ * 设计原理（参考 Elite Dangerous / No Man's Sky 的粒子流实现）：
+ * - 粒子挂载在场景中的跟随 Group（随相机移动+旋转）
+ * - Group 每帧同步到相机位置和朝向，Group-local 等效于 camera-local
+ * - 世界空间速度通过逆四元数转为 Group-local 方向
+ * - 粒子沿 -localVel 方向流动（环境从前方飞向相机再掠过）
+ * - 球形全方向分布 + 三层视差
+ * - 粒子拉伸拖尾在屏幕上沿速度方向
+ *
+ * 关键教训：不能 camera.add(points)，因为相机不在 scene 树中，
+ * renderer.render(scene, camera) 不会遍历相机的子节点！必须挂到 scene 中。
  */
 
 import * as THREE from 'three';
@@ -9,6 +18,7 @@ import { config } from '../core/config.js';
 
 export class ParticleFlow {
   constructor() {
+    this.group = null;        // scene-attached跟随group
     this.points = null;
     this.geometry = null;
     this.material = null;
@@ -16,34 +26,39 @@ export class ParticleFlow {
     this.count = 10000;
     this.positions = null;
     this.speed = 0;
-    this._velocity = new THREE.Vector3();
+    this._localVel = new THREE.Vector3();
+    this._worldVel = new THREE.Vector3();
     this._sprintFactor = 0;
+    this._invQuat = new THREE.Quaternion();
   }
 
   init(scene, camera) {
     this.camera = camera;
-    this.count = config.particleFlow?.count || 10000;
+    this.count = config.particleFlow?.count || 20000;
     const cfg = config.particleFlow || {};
 
     const spread = cfg.spread || 200;
-    const streakLen = cfg.streakLength || 4.0;
-    const sprintBoost = cfg.sprintColorBoost || 1.5;
+
+    // 创建跟随 group，添加到场景
+    this.group = new THREE.Group();
+    this.group.position.copy(camera.position);
+    this.group.quaternion.copy(camera.quaternion);
+    scene.add(this.group);
 
     this.positions = new Float32Array(this.count * 3);
     const sizes = new Float32Array(this.count);
     const randoms = new Float32Array(this.count);
 
     for (let i = 0; i < this.count; i++) {
-      this.resetParticle(i, spread);
+      this.resetParticleSphere(i, spread);
 
       const r = Math.random();
-      // 三层分配：背景(0-0.3) 中间(0.3-0.8) 前景(0.8-1.0)
       if (r < 0.3) {
-        sizes[i] = 0.2 + Math.random() * 0.4;
+        sizes[i] = 0.2 + Math.random() * 0.15;
       } else if (r < 0.8) {
-        sizes[i] = 0.5 + Math.random() * 0.8;
+        sizes[i] = 0.4 + Math.random() * 0.25;
       } else {
-        sizes[i] = 1.2 + Math.random() * 2.0; // v8.4: 更大前景粒子
+        sizes[i] = 0.6 + Math.random() * 0.4;
       }
       randoms[i] = Math.random();
     }
@@ -53,17 +68,16 @@ export class ParticleFlow {
     this.geometry.setAttribute('aSize', new THREE.BufferAttribute(sizes, 1));
     this.geometry.setAttribute('aRandom', new THREE.BufferAttribute(randoms, 1));
 
-    // v7.1: 增强 Shader — 三层速度 + 更强流动 + 静止可见
     this.material = new THREE.ShaderMaterial({
       uniforms: {
         uSpeed: { value: 0 },
         uVelocity: { value: new THREE.Vector3(0, 0, 0) },
         uTime: { value: 0 },
         uSprintFactor: { value: 0 },
-        uStreakLength: { value: cfg.streakLength || 4.0 },
+        uStreakLength: { value: cfg.streakLength || 5.0 },
         uPixelRatio: { value: Math.min(window.devicePixelRatio, 2) },
       },
-      vertexShader: `
+      vertexShader: /* glsl */`
         attribute float aSize;
         attribute float aRandom;
         uniform float uSpeed;
@@ -76,94 +90,104 @@ export class ParticleFlow {
         varying float vSpeedLayer;
         varying float vSprint;
         varying vec2 vStreakDir;
+        varying vec2 vScreenPos;
 
         void main() {
           vec3 pos = position;
 
-          float speedFactor = min(uSpeed / 40.0, 3.0);  // v17-fix: 不再限制在1.0，冲刺时更强
+          float speedFactor = min(uSpeed / 30.0, 4.0);
 
-          // === 三层速度分级（视差效果）===
           float layerSpeed;
           if (aRandom < 0.3) {
-            layerSpeed = 0.3;
+            layerSpeed = 0.1;
             vSpeedLayer = 0.0;
           } else if (aRandom < 0.8) {
-            layerSpeed = 1.0;
+            layerSpeed = 0.4;
             vSpeedLayer = 0.5;
           } else {
-            layerSpeed = 2.5;
+            layerSpeed = 1.2;
             vSpeedLayer = 1.0;
           }
 
-          // v16: 修正流向 — 取反Y/Z得到正确的摄像机相对流向
-          vec3 streamDir = vec3(velDir.x, -velDir.y, -velDir.z);
-          // v17-fix: streak更强，冲刺时粒子更长
-          float flowStrength = speedFactor * 20.0 * layerSpeed;
-          vec3 streakOffset = streamDir * flowStrength * aRandom * uStreakLength * (1.0 + uSprintFactor * 1.5);
-          // v16-fix: 不修改pos，streak只影响视觉形状不改变位置
-          // (旧代码 pos -= streakOffset 会把粒子推离摄像机300单位，完全压过CPU移动的12.8单位)
+          // 微小漂浮
+          float t = uTime * 0.15 * layerSpeed;
+          pos.x += sin(t + aRandom * 6.28) * 0.3;
+          pos.y += cos(t * 0.7 + aRandom * 6.28) * 0.3;
+          pos.z += sin(t * 0.5 + aRandom * 6.28) * 0.3;
 
-          // 静止时微小漂浮
-          float t = uTime * 0.5 * layerSpeed;
-          pos.x += sin(t + aRandom * 6.28) * 1.2;
-          pos.y += cos(t * 0.7 + aRandom * 6.28) * 1.2;
-          pos.z += sin(t * 0.5 + aRandom * 6.28) * 1.2;
+          // === 拖尾（动态长度：速度越快越长）===
+          vec3 flowDir = -uVelocity;
+          float dynStreak = 1.5 + speedFactor * 0.8;  // v19.5: 动态拖尾
+          float flowStrength = speedFactor * 6.0 * layerSpeed;
+          vec3 streakOffset = flowDir * flowStrength * aRandom * dynStreak * (1.0 + uSprintFactor * 1.5);
 
-          // v18: 更亮的粒子 — 基础alpha 0.6，静止时也可见
-          float baseAlpha = 0.6;
-          vAlpha = baseAlpha + speedFactor * (0.3 + aRandom * 0.15);
-          vAlpha *= (0.85 + vSpeedLayer * 0.3);
-          vAlpha *= (1.0 + uSprintFactor * 2.5);
+          vec4 mvPosition = modelViewMatrix * vec4(pos, 1.0);
+          vec4 streakEnd = modelViewMatrix * vec4(pos + streakOffset * 0.25, 1.0);
+          vec2 screenStreak = (streakEnd.xy / streakEnd.w - mvPosition.xy / mvPosition.w);
+          vStreakDir = normalize(screenStreak) * length(screenStreak) * 0.2;
+
+          // === 透明度 ===
+          float baseAlpha = 0.02;
+          vAlpha = baseAlpha + speedFactor * 0.12;
+          vAlpha *= (0.5 + vSpeedLayer * 0.7);
+          vAlpha *= (1.0 + uSprintFactor * 1.5);
           vSprint = uSprintFactor;
 
-          // v16: 传递屏幕空间拖尾方向
-          vec4 mvPosition = modelViewMatrix * vec4(pos, 1.0);
-          vec4 streakEnd = modelViewMatrix * vec4(pos + streakOffset * 0.5, 1.0);
-          vec2 screenStreak = (streakEnd.xy / streakEnd.w - mvPosition.xy / mvPosition.w);
-          vStreakDir = normalize(screenStreak) * length(screenStreak) * 0.3;
-
-          // v18: 增大粒子尺寸 ×3
-          gl_PointSize = aSize * 3.0 * uPixelRatio * (500.0 / -mvPosition.z) * (1.0 + uSprintFactor * 1.5);
+          // === 粒子大小 ===
+          float dist = length(pos);
+          float sizeBoost = 1.0 + speedFactor * 0.2 + uSprintFactor * 0.8;
+          gl_PointSize = aSize * sizeBoost * uPixelRatio * (200.0 / max(dist, 1.0));
+          gl_PointSize = clamp(gl_PointSize, 0.5, 12.0);
           gl_Position = projectionMatrix * mvPosition;
+
+          // 传递归一化屏幕坐标用于中心渐隐
+          vScreenPos = gl_Position.xy / gl_Position.w;
         }
       `,
-      fragmentShader: `
+      fragmentShader: /* glsl */`
         precision highp float;
         varying float vAlpha;
         varying float vSpeedLayer;
         varying float vSprint;
         varying vec2 vStreakDir;
+        varying vec2 vScreenPos;
 
         void main() {
-          // v8.0: 沿速度方向拉伸的椭圆粒子
           vec2 coord = gl_PointCoord - 0.5;
-          // 沿拖尾方向压缩
+
+          // 沿拖尾方向拉伸粒子
           float streakLen = length(vStreakDir);
           if (streakLen > 0.001) {
             vec2 streakAxis = normalize(vStreakDir);
             float along = dot(coord, streakAxis);
             float across = dot(coord, vec2(-streakAxis.y, streakAxis.x));
-            coord = vec2(along / (1.0 + streakLen * 2.0), across);
+            coord = vec2(along / (1.0 + streakLen * 3.0), across * (1.0 + streakLen * 0.2));
           }
+
           float d = length(coord) * 2.0;
           float alpha = 1.0 - smoothstep(0.0, 1.0, d);
           float core = 1.0 - smoothstep(0.0, 0.12, d);
-          alpha = max(alpha * 0.7, core * 0.5);
+          alpha = max(alpha * 0.4, core * 0.35);
           alpha *= vAlpha;
-          if (alpha < 0.01) discard;
 
-          // v16: 更亮的粒子颜色
-          vec3 bgColor = vec3(1.0, 1.0, 1.0);
-          vec3 midColor = vec3(0.85, 0.9, 1.0);
-          vec3 fgColor = vec3(0.7, 0.85, 1.0);
-          vec3 sprintColor = vec3(0.5, 0.85, 1.0);
-          vec3 hyperColor = vec3(0.3, 0.95, 1.0);
+          // === 中心渐隐：屏幕中心粒子降低透明度，保证视野清晰 ===
+          float centerDist = length(vScreenPos);
+          float centerFade = smoothstep(0.15, 0.55, centerDist); // 0→1 from center to edge
+          alpha *= 0.2 + centerFade * 0.8;
 
-          vec3 color = mix(bgColor, midColor, smoothstep(0.0, 0.5, vSpeedLayer));
-          color = mix(color, fgColor, smoothstep(0.5, 1.0, vSpeedLayer));
-          color = mix(color, sprintColor, vSprint * 0.7);
-          // 前景粒子冲刺时偏超亮青蓝
-          color = mix(color, hyperColor, vSprint * vSpeedLayer * 0.6);
+          alpha = clamp(alpha, 0.0, 1.0);
+          if (alpha < 0.002) discard;
+
+          // === 颜色：速度越快越偏暖 ===
+          vec3 slowColor = vec3(0.75, 0.85, 1.0);   // 冷蓝白
+          vec3 fastColor = vec3(0.92, 0.88, 0.8);    // 暖白
+          vec3 sprintColor = vec3(1.0, 0.7, 0.4);    // 暖金
+
+          vec3 color = mix(slowColor, fastColor, vSprint * 0.6);
+          color = mix(color, sprintColor, vSprint * vSpeedLayer * 0.4);
+
+          // 远景偏蓝、近景偏白
+          color = mix(color, vec3(1.0, 1.0, 1.0), vSpeedLayer * 0.3);
 
           gl_FragColor = vec4(color, alpha);
         }
@@ -174,17 +198,19 @@ export class ParticleFlow {
     });
 
     this.points = new THREE.Points(this.geometry, this.material);
-    this.camera.add(this.points);
+    this.group.add(this.points);
 
-    console.log('[ParticleFlow] v8.0 超空间粒子流初始化完成，粒子数:', this.count, '分布范围:', cfg.spread);
+    console.log('[ParticleFlow] v19.1 初始化完成，粒子数:', this.count, '分布范围:', spread);
   }
 
-  resetParticle(i, spread) {
+  /**
+   * 球形均匀分布（静止时使用）
+   */
+  resetParticleSphere(i, spread) {
     const i3 = i * 3;
-    // v8.4: 球形分布 + 前方集中
     const theta = Math.random() * Math.PI * 2;
     const phi = Math.acos(2 * Math.random() - 1);
-    const r = spread * (0.3 + Math.random() * 0.7);
+    const r = spread * (0.2 + Math.random() * 0.8);
 
     this.positions[i3]     = r * Math.sin(phi) * Math.cos(theta);
     this.positions[i3 + 1] = r * Math.sin(phi) * Math.sin(theta);
@@ -192,74 +218,104 @@ export class ParticleFlow {
   }
 
   /**
-   * v18: 在运动方向前方生成粒子 — 简洁可靠
-   * 粒子出现在前方锥形区域，随运动流经摄像机
+   * v19: 在粒子流远端重生粒子
+   * localDir 是相机局部空间的归一化移动方向
+   * 粒子出生在 +localDir 方向（运动前方远处），随后沿 -localDir 流向相机并掠过
    */
-  resetParticleStream(i, spread, velDir, vLen) {
+  resetParticleFlow(i, spread, localDir) {
     const i3 = i * 3;
-    const invLen = 1 / vLen;
-    // 前方方向（摄像机移动方向的反方向 = 粒子来源方向）
-    const sx = velDir.x * invLen;
-    const sy = -velDir.y * invLen;
-    const sz = velDir.z * invLen;
-    
-    // 前方距离 + 锥形散布
-    const forwardDist = spread * (0.2 + Math.random() * 0.8);
-    const spreadAngle = Math.random() * Math.PI * 2;
-    const spreadR = spread * (0.05 + Math.random() * 0.25);
-    
-    this.positions[i3]     = sx * forwardDist + Math.cos(spreadAngle) * spreadR;
-    this.positions[i3 + 1] = sy * forwardDist + Math.sin(spreadAngle) * spreadR;
-    this.positions[i3 + 2] = sz * forwardDist + (Math.random() - 0.5) * spread * 0.3;
+
+    // 粒子出生在运动方向的前方远处（+localDir）
+    const forwardDist = spread * (0.4 + Math.random() * 0.6);
+    // 垂直于运动方向的散布
+    const perpRadius = spread * (0.1 + Math.random() * 0.5);
+
+    // 在垂直于 localDir 的平面上随机取一个方向
+    const angle = Math.random() * Math.PI * 2;
+    // 构建垂直于 localDir 的基向量
+    let perpX, perpY, perpZ;
+    if (Math.abs(localDir.x) < 0.9) {
+      const len1 = Math.sqrt(localDir.z * localDir.z + localDir.y * localDir.y);
+      perpX = 0;
+      perpY = -localDir.z / len1;
+      perpZ = localDir.y / len1;
+    } else {
+      const len1 = Math.sqrt(localDir.z * localDir.z + localDir.x * localDir.x);
+      perpX = localDir.z / len1;
+      perpY = 0;
+      perpZ = -localDir.x / len1;
+    }
+    const perp2X = localDir.y * perpZ - localDir.z * perpY;
+    const perp2Y = localDir.z * perpX - localDir.x * perpZ;
+    const perp2Z = localDir.x * perpY - localDir.y * perpX;
+
+    const px = perpX * Math.cos(angle) + perp2X * Math.sin(angle);
+    const py = perpY * Math.cos(angle) + perp2Y * Math.sin(angle);
+    const pz = perpZ * Math.cos(angle) + perp2Z * Math.sin(angle);
+
+    // 出生位置 = +localDir * 前方距离 + 垂直散布
+    // 粒子随后沿 -localDir 流向相机
+    this.positions[i3]     = localDir.x * forwardDist + px * perpRadius;
+    this.positions[i3 + 1] = localDir.y * forwardDist + py * perpRadius;
+    this.positions[i3 + 2] = localDir.z * forwardDist + pz * perpRadius;
   }
 
   update(delta, elapsed, speed, velocity) {
     this.speed = speed;
 
+    // 同步跟随 group 到相机位置+朝向（group-local = camera-local）
+    this.group.position.copy(this.camera.position);
+    this.group.quaternion.copy(this.camera.quaternion);
+
     if (velocity) {
-      this._velocity.copy(velocity);
+      this._worldVel.copy(velocity);
     }
 
-    // 更新 Shader uniforms — 用原始velocity（已在摄像机局部空间）
+    // 世界速度 → group-local 方向
+    const vLen = this._worldVel.length();
+    if (vLen > 0.01) {
+      this._invQuat.copy(this.group.quaternion).invert();
+      this._localVel.copy(this._worldVel).applyQuaternion(this._invQuat).normalize();
+    } else {
+      this._localVel.set(0, 0, 0);
+    }
+
     const uniforms = this.material.uniforms;
     uniforms.uSpeed.value = speed;
-    uniforms.uVelocity.value.copy(this._velocity);
+    uniforms.uVelocity.value.copy(this._localVel);
     uniforms.uTime.value = elapsed;
 
-    // 冲刺因子平滑过渡
-    const isSprinting = speed > config.player.maxSpeed * config.player.sprintMultiplier * 0.8;
+    const maxSpd = config.player.maxSpeed;
+    const sprintMul = config.player.sprintMultiplier || 3.0;
+    const isSprinting = speed > maxSpd * sprintMul * 0.8;
     const targetSprint = isSprinting ? 1.0 : 0.0;
     this._sprintFactor += (targetSprint - this._sprintFactor) * Math.min(1, delta * 5);
     uniforms.uSprintFactor.value = this._sprintFactor;
 
-    // v18: 彻底重写 — 简单可靠的粒子流
     const spread = config.particleFlow?.spread || 200;
     const pos = this.positions;
-    const vel = this._velocity;
-    const vLen = vel.length();
-    
+
     for (let i = 0; i < this.count; i++) {
       const i3 = i * 3;
-      
+
       if (vLen > 0.5) {
-        // 粒子移动速度随实际速度变化
-        const moveSpeed = speed / 40;
-        
-        // 移动粒子：与velocity反方向 = 粒子迎面而来
-        pos[i3]     += vel.x * delta * moveSpeed * 20;
-        pos[i3 + 1] -= vel.y * delta * moveSpeed * 20;
-        pos[i3 + 2] -= vel.z * delta * moveSpeed * 20;
-        
-        // 太远或太近(飞过摄像机) → 重生到前方
-        const dist = Math.sqrt(pos[i3]*pos[i3] + pos[i3+1]*pos[i3+1] + pos[i3+2]*pos[i3+2]);
-        if (dist > spread * 1.2 || dist < 10) {
-          this.resetParticleStream(i, spread, vel, vLen);
+        const flowSpeed = (speed / 40) * delta * 25;
+        pos[i3]     -= this._localVel.x * flowSpeed;
+        pos[i3 + 1] -= this._localVel.y * flowSpeed;
+        pos[i3 + 2] -= this._localVel.z * flowSpeed;
+
+        const dist = Math.sqrt(
+          pos[i3] * pos[i3] + pos[i3 + 1] * pos[i3 + 1] + pos[i3 + 2] * pos[i3 + 2]
+        );
+        if (dist > spread * 1.3 || dist < 5) {
+          this.resetParticleFlow(i, spread, this._localVel);
         }
       } else {
-        // 静止时：超出范围重生为球形
-        const dist = Math.sqrt(pos[i3]*pos[i3] + pos[i3+1]*pos[i3+1] + pos[i3+2]*pos[i3+2]);
+        const dist = Math.sqrt(
+          pos[i3] * pos[i3] + pos[i3 + 1] * pos[i3 + 1] + pos[i3 + 2] * pos[i3 + 2]
+        );
         if (dist > spread * 1.5) {
-          this.resetParticle(i, spread);
+          this.resetParticleSphere(i, spread);
         }
       }
     }
@@ -268,8 +324,9 @@ export class ParticleFlow {
   }
 
   dispose() {
-    if (this.camera && this.points) {
-      this.camera.remove(this.points);
+    if (this.group) {
+      if (this.points) this.group.remove(this.points);
+      if (this.group.parent) this.group.parent.remove(this.group);
     }
     if (this.geometry) this.geometry.dispose();
     if (this.material) this.material.dispose();

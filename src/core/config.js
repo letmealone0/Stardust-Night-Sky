@@ -175,20 +175,20 @@ export const config = {
     saturation: 1.15,          // v14: 增强饱和度让色彩更鲜艳
   },
 
-  // ---- 速度线 ----
+  // ---- 速度线（仅冲刺时出现，极简设计）----
   speedLines: {
-    count: 1500,              // v18: 增加速度线数量
-    minRadius: 1.0,          // 最小分布半径
-    maxRadius: 18.0,         // v8.0: 更大分布范围
-    minLength: 25,           // v16: 更长的速度线
-    maxLength: 120,          // v16: 更长
-    zStart: -100,            // v8.0
-    zEnd: -10,               // v8.0
-    speedThreshold: 1.5,     // v8.0: 更易触发
-    opacityTarget: 1.2,      // v8.0: 更亮
-    opacitySpeed: 0.25,      // 透明度过渡速度
-    moveFactor: 25,          // v8.0: 更快流动
-    sprintExtraCount: 200,   // v8.0: 冲刺额外亮线
+    count: 400,               // v19.5: 适度增加，但集中边缘
+    minRadius: 15.0,          // 更远离中心
+    maxRadius: 70.0,          // 更大 = 屏幕边缘
+    minLength: 4,
+    maxLength: 16,
+    zStart: -100,
+    zEnd: -8,
+    speedThreshold: 999,
+    opacityTarget: 0.22,
+    opacitySpeed: 0.3,
+    moveFactor: 35,
+    sprintExtraCount: 150,
   },
 
   // ---- 黑洞系统 ----
@@ -264,10 +264,10 @@ export const config = {
 
   // ---- 全方向粒子流 ----
   particleFlow: {
-    count: 20000,             // v18: 更多粒子确保各处可见
-    spread: 150,               // v8.3: 更集中，粒子密度更高
+    count: 3000,              // v19.3: 极简粒子，仅点缀运动感
+    spread: 200,
     sprintColorBoost: 1.5,
-    streakLength: 5.0,         // v8.3: 更长拖尾
+    streakLength: 2.5,
   },
 
   // ---- 天体宏观运动控制 ----

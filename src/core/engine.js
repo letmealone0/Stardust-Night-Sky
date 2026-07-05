@@ -237,13 +237,39 @@ export class Engine {
       return;
     }
 
-    // 更新系统 (v9.5: P键仅冻结天体, 玩家仍可自由移动)
+    // v19.5: 计算世界空间速度 — 相机方向即时响应鼠标，位置差捕捉侧飞
+    if (!this._prevCamPos) this._prevCamPos = new THREE.Vector3();
+    if (!this._worldVel) this._worldVel = new THREE.Vector3();
+    if (!this._camFwd) this._camFwd = new THREE.Vector3();
+
+    // 位置差速度（准确但滞后一帧）
+    const deltaVel = this._worldVel.copy(this.camera.camera.position)
+      .sub(this._prevCamPos).divideScalar(Math.max(delta, 0.0001));
+    this._prevCamPos.copy(this.camera.camera.position);
+
+    const speed = this.player.getSpeed();
+
+    // 相机当前朝向（即时响应鼠标）
+    this._camFwd.set(0, 0, -1).applyQuaternion(this.camera.camera.quaternion);
+
+    // 将位置差速度分解为：沿相机朝向分量 + 侧向分量
+    const fwdComponent = deltaVel.dot(this._camFwd);
+    const fwdVel = this._camFwd.clone().multiplyScalar(Math.max(fwdComponent, 0));
+    const lateralVel = deltaVel.clone().sub(fwdVel);
+
+    // 混合：前进方向用相机即时朝向（100%响应鼠标），侧向用位置差（30%平滑）
+    this._worldVel.copy(this._camFwd).multiplyScalar(speed > 0.5 ? speed : fwdComponent);
+    this._worldVel.addScaledVector(lateralVel, 0.3);
+
+    if (speed < 0.5) this._worldVel.set(0, 0, 0);
+
+    // 更新系统
     this.player.update(delta);
     this.scene.update(
       this.isMotionFrozen ? 0 : delta,
       elapsed,
-      this.player.getSpeed(),
-      this.player.getVelocity()
+      speed,
+      this._worldVel
     );
     this.hud.update(delta);
 
