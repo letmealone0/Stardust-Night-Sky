@@ -249,10 +249,10 @@ export class ParticleFlow {
     for (let i = 0; i < this.count; i++) {
       const i3 = i * 3;
 
-      // 移动粒子（沿velocity反方向 = 摄像机运动方向的反方向 = 粒子迎面而来）
-      pos[i3]     -= vel.x * delta * speedNorm * 8;
-      pos[i3 + 1] += vel.y * delta * speedNorm * 8;
-      pos[i3 + 2] += vel.z * delta * speedNorm * 8;
+      // 移动粒子：与velocity反方向 = 粒子迎面而来
+      pos[i3]     += vel.x * delta * speedNorm * 8;
+      pos[i3 + 1] -= vel.y * delta * speedNorm * 8;
+      pos[i3 + 2] -= vel.z * delta * speedNorm * 8;
 
       const distSq = pos[i3] * pos[i3] + pos[i3+1] * pos[i3+1] + pos[i3+2] * pos[i3+2];
       
