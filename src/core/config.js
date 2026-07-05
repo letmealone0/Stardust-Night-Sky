@@ -9,7 +9,7 @@ export const config = {
     fov: 75,
     near: 1,
     far: 200000,
-    startPosition: { x: 35000, y: 560, z: -30000 }, // v10.0: 太阳系世界位置=galaxyCenter+solarOrbit
+    startPosition: { x: 37500, y: 1200, z: -28500 }, // v16: 远离太阳，能看到地球的位置
   },
 
   // ---- 玩家控制 (v9.0: 惯性飞行系统) ----
