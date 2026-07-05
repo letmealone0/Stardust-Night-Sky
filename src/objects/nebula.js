@@ -54,13 +54,15 @@ export class NebulaSystem {
     group.position.copy(position);
 
     const secondColor = this._pickSecondColor(color);
-    const densityBase = randomRange(0.8, 1.5);  // v15: 增大密度范围
+    const thirdColor = this._pickEdgeColor(color);  // v19.9: 边缘第三色
+    const densityBase = randomRange(0.8, 1.5);
 
     const material = new THREE.ShaderMaterial({
       uniforms: {
         uTime: { value: 0 },
         uColor1: { value: new THREE.Color(color.r, color.g, color.b) },
         uColor2: { value: new THREE.Color(secondColor.r, secondColor.g, secondColor.b) },
+        uColor3: { value: new THREE.Color(thirdColor.r, thirdColor.g, thirdColor.b) },
         uOpacity: { value: opacity },
         uScale: { value: scale },
         uDensity: { value: densityBase },
@@ -81,13 +83,13 @@ export class NebulaSystem {
         uniform float uTime;
         uniform vec3 uColor1;
         uniform vec3 uColor2;
+        uniform vec3 uColor3;
         uniform float uOpacity;
         uniform float uScale;
         uniform float uDensity;
         uniform vec3 uCameraLocalPos;
         uniform vec3 uSunDir;
 
-        // ---- 轻量噪声（2 次乘法 hash） ----
         float hash(vec3 p) {
           return fract(sin(dot(p, vec3(127.1, 311.7, 74.7))) * 43758.5453);
         }
@@ -105,39 +107,61 @@ export class NebulaSystem {
           );
         }
 
-        // 2 层 FBM + 1 层 turbulence，平衡性能和细节
+        // v19.9: 域扭曲 — 让输入坐标产生有机形变
+        vec3 domainWarp(vec3 p) {
+          vec3 q = p;
+          q.x += noise(p + vec3(0.3, 0.0, 0.0)) * 0.7;
+          q.y += noise(p + vec3(0.0, 0.3, 0.0)) * 0.7;
+          q.z += noise(p + vec3(0.0, 0.0, 0.3)) * 0.7;
+          return q;
+        }
+
+        // v19.9: 山脊噪声 — 产生纤细丝状结构
+        float ridgeNoise(vec3 p) {
+          float n = abs(noise(p));
+          return pow(1.0 - n, 3.0);
+        }
+
         float fbm(vec3 p) {
           float v = 0.0, a = 0.5;
           v += a * noise(p); p = p * 2.02 + vec3(100.0); a *= 0.5;
           v += a * noise(p); p = p * 2.03 + vec3(200.0); a *= 0.5;
-          v += a * abs(noise(p) * 2.0 - 1.0);  // turbulence 层，增加丝絮感
+          v += a * abs(noise(p) * 2.0 - 1.0);
           return v;
         }
 
-        // v8.2: 改进密度场 — 更多细节+更柔和球形衰减 + v13密度梯度
+        // v19.9: 重新设计的密度场 — 域扭曲 + 山脊 + 层状结构
         float density(vec3 p) {
           vec3 np = p / (uScale * 0.5);
           float r = length(np);
-          // v13: 密度梯度 — 中心更稠密，边缘稀薄
           float gradientFalloff = 1.0 - smoothstep(0.0, 1.0, r);
           gradientFalloff = pow(gradientFalloff, 1.5);
-          float falloff = gradientFalloff;
-          if (falloff < 0.001) return 0.0;
+          if (gradientFalloff < 0.001) return 0.0;
 
-          // v11: 增强湍流 — 使用配置中的湍流速度
-          float n = 0.0, amp = 0.5;
-          vec3 q = np * 1.5 + uTime * 0.015;
-          n += amp * noise(q); q = q * 2.1 + 50.0; amp *= 0.5;
-          n += amp * noise(q); q = q * 2.1 + 80.0; amp *= 0.5;
-          n += amp * noise(q); q = q * 2.1 + 110.0; amp *= 0.5;
-          n += amp * abs(noise(q * 1.5 + uTime * 0.01) * 2.0 - 1.0);
+          // 域扭曲坐标
+          vec3 wp = domainWarp(np * 1.8 + uTime * 0.01);
 
-          float filaments = abs(noise(np * 3.5 + uTime * 0.008) * 2.0 - 1.0);
-          n = mix(n, filaments, 0.35);
-          return n * falloff * uDensity;
+          // 基础 FBM 云团
+          float baseFbm = 0.0, amp = 0.5;
+          vec3 q = wp;
+          q += uTime * 0.015;
+          baseFbm += amp * noise(q); q = q * 2.1 + 50.0; amp *= 0.5;
+          baseFbm += amp * noise(q); q = q * 2.1 + 80.0; amp *= 0.5;
+          baseFbm += amp * noise(q); q = q * 2.1 + 110.0; amp *= 0.5;
+
+          // 山脊噪声层 — 丝状结构
+          float ridge = ridgeNoise(wp * 2.5 + uTime * 0.005)
+                      + ridgeNoise(wp * 1.5 - uTime * 0.003) * 0.5;
+
+          // 湍流层（卷曲感）
+          float turb = abs(noise(wp * 1.5 + uTime * 0.012) * 2.0 - 1.0);
+
+          // 混合：云团为底，山脊叠加，湍流点缀
+          float n = baseFbm * 0.55 + ridge * 0.3 + turb * 0.15;
+
+          return n * gradientFalloff * uDensity;
         }
 
-        // 光线-盒子相交（对 rd 分量做安全求倒数，避免除零产生 inf/NaN）
         vec2 boxHit(vec3 ro, vec3 rd, vec3 hs) {
           vec3 m = 1.0 / max(abs(rd), 1e-6) * sign(rd);
           vec3 n = m * ro;
@@ -152,7 +176,6 @@ export class NebulaSystem {
         void main() {
           vec3 ro = uCameraLocalPos;
           vec3 toFrag = vLocalPos - uCameraLocalPos;
-          // 防止相机与片元重合时 normalize 零向量产生 NaN
           vec3 rd = (dot(toFrag, toFrag) < 1e-10) ? vec3(0.0, 0.0, 1.0) : normalize(toFrag);
 
           vec3 halfSize = vec3(uScale * 0.5);
@@ -168,9 +191,6 @@ export class NebulaSystem {
           float accAlpha = 0.0;
           float tCur = t.x + stepSize * hash(ro + fract(uTime)) * 0.5;
 
-          // 第三色：亮白高光（密度最高处）
-          vec3 uColor3 = mix(uColor1, vec3(1.0, 0.95, 0.9), 0.3);
-
           for (int i = 0; i < MAX_STEPS; i++) {
             if (i >= steps || accAlpha > 0.95) break;
 
@@ -179,15 +199,15 @@ export class NebulaSystem {
 
             if (d > 0.003) {
               float tc = d / uDensity;
-              vec3 col = mix(uColor1, uColor2, smoothstep(0.1, 0.55, tc));
-              col = mix(col, uColor3, smoothstep(0.5, 0.85, tc) * 0.4);
+              // v19.9: 三层渐变 — 稠密核心 → 中间色 → 稀薄边缘
+              vec3 col = mix(uColor1, uColor2, smoothstep(0.15, 0.5, tc));
+              col = mix(col, uColor3, smoothstep(0.45, 0.85, tc));
 
-              // v13: Mie前向散射 — 光源方向响应
               float sunDot = max(0.0, dot(normalize(sp), uSunDir));
-              float miePhase = 0.5 * (1.0 + sunDot * sunDot); // Henyey-Greenstein近似
-              col += uColor1 * miePhase * 0.25;
+              float miePhase = 0.5 * (1.0 + sunDot * sunDot);
+              col += uColor1 * miePhase * 0.2;
 
-              float alpha = d * stepSize * 0.25 * uOpacity;  // v15: 增大alpha让星云更浓密
+              float alpha = d * stepSize * 0.25 * uOpacity;
               accColor += col * alpha * (1.0 - accAlpha);
               accAlpha += alpha * (1.0 - accAlpha);
             }
@@ -234,6 +254,16 @@ export class NebulaSystem {
       r: Math.min(1, c.r + (c.r < 0.4 ? shift : -shift * 0.5)),
       g: Math.min(1, c.g + (c.g < 0.4 ? shift : -shift * 0.5)),
       b: Math.min(1, c.b + (c.b < 0.4 ? shift : -shift * 0.5)),
+    };
+  }
+
+  /** v19.9: 生成边缘色 — 更暗更深，模拟星云外围 */
+  _pickEdgeColor(c) {
+    const edgeDarken = 0.3;
+    return {
+      r: c.r * edgeDarken + (c.r < 0.2 ? 0.05 : 0),
+      g: c.g * edgeDarken + (c.g < 0.2 ? 0.03 : 0),
+      b: c.b * (edgeDarken + 0.1), // 边缘偏蓝紫
     };
   }
 

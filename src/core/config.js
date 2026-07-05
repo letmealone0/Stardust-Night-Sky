@@ -118,10 +118,11 @@ export const config = {
     respawnMax: 7000,        // v8.2
     // v11: 三类星云 + 湍流 + 飞入
     types: ['emission', 'reflection', 'dark'],
+    // v19.9: 三层渐变 — 核心/中间/边缘（参考真实星云光谱）
     typeColors: {
-      emission:    { r: 0.8, g: 0.25, b: 0.1 },   // 暖红/橙
-      reflection:  { r: 0.15, g: 0.3, b: 0.8 },    // 冷蓝/紫
-      dark:        { r: 0.08, g: 0.06, b: 0.12 },   // 极暗
+      emission:    { r: 0.9, g: 0.18, b: 0.12 },   // 发射星云: 红/品红 (Hα 656nm)
+      reflection:  { r: 0.18, g: 0.35, b: 0.85 },   // 反射星云: 蓝 (Rayleigh散射)
+      dark:        { r: 0.06, g: 0.05, b: 0.10 },   // 暗星云: 极暗棕黑
     },
     turbulenceSpeed: 0.015,  // 湍流流动速度
     fogDensity: 0.5,         // 飞入时最大雾化密度
