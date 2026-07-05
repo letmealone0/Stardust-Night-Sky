@@ -109,11 +109,11 @@ export class ParticleFlow {
           pos.y += cos(t * 0.7 + aRandom * 6.28) * 1.2;
           pos.z += sin(t * 0.5 + aRandom * 6.28) * 1.2;
 
-          // v17-fix: 更亮的粒子，冲刺时更明显
-          float baseAlpha = 0.5;
-          vAlpha = baseAlpha + speedFactor * (0.3 + aRandom * 0.2);
-          vAlpha *= (0.8 + vSpeedLayer * 0.4);
-          vAlpha *= (1.0 + uSprintFactor * 2.0);
+          // v18: 更亮的粒子 — 基础alpha 0.6，静止时也可见
+          float baseAlpha = 0.6;
+          vAlpha = baseAlpha + speedFactor * (0.3 + aRandom * 0.15);
+          vAlpha *= (0.85 + vSpeedLayer * 0.3);
+          vAlpha *= (1.0 + uSprintFactor * 2.5);
           vSprint = uSprintFactor;
 
           // v16: 传递屏幕空间拖尾方向
@@ -122,8 +122,8 @@ export class ParticleFlow {
           vec2 screenStreak = (streakEnd.xy / streakEnd.w - mvPosition.xy / mvPosition.w);
           vStreakDir = normalize(screenStreak) * length(screenStreak) * 0.3;
 
-          // v16: 增大粒子尺寸
-          gl_PointSize = aSize * 2.5 * uPixelRatio * (500.0 / -mvPosition.z) * (1.0 + uSprintFactor * 1.2);
+          // v18: 增大粒子尺寸 ×3
+          gl_PointSize = aSize * 3.0 * uPixelRatio * (500.0 / -mvPosition.z) * (1.0 + uSprintFactor * 1.5);
           gl_Position = projectionMatrix * mvPosition;
         }
       `,
@@ -192,28 +192,25 @@ export class ParticleFlow {
   }
 
   /**
-   * v17-fix2: 在运动方向前方锥形区域生成粒子
-   * velocity已在摄像机局部空间，直接使用
+   * v18: 在运动方向前方生成粒子 — 简洁可靠
+   * 粒子出现在前方锥形区域，随运动流经摄像机
    */
-  resetParticleAhead(i, spread, velDir) {
+  resetParticleStream(i, spread, velDir, vLen) {
     const i3 = i * 3;
-    const vLen = Math.sqrt(velDir.x*velDir.x + velDir.y*velDir.y + velDir.z*velDir.z);
-    if (vLen < 0.5) { this.resetParticle(i, spread); return; }
+    const invLen = 1 / vLen;
+    // 前方方向（摄像机移动方向的反方向 = 粒子来源方向）
+    const sx = velDir.x * invLen;
+    const sy = -velDir.y * invLen;
+    const sz = velDir.z * invLen;
     
-    // 前方方向 = velocity的反方向（velocity.z负=前进，前方=+Z方向）
-    const nx = -velDir.x / vLen;
-    const ny = velDir.y / vLen;
-    const nz = velDir.z / vLen;
+    // 前方距离 + 锥形散布
+    const forwardDist = spread * (0.2 + Math.random() * 0.8);
+    const spreadAngle = Math.random() * Math.PI * 2;
+    const spreadR = spread * (0.05 + Math.random() * 0.25);
     
-    const forwardDist = spread * (0.3 + Math.random() * 0.7);
-    const coneAngle = Math.random() * Math.PI * 2;
-    const coneRadius = (Math.random() * 0.4 + 0.1) * spread;
-    const perpX = Math.cos(coneAngle) * coneRadius;
-    const perpY = Math.sin(coneAngle) * coneRadius;
-    
-    this.positions[i3]     = nx * forwardDist + perpX;
-    this.positions[i3 + 1] = ny * forwardDist + perpY;
-    this.positions[i3 + 2] = nz * forwardDist + (Math.random() - 0.5) * spread * 0.3;
+    this.positions[i3]     = sx * forwardDist + Math.cos(spreadAngle) * spreadR;
+    this.positions[i3 + 1] = sy * forwardDist + Math.sin(spreadAngle) * spreadR;
+    this.positions[i3 + 2] = sz * forwardDist + (Math.random() - 0.5) * spread * 0.3;
   }
 
   update(delta, elapsed, speed, velocity) {
@@ -235,39 +232,34 @@ export class ParticleFlow {
     this._sprintFactor += (targetSprint - this._sprintFactor) * Math.min(1, delta * 5);
     uniforms.uSprintFactor.value = this._sprintFactor;
 
-    // CPU端粒子位置更新
+    // v18: 彻底重写 — 简单可靠的粒子流
     const spread = config.particleFlow?.spread || 200;
     const pos = this.positions;
     const vel = this._velocity;
-    // v17-fix2: velocity已在摄像机局部空间(player用controls.moveForward处理), 不需要再变换
-    const speedNorm = Math.min(speed / 40, 3.0);
     const vLen = vel.length();
-    // 流向：粒子应移动的方向（与velocity相反）
-    const streamX = -vel.x, streamY = vel.y, streamZ = vel.z;
-    const streamLen = Math.sqrt(streamX*streamX + streamY*streamY + streamZ*streamZ);
     
     for (let i = 0; i < this.count; i++) {
       const i3 = i * 3;
-
-      // 移动粒子：与velocity反方向 = 粒子迎面而来
-      pos[i3]     += vel.x * delta * speedNorm * 8;
-      pos[i3 + 1] -= vel.y * delta * speedNorm * 8;
-      pos[i3 + 2] -= vel.z * delta * speedNorm * 8;
-
-      const distSq = pos[i3] * pos[i3] + pos[i3+1] * pos[i3+1] + pos[i3+2] * pos[i3+2];
       
-      if (distSq > spread * spread * 1.5 || 
-          (vLen > 0.5 && distSq < spread * spread * 0.02)) {
-        if (vLen > 0.5) {
-          this.resetParticleAhead(i, spread, vel);
-        } else {
-          this.resetParticle(i, spread);
+      if (vLen > 0.5) {
+        // 粒子移动速度随实际速度变化
+        const moveSpeed = speed / 40;
+        
+        // 移动粒子：与velocity反方向 = 粒子迎面而来
+        pos[i3]     += vel.x * delta * moveSpeed * 20;
+        pos[i3 + 1] -= vel.y * delta * moveSpeed * 20;
+        pos[i3 + 2] -= vel.z * delta * moveSpeed * 20;
+        
+        // 太远或太近(飞过摄像机) → 重生到前方
+        const dist = Math.sqrt(pos[i3]*pos[i3] + pos[i3+1]*pos[i3+1] + pos[i3+2]*pos[i3+2]);
+        if (dist > spread * 1.2 || dist < 10) {
+          this.resetParticleStream(i, spread, vel, vLen);
         }
-      }
-      else if (vLen > 2.0 && Math.random() < 0.30) {
-        const dotProduct = (pos[i3] * streamX + pos[i3+1] * streamY + pos[i3+2] * streamZ) / (streamLen + 0.01);
-        if (dotProduct < 0 || Math.random() < 0.3) {
-          this.resetParticleAhead(i, spread, vel);
+      } else {
+        // 静止时：超出范围重生为球形
+        const dist = Math.sqrt(pos[i3]*pos[i3] + pos[i3+1]*pos[i3+1] + pos[i3+2]*pos[i3+2]);
+        if (dist > spread * 1.5) {
+          this.resetParticle(i, spread);
         }
       }
     }

@@ -177,7 +177,7 @@ export const config = {
 
   // ---- 速度线 ----
   speedLines: {
-    count: 1200,             // v16: 增加速度线数量
+    count: 1500,              // v18: 增加速度线数量
     minRadius: 1.0,          // 最小分布半径
     maxRadius: 18.0,         // v8.0: 更大分布范围
     minLength: 25,           // v16: 更长的速度线
@@ -264,7 +264,7 @@ export const config = {
 
   // ---- 全方向粒子流 ----
   particleFlow: {
-    count: 15000,             // v17: 更多粒子确保运动方向密集
+    count: 20000,             // v18: 更多粒子确保各处可见
     spread: 150,               // v8.3: 更集中，粒子密度更高
     sprintColorBoost: 1.5,
     streakLength: 5.0,         // v8.3: 更长拖尾
