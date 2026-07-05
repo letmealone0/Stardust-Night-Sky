@@ -191,23 +191,27 @@ export class ParticleFlow {
   }
 
   /**
-   * v8.4: 在运动方向前方锥形区域生成粒子
-   * v16: 修正流向 — 取反Y/Z得到正确的摄像机相对流向
+   * v17: 在运动方向前方锥形区域生成粒子（更集中、更密集）
    */
   resetParticleAhead(i, spread, velDir) {
     const i3 = i * 3;
-    const r = spread * (0.2 + Math.random() * 0.8);
-    // v16: 用修正后的流向（取反Y/Z）在前方生成粒子
+    const r = spread * (0.3 + Math.random() * 0.7);
     const streamX = velDir.x;
     const streamY = -velDir.y;
     const streamZ = -velDir.z;
     if (velDir.lengthSq() > 0.5) {
       const invLen = 1 / Math.sqrt(streamX*streamX + streamY*streamY + streamZ*streamZ);
       const sx = streamX * invLen, sy = streamY * invLen, sz = streamZ * invLen;
-      // 在流向的反方向（前方）生成粒子
-      this.positions[i3]     = -sx * r + (Math.random() - 0.5) * spread * 0.6;
-      this.positions[i3 + 1] = -sy * r + (Math.random() - 0.5) * spread * 0.6;
-      this.positions[i3 + 2] = -sz * r + (Math.random() - 0.5) * spread * 0.6;
+      // v17: 在流向反方向（前方）锥形区域生成，锥角更小更集中
+      const coneAngle = Math.random() * Math.PI * 2;
+      const coneRadius = (Math.random() * 0.4 + 0.1) * spread; // 更紧凑的锥形
+      const perpX = Math.cos(coneAngle) * coneRadius;
+      const perpY = Math.sin(coneAngle) * coneRadius;
+      // 前方距离：粒子出现在前方 30%-100% spread 范围
+      const forwardDist = spread * (0.3 + Math.random() * 0.7);
+      this.positions[i3]     = -sx * forwardDist + perpX;
+      this.positions[i3 + 1] = -sy * forwardDist + perpY;
+      this.positions[i3 + 2] = -sz * forwardDist + (Math.random() - 0.5) * spread * 0.3;
     } else {
       this.resetParticle(i, spread);
     }
@@ -238,25 +242,37 @@ export class ParticleFlow {
     const vel = this._velocity;
     const speedNorm = Math.min(speed / 50, 1.0);
 
-    // v8.4: 粒子从前方流来 — 密集锥形分布
+    // v17: 运动方向实时生成粒子 — 每帧在运动方向锥形区域重生一部分粒子
+    const vLen = Math.sqrt(vel.x * vel.x + vel.y * vel.y + vel.z * vel.z);
+    const streamX = vel.x, streamY = -vel.y, streamZ = -vel.z; // 修正后的流向
+    const streamLen = Math.sqrt(streamX*streamX + streamY*streamY + streamZ*streamZ);
+    
     for (let i = 0; i < this.count; i++) {
       const i3 = i * 3;
 
-      // v16: 修正流向 — X保持, Y/Z取反得到正确的摄像机相对流向
+      // 移动粒子（沿流向）
       pos[i3]     += vel.x * delta * speedNorm * 10;
       pos[i3 + 1] -= vel.y * delta * speedNorm * 10;
       pos[i3 + 2] -= vel.z * delta * speedNorm * 10;
 
       const distSq = pos[i3] * pos[i3] + pos[i3+1] * pos[i3+1] + pos[i3+2] * pos[i3+2];
-      const vLen = Math.sqrt(vel.x * vel.x + vel.y * vel.y + vel.z * vel.z);
       
-      // 粒子飞过相机或太远 → 在前方锥形区域重生
+      // 常规重生：太远或太近
       if (distSq > spread * spread * 1.5 || 
           (vLen > 0.5 && distSq < spread * spread * 0.02)) {
         if (vLen > 0.5) {
           this.resetParticleAhead(i, spread, vel);
         } else {
           this.resetParticle(i, spread);
+        }
+      }
+      // v17: 运动时，每帧主动重生30%粒子到运动方向前方
+      else if (vLen > 2.0 && Math.random() < 0.30) {
+        // 计算粒子是否在运动方向的后方（远离运动方向）
+        const dotProduct = (pos[i3] * streamX + pos[i3+1] * streamY + pos[i3+2] * streamZ) / (streamLen + 0.01);
+        // 后方粒子优先重生
+        if (dotProduct < 0 || Math.random() < 0.3) {
+          this.resetParticleAhead(i, spread, vel);
         }
       }
     }

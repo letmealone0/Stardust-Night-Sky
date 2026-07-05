@@ -264,7 +264,7 @@ export const config = {
 
   // ---- 全方向粒子流 ----
   particleFlow: {
-    count: 12000,             // v16: 增加粒子数让流动更密集
+    count: 15000,             // v17: 更多粒子确保运动方向密集
     spread: 150,               // v8.3: 更集中，粒子密度更高
     sprintColorBoost: 1.5,
     streakLength: 5.0,         // v8.3: 更长拖尾
