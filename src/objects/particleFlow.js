@@ -96,7 +96,11 @@ export class ParticleFlow {
           }
 
           // v16: 修正流向 — 取反Y/Z得到正确的摄像机相对流向
-          vec3 streamDir = vec3(velDir.x, -velDir.y, -velDir.z);\n          float flowStrength = speedFactor * 30.0 * layerSpeed;\n          vec3 streakOffset = streamDir * flowStrength * aRandom * uStreakLength;\n          pos -= streakOffset;
+          vec3 streamDir = vec3(velDir.x, -velDir.y, -velDir.z);
+          float flowStrength = speedFactor * 30.0 * layerSpeed;
+          vec3 streakOffset = streamDir * flowStrength * aRandom * uStreakLength;
+          // v16-fix: 不修改pos，streak只影响视觉形状不改变位置
+          // (旧代码 pos -= streakOffset 会把粒子推离摄像机300单位，完全压过CPU移动的12.8单位)
 
           // 静止时微小漂浮
           float t = uTime * 0.5 * layerSpeed;
