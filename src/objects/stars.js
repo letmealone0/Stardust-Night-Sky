@@ -28,6 +28,8 @@ export class StarField {
 
     this.createBrightStars(scene, spread);
     this.createMilkyWay(scene, spread);
+    // v13: 深场背景星星 (挂到scene而非galaxyGroup，作为固定背景)
+    this.createDeepField(scene);
 
     console.log('[StarField] 星空初始化完成');
   }
@@ -435,6 +437,66 @@ export class StarField {
     this.meshes.push(hazePoints);
     this.materials.push(hazeMat);
     this.geometries.push(geo);
+  }
+
+  /** v13: 深场背景星星 — 数十万微小暗淡的点，模拟真实天文照片背景密度 */
+  createDeepField(scene) {
+    const cfg = config.stars.deepField;
+    if (!cfg) return;
+    const { count, spread, opacity, minSize, maxSize } = cfg;
+
+    const geometry = new THREE.BufferGeometry();
+    const positions = new Float32Array(count * 3);
+    const colors = new Float32Array(count * 3);
+
+    for (let i = 0; i < count; i++) {
+      const i3 = i * 3;
+      const theta = Math.random() * Math.PI * 2;
+      const phi = Math.acos(2 * Math.random() - 1);
+      const r = spread * (0.6 + Math.random() * 0.4);
+
+      positions[i3] = r * Math.sin(phi) * Math.cos(theta);
+      positions[i3 + 1] = r * Math.sin(phi) * Math.sin(theta);
+      positions[i3 + 2] = r * Math.cos(phi);
+
+      // 真实颜色分布：大部分暗红/暗黄，少量蓝白
+      const type = Math.random();
+      let c;
+      if (type < 0.6) {
+        // M/K型红矮星 (最常见)
+        c = new THREE.Color().setHSL(0.05 + Math.random() * 0.05, 0.3 + Math.random() * 0.3, 0.3 + Math.random() * 0.2);
+      } else if (type < 0.85) {
+        // G型黄星
+        c = new THREE.Color().setHSL(0.1 + Math.random() * 0.05, 0.15 + Math.random() * 0.2, 0.4 + Math.random() * 0.3);
+      } else {
+        // B/A型蓝白星 (稀少)
+        c = new THREE.Color().setHSL(0.58 + Math.random() * 0.06, 0.1 + Math.random() * 0.2, 0.6 + Math.random() * 0.3);
+      }
+      colors[i3] = c.r;
+      colors[i3 + 1] = c.g;
+      colors[i3 + 2] = c.b;
+    }
+
+    geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+
+    const material = new THREE.PointsMaterial({
+      size: randomRange(minSize, maxSize),
+      vertexColors: true,
+      transparent: true,
+      opacity: opacity,
+      sizeAttenuation: true,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+    });
+
+    const points = new THREE.Points(geometry, material);
+    points.userData.isDeepField = true;
+    scene.add(points);
+
+    this.meshes.push(points);
+    this.materials.push(material);
+    this.geometries.push(geometry);
   }
 
   update(delta, elapsed) {

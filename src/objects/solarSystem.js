@@ -114,12 +114,81 @@ export class SolarSystem {
     });
     this.group.add(new THREE.Mesh(glowGeo, glowMat));
 
-    // 日冕
+    // 日冕 (v13: 增强带Simplex Noise湍流)
     const coronaGeo = new THREE.SphereGeometry(cfg.sunRadius * 4, 32, 32);
     this.coronaMaterial = new THREE.ShaderMaterial({
       uniforms: { uTime: { value: 0 } },
-      vertexShader: `varying vec3 vNormal; void main() { vNormal = normalize(normalMatrix * normal); gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
-      fragmentShader: `varying vec3 vNormal; uniform float uTime; void main() { float rim = 1.0 - max(0.0, dot(vNormal, vec3(0,0,1))); float intensity = pow(rim, 4.0); float pulse = 0.8 + sin(uTime * 0.5) * 0.2; vec3 c = mix(vec3(1.0, 0.6, 0.2), vec3(1.0, 0.3, 0.1), rim); gl_FragColor = vec4(c, intensity * 0.2 * pulse); }`,
+      vertexShader: `
+        varying vec3 vNormal;
+        varying vec3 vWorldPos;
+        void main() {
+          vNormal = normalize(normalMatrix * normal);
+          vWorldPos = (modelMatrix * vec4(position, 1.0)).xyz;
+          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        }
+      `,
+      fragmentShader: `
+        precision highp float;
+        varying vec3 vNormal;
+        varying vec3 vWorldPos;
+        uniform float uTime;
+
+        // Simplex 3D noise
+        vec4 permute(vec4 x){ return mod(((x*34.0)+1.0)*x, 289.0); }
+        vec4 taylorInvSqrt(vec4 r){ return 1.79284291400159 - 0.85373472095314 * r; }
+        float snoise(vec3 v){
+          const vec2 C = vec2(1.0/6.0, 1.0/3.0);
+          const vec4 D = vec4(0.0, 0.5, 1.0, 2.0);
+          vec3 i = floor(v + dot(v, C.yyy));
+          vec3 x0 = v - i + dot(i, C.xxx);
+          vec3 g = step(x0.yzx, x0.xyz);
+          vec3 l = 1.0 - g;
+          vec3 i1 = min(g.xyz, l.zxy);
+          vec3 i2 = max(g.xyz, l.zxy);
+          vec3 x1 = x0 - i1 + C.xxx;
+          vec3 x2 = x0 - i2 + C.yyy;
+          vec3 x3 = x0 - D.yyy;
+          i = mod(i, 289.0);
+          vec4 p = permute(permute(permute(i.z + vec4(0.0, i1.z, i2.z, 1.0)) + i.y + vec4(0.0, i1.y, i2.y, 1.0)) + i.x + vec4(0.0, i1.x, i2.x, 1.0));
+          float n_ = 1.0/7.0;
+          vec3 ns = n_ * D.wyz - D.xzx;
+          vec4 j = p - 49.0 * floor(p * ns.z * ns.z);
+          vec4 x_ = floor(j * ns.z);
+          vec4 y_ = floor(j - 7.0 * x_);
+          vec4 x = x_ * ns.x + ns.yyyy;
+          vec4 y = y_ * ns.x + ns.yyyy;
+          vec4 h = 1.0 - abs(x) - abs(y);
+          vec4 b0 = vec4(x.xy, y.xy);
+          vec4 b1 = vec4(x.zw, y.zw);
+          vec4 s0 = floor(b0)*2.0 + 1.0;
+          vec4 s1 = floor(b1)*2.0 + 1.0;
+          vec4 sh = -step(h, vec4(0.0));
+          vec4 a0 = b0.xzyw + s0.xzyw*sh.xxyy;
+          vec4 a1 = b1.xzyw + s1.xzyw*sh.zzww;
+          vec3 p0 = vec3(a0.xy, h.x);
+          vec3 p1 = vec3(a0.zw, h.y);
+          vec3 p2 = vec3(a1.xy, h.z);
+          vec3 p3 = vec3(a1.zw, h.w);
+          vec4 norm = taylorInvSqrt(vec4(dot(p0,p0), dot(p1,p1), dot(p2,p2), dot(p3,p3)));
+          p0 *= norm.x; p1 *= norm.y; p2 *= norm.z; p3 *= norm.w;
+          vec4 m = max(0.6 - vec4(dot(x0,x0), dot(x1,x1), dot(x2,x2), dot(x3,x3)), 0.0);
+          m = m * m;
+          return 42.0 * dot(m*m, vec4(dot(p0,x0), dot(p1,x1), dot(p2,x2), dot(p3,x3)));
+        }
+
+        void main() {
+          float rim = 1.0 - max(0.0, dot(vNormal, vec3(0.0, 0.0, 1.0)));
+          float intensity = pow(rim, 3.5);
+          float pulse = 0.8 + sin(uTime * 0.5) * 0.2;
+          // 米粒组织噪声
+          float granulation = snoise(vWorldPos * 0.04 + uTime * 0.08) * 0.5 + 0.5;
+          float gran2 = snoise(vWorldPos * 0.12 + uTime * 0.15) * 0.5 + 0.5;
+          float granMix = granulation * 0.7 + gran2 * 0.3;
+          vec3 c = mix(vec3(1.0, 0.65, 0.2), vec3(1.0, 0.9, 0.5), granMix);
+          c = mix(c, vec3(1.0, 0.3, 0.08), pow(rim, 5.0));
+          gl_FragColor = vec4(c, intensity * 0.25 * pulse);
+        }
+      `,
       blending: THREE.AdditiveBlending, side: THREE.BackSide, transparent: true, depthWrite: false,
     });
     this.group.add(new THREE.Mesh(coronaGeo, this.coronaMaterial));
@@ -238,20 +307,43 @@ export class SolarSystem {
     return moonPivot;
   }
 
-  /** v9.0: 菲涅尔大气边缘辉光 */
+  /** v13: Rayleigh散射大气层 (Space Engine风格) */
   addFresnelAtmosphere(group, radius, color) {
-    const atmGeo = new THREE.SphereGeometry(radius * 1.06, 32, 32);
+    const atmGeo = new THREE.SphereGeometry(radius * 1.15, 32, 32);
     const atmMat = new THREE.ShaderMaterial({
-      uniforms: { uColor: { value: color } },
-      vertexShader: `varying vec3 vNormal; varying vec3 vWorldPos;
-        void main() { vNormal = normalize(normalMatrix * normal); vWorldPos = (modelMatrix * vec4(position,1.0)).xyz;
-        gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }`,
-      fragmentShader: `varying vec3 vNormal; varying vec3 vWorldPos; uniform vec3 uColor;
-        void main() { vec3 viewDir = normalize(cameraPosition - vWorldPos);
-        float rim = 1.0 - max(0.0, dot(viewDir, vNormal));
-        float alpha = pow(rim, 3.0) * 0.5;
-        gl_FragColor = vec4(uColor * rim, alpha); }`,
-      blending: THREE.AdditiveBlending, side: THREE.BackSide, transparent: true, depthWrite: false,
+      uniforms: {
+        uColor: { value: color },
+        uSunPos: { value: new THREE.Vector3(0, 0, 0) },
+      },
+      vertexShader: `
+        varying vec3 vNormal;
+        varying vec3 vWorldPos;
+        void main() {
+          vNormal = normalize(normalMatrix * normal);
+          vWorldPos = (modelMatrix * vec4(position, 1.0)).xyz;
+          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        }
+      `,
+      fragmentShader: `
+        varying vec3 vNormal;
+        varying vec3 vWorldPos;
+        uniform vec3 uColor;
+        uniform vec3 uSunPos;
+        void main() {
+          vec3 viewDir = normalize(cameraPosition - vWorldPos);
+          vec3 lightDir = normalize(uSunPos - vWorldPos);
+          float sunAlign = max(0.0, dot(vNormal, lightDir));
+          float rim = 1.0 - max(0.0, dot(viewDir, vNormal));
+          vec3 scatterColor = uColor * (0.6 + sunAlign * 1.8);
+          float rimPow = pow(rim, 2.2);
+          float thickness = rimPow * (0.35 + sunAlign * 0.65);
+          gl_FragColor = vec4(scatterColor, thickness * 0.6);
+        }
+      `,
+      blending: THREE.AdditiveBlending,
+      side: THREE.BackSide,
+      transparent: true,
+      depthWrite: false,
     });
     group.add(new THREE.Mesh(atmGeo, atmMat));
   }
@@ -497,6 +589,14 @@ export class SolarSystem {
     if (this.coronaMaterial) {
       this.coronaMaterial.uniforms.uTime.value = elapsed;
     }
+    // v13: 更新大气层太阳位置
+    this.planets.forEach(planet => {
+      planet.group.traverse(child => {
+        if (child.material?.uniforms?.uSunPos) {
+          child.material.uniforms.uSunPos.value.set(0, 0, 0);
+        }
+      });
+    });
     // 小行星带
     if (this.asteroidBelt && this.asteroidBelt.pivot) {
       this.asteroidBelt.pivot.rotation.y += delta * 0.02;

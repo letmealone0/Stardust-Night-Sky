@@ -15,6 +15,7 @@ import { Pulsar } from '../objects/pulsar.js';
 import { SolarSystem } from '../objects/solarSystem.js';
 import { ParticleFlow } from '../objects/particleFlow.js';
 import { disposeAllPlanetTextures } from '../objects/planetTextures.js';
+import { LensFlareSystem } from '../objects/lensFlare.js';
 
 export class SceneManager {
   constructor() {
@@ -30,6 +31,7 @@ export class SceneManager {
       pulsar: null,
       solarSystem: null,
       particleFlow: null,
+      lensFlare: null,
     };
   }
 
@@ -120,6 +122,12 @@ export class SceneManager {
       this.objects.particleFlow.init(this.scene, camera);
     } catch (e) { console.warn('[Scene] 粒子流初始化失败:', e); }
 
+    // v13: 镜头光晕系统
+    try {
+      this.objects.lensFlare = new LensFlareSystem();
+      this.objects.lensFlare.init(this.scene);
+    } catch (e) { console.warn('[Scene] 镜头光晕初始化失败:', e); }
+
     // v9.0: 微弱环境光 — 仅防暗部死黑，太阳是主光源
     this.ambientLight = new THREE.AmbientLight(0x111133, config.solarSystem.ambientIntensity || 0.05);
     this.scene.add(this.ambientLight);
@@ -140,6 +148,12 @@ export class SceneManager {
     if (this.objects.pulsar) this.objects.pulsar.update(delta, elapsed);
     if (this.objects.solarSystem) this.objects.solarSystem.update(delta, elapsed);
     if (this.objects.particleFlow) this.objects.particleFlow.update(delta, elapsed, speed, velocity);
+
+    // v13: 更新镜头光晕 (跟随太阳)
+    if (this.objects.lensFlare && this.objects.solarSystem?.sun) {
+      const sunWorldPos = this.objects.solarSystem.sun.getWorldPosition(new THREE.Vector3());
+      this.objects.lensFlare.update(this.camera, sunWorldPos, 0.7, delta);
+    }
   }
 
   /**

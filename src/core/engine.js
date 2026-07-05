@@ -280,6 +280,16 @@ export class Engine {
       if (this.scene.objects.nebula) {
         this.scene.objects.nebula.updatePostEffects(u, this.camera.camera);
       }
+      // v13: 更新星云太阳方向
+      if (this.scene.objects.nebula) {
+        const sunPos = this.scene.objects.solarSystem?.sun?.getWorldPosition(new THREE.Vector3());
+        if (sunPos) {
+          this.scene.objects.nebula.nebulae?.forEach(neb => {
+            const sunDir = sunPos.clone().sub(neb.position).normalize();
+            neb.userData?.material?.uniforms?.uSunDir?.value?.copy(sunDir);
+          });
+        }
+      }
     }
 
     // v10.0: 银河宏观运动 — 太阳系公转 + 较差自转
@@ -299,6 +309,9 @@ export class Engine {
       }
     }
 
+    // v13: 运动模糊更新
+    this.postprocessing.updateMotionBlur(this.camera.camera, delta);
+
     // 渲染
     this.postprocessing.render();
   }
@@ -312,13 +325,23 @@ export class Engine {
       // v11: 降低尘埃透明度（新版三层结构）
       const dust = this.scene.objects.cosmicDust;
       if (dust && dust.layers) {
-        dust.layers.forEach(l => { if (l.material) l.material.opacity = (l.layerCfg?.opacity || 0.15) * q; });
+        dust.layers.forEach(l => {
+          if (l.material?.uniforms?.uBaseOpacity) {
+            l.material.uniforms.uBaseOpacity.value = (l.layerCfg?.opacity || 0.15) * q;
+          }
+        });
       }
       // 降低速度线透明度
       if (this.scene.objects.speedLines && this.scene.objects.speedLines.material) {
         this.scene.objects.speedLines.material.opacity = Math.min(
           this.scene.objects.speedLines.material.opacity, q
         );
+      }
+      // v13: 低画质关闭DOF和运动模糊
+      const cPass = this.postprocessing?.getCelestialPass();
+      if (cPass) {
+        if (q < 0.6) cPass.uniforms.uMotionBlurIntensity.value = 0;
+        if (q < 0.5) cPass.uniforms.uChromaticAberration.value = 0;
       }
     }
   }

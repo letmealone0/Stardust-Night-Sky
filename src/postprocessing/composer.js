@@ -6,7 +6,7 @@ import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { config } from '../core/config.js';
 
-/** v11: 统一后处理特效 Shader（引力透镜 + 脉冲噪点 + 闪光 + 星云雾化） */
+/** v13: 统一后处理特效 Shader（引力透镜 + 脉冲噪点 + 闪光 + 星云雾化 + 运动模糊 + 镜头效果） */
 const CelestialEffectsShader = {
   uniforms: {
     tDiffuse: { value: null },
@@ -22,6 +22,15 @@ const CelestialEffectsShader = {
     // 星云雾化
     uFogDensity: { value: 0 },
     uFogColor: { value: new THREE.Vector3(0.05, 0.08, 0.15) },
+    // v13: 运动模糊
+    uMotionBlurIntensity: { value: 0 },
+    uMotionDir: { value: new THREE.Vector2(0, 0) },
+    // v13: 镜头效果
+    uChromaticAberration: { value: 0 },
+    uVignetteStrength: { value: 0.3 },
+    // v13: 色调映射增强
+    uContrast: { value: 1.0 },
+    uSaturation: { value: 1.0 },
   },
   vertexShader: `
     varying vec2 vUv;
@@ -34,20 +43,21 @@ const CelestialEffectsShader = {
     precision highp float;
     uniform sampler2D tDiffuse;
     uniform float uTime;
-    // 引力透镜
     uniform vec2 uLensCenter;
     uniform float uLensStrength;
     uniform float uLensRadius;
-    // 噪点
     uniform float uNoiseIntensity;
-    // 闪光
     uniform float uFlashIntensity;
-    // 雾化
     uniform float uFogDensity;
     uniform vec3 uFogColor;
+    uniform float uMotionBlurIntensity;
+    uniform vec2 uMotionDir;
+    uniform float uChromaticAberration;
+    uniform float uVignetteStrength;
+    uniform float uContrast;
+    uniform float uSaturation;
     varying vec2 vUv;
 
-    // 伪随机
     float rand(vec2 co) {
       return fract(sin(dot(co, vec2(12.9898, 78.233))) * 43758.5453);
     }
@@ -62,7 +72,6 @@ const CelestialEffectsShader = {
         if (dist < uLensRadius) {
           float falloff = 1.0 - dist / uLensRadius;
           float distort = uLensStrength * falloff * falloff;
-          // 径向扭曲 + 轻微切向扭曲（模拟引力透镜弧线）
           vec2 radial = normalize(toCenter) * distort * 0.08;
           vec2 tangential = vec2(-toCenter.y, toCenter.x) * distort * 0.03;
           uv = uv - radial - tangential;
@@ -70,33 +79,58 @@ const CelestialEffectsShader = {
         }
       }
 
-      vec4 color = texture2D(tDiffuse, uv);
+      // 2. 运动模糊（沿速度方向多次采样混合）
+      vec4 color = vec4(0.0);
+      if (uMotionBlurIntensity > 0.01) {
+        vec2 vel = uMotionDir * uMotionBlurIntensity;
+        float samples = 6.0;
+        for (float i = 0.0; i < 6.0; i++) {
+          float t = i / 5.0 - 0.5;
+          color += texture2D(tDiffuse, clamp(uv + vel * t, 0.0, 1.0));
+        }
+        color /= samples;
+      } else {
+        color = texture2D(tDiffuse, uv);
+      }
 
-      // 2. 脉冲星噪点干扰
+      // 3. 色差 (chromatic aberration)
+      if (uChromaticAberration > 0.001) {
+        vec2 caDir = (vUv - vec2(0.5)) * uChromaticAberration;
+        color.r = texture2D(tDiffuse, clamp(uv + caDir, 0.0, 1.0)).r;
+        color.b = texture2D(tDiffuse, clamp(uv - caDir, 0.0, 1.0)).b;
+      }
+
+      // 4. 脉冲星噪点干扰
       if (uNoiseIntensity > 0.001) {
         float noise = rand(vUv * uTime * 100.0) * 2.0 - 1.0;
         float n = noise * uNoiseIntensity;
-        // 扫描线效果
         float scanline = sin(vUv.y * 800.0 + uTime * 20.0) * 0.5 + 0.5;
         n += scanline * uNoiseIntensity * 0.15;
         color.rgb += vec3(n * 0.5, n * 0.6, n * 0.8);
       }
 
-      // 3. 脉冲星闪光
+      // 5. 脉冲星闪光
       if (uFlashIntensity > 0.001) {
         color.rgb += vec3(0.8, 0.9, 1.0) * uFlashIntensity;
       }
 
-      // 4. 星云雾化
+      // 6. 星云雾化
       if (uFogDensity > 0.001) {
-        // 边缘更浓的雾化
         vec2 center = vec2(0.5);
         float edgeDist = length(vUv - center) * 1.4;
         float fog = uFogDensity * (0.5 + edgeDist * 0.5);
         color.rgb = mix(color.rgb, uFogColor, clamp(fog, 0.0, 0.7));
-        // 轻微降低对比度
         color.rgb = mix(color.rgb, vec3(dot(color.rgb, vec3(0.333))), fog * 0.3);
       }
+
+      // 7. 暗角 (vignette)
+      float vignette = 1.0 - smoothstep(0.3, 0.95, length(vUv - vec2(0.5)) * 1.3);
+      color.rgb *= mix(1.0, vignette, uVignetteStrength);
+
+      // 8. 对比度 + 饱和度
+      float gray = dot(color.rgb, vec3(0.299, 0.587, 0.114));
+      color.rgb = mix(vec3(gray), color.rgb, uSaturation);
+      color.rgb = (color.rgb - 0.5) * uContrast + 0.5;
 
       gl_FragColor = color;
     }
@@ -111,10 +145,13 @@ export class PostProcessingManager {
     this.composer = null;
     this.bloomPass = null;
     this.celestialPass = null;
+    this.dofPass = null;
+    this._prevCamPos = new THREE.Vector3();
+    this._prevCamQuat = new THREE.Quaternion();
+    this._initialized = false;
   }
 
   init() {
-    // 防御重复初始化：若已存在 composer 先释放，避免 pass 叠加
     if (this.composer) {
       this.dispose();
       this.composer = null;
@@ -124,9 +161,11 @@ export class PostProcessingManager {
     const { width, height } = this.renderer.domElement;
     this.composer = new EffectComposer(this.renderer);
 
+    // Pass 1: 场景渲染
     const renderPass = new RenderPass(this.scene, this.camera);
     this.composer.addPass(renderPass);
 
+    // Pass 2: Bloom
     const { strength, radius, threshold } = config.postprocessing.bloom;
     this.bloomPass = new UnrealBloomPass(
       new THREE.Vector2(width, height),
@@ -136,24 +175,59 @@ export class PostProcessingManager {
     );
     this.composer.addPass(this.bloomPass);
 
-    // v11: 天体效果 Pass（引力透镜 + 噪点 + 闪光 + 雾化）
+    // Pass 3: 天体效果 + 运动模糊 + 镜头效果 + 色调增强
     this.celestialPass = new ShaderPass(CelestialEffectsShader);
     this.composer.addPass(this.celestialPass);
 
-    // OutputPass 必须在最后：负责 toneMapping 和 sRGB 转换
+    // 设置默认色调参数
+    const rCfg = config.renderer;
+    this.celestialPass.uniforms.uContrast.value = rCfg.contrast || 1.0;
+    this.celestialPass.uniforms.uSaturation.value = rCfg.saturation || 1.0;
+    this.celestialPass.uniforms.uVignetteStrength.value = config.postprocessing.vignette?.darkness || 0.3;
+
+    // Pass 4: Output (toneMapping + sRGB)
     const outputPass = new OutputPass();
     this.composer.addPass(outputPass);
 
-    console.log('[PostProcessingManager] v11 后处理初始化完成（Bloom + CelestialEffects + OutputPass）');
+    this._initialized = true;
+    console.log('[PostProcessingManager] v13 后处理初始化完成（Bloom + CelestialEffects + OutputPass）');
   }
 
-  /** 获取天体效果 pass 引用（供外部系统设置 uniform） */
   getCelestialPass() {
     return this.celestialPass;
   }
 
+  /** v13: 更新运动模糊参数 */
+  updateMotionBlur(camera, delta) {
+    if (!this.celestialPass || !camera) return;
+    const mbCfg = config.postprocessing.motionBlur;
+    if (!mbCfg?.enabled) return;
+
+    const velocity = camera.position.clone().sub(this._prevCamPos);
+    const speed = velocity.length();
+
+    if (speed > (mbCfg.speedThreshold || 2.0) * delta) {
+      // 将3D速度投影到屏幕空间
+      const viewDir = camera.getWorldDirection(new THREE.Vector3());
+      const right = new THREE.Vector3().crossVectors(viewDir, camera.up).normalize();
+      const up = new THREE.Vector3().crossVectors(right, viewDir).normalize();
+      const screenVelX = velocity.dot(right);
+      const screenVelY = velocity.dot(up);
+      const len = Math.sqrt(screenVelX * screenVelX + screenVelY * screenVelY);
+      if (len > 0.01) {
+        this.celestialPass.uniforms.uMotionDir.value.set(screenVelX / len, screenVelY / len);
+        this.celestialPass.uniforms.uMotionBlurIntensity.value =
+          Math.min(speed / (delta * 100), 1.0) * (mbCfg.intensity || 0.4);
+      }
+    } else {
+      this.celestialPass.uniforms.uMotionBlurIntensity.value *= 0.85; // 快速衰减
+    }
+
+    this._prevCamPos.copy(camera.position);
+    this._prevCamQuat.copy(camera.quaternion);
+  }
+
   render() {
-    // 更新时间 uniform
     if (this.celestialPass) {
       this.celestialPass.uniforms.uTime.value = performance.now() * 0.001;
     }
@@ -173,5 +247,6 @@ export class PostProcessingManager {
     }
     this.bloomPass = null;
     this.celestialPass = null;
+    this.dofPass = null;
   }
 }

@@ -79,14 +79,58 @@ export class CosmicDust {
       geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
       geometry.setAttribute('size', new THREE.BufferAttribute(sizes, 1));
 
-      const material = new THREE.PointsMaterial({
-        size: 1.5,
-        vertexColors: true,
+      const material = new THREE.ShaderMaterial({
+        uniforms: {
+          uBaseOpacity: { value: opacity || 0.15 },
+          uPixelRatio: { value: Math.min(window.devicePixelRatio, 2) },
+          uVelocityStretch: { value: 0.0 },
+          uVelDir: { value: new THREE.Vector3(0, 0, -1) },
+          uBaseSize: { value: 1.5 },
+        },
+        vertexShader: `
+          attribute float size;
+          uniform float uBaseOpacity;
+          uniform float uPixelRatio;
+          uniform float uVelocityStretch;
+          uniform vec3 uVelDir;
+          uniform float uBaseSize;
+          varying vec3 vColor;
+          varying float vAlpha;
+          void main() {
+            vColor = color;
+            vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
+            float depth = -mvPosition.z;
+            // 深度雾：远处更淡
+            float depthFade = clamp(depth / 6000.0, 0.0, 1.0);
+            vAlpha = uBaseOpacity * (1.0 - depthFade * 0.6);
+            // 远处粒子更大但更淡
+            float sizeScale = 1.0 + depthFade * 0.4;
+            // 速度拉伸
+            if (uVelocityStretch > 0.01) {
+              vec3 worldPos = (modelMatrix * vec4(position, 1.0)).xyz;
+              vec3 toCamera = normalize(cameraPosition - worldPos);
+              float stretch = abs(dot(toCamera, uVelDir)) * uVelocityStretch;
+              sizeScale *= (1.0 + stretch * 2.0);
+            }
+            gl_PointSize = size * uBaseSize * uPixelRatio * sizeScale * (300.0 / depth);
+            gl_Position = projectionMatrix * mvPosition;
+          }
+        `,
+        fragmentShader: `
+          precision highp float;
+          varying vec3 vColor;
+          varying float vAlpha;
+          void main() {
+            float d = length(gl_PointCoord - 0.5) * 2.0;
+            float alpha = 1.0 - smoothstep(0.2, 1.0, d);
+            if (alpha < 0.01 || vAlpha < 0.005) discard;
+            gl_FragColor = vec4(vColor, alpha * vAlpha);
+          }
+        `,
         transparent: true,
-        opacity: opacity || 0.15,
-        sizeAttenuation: true,
-        blending: THREE.AdditiveBlending,
         depthWrite: false,
+        blending: THREE.AdditiveBlending,
+        vertexColors: true,
       });
 
       const points = new THREE.Points(geometry, material);
@@ -159,9 +203,13 @@ export class CosmicDust {
       }
       layer.geometry.attributes.position.needsUpdate = true;
 
-      // 脉冲透明度（移动时更亮、偏蓝）
+      // 脉冲透明度 + 速度拉伸
       const baseOpacity = (lcfg.opacity || 0.15) + Math.sin(elapsed * 0.02) * 0.04;
-      layer.material.opacity = baseOpacity + speedFactor * 0.15;
+      layer.material.uniforms.uBaseOpacity.value = baseOpacity + speedFactor * 0.15;
+      layer.material.uniforms.uVelocityStretch.value = speedFactor * (cfg.speedLineStretch || 3.0);
+      if (velocity && speed > 0.01) {
+        layer.material.uniforms.uVelDir.value.copy(velocity).normalize();
+      }
       const blueTint = 0.7 + speedFactor * 0.3;
       this._dustColor.setRGB(blueTint * 0.9, blueTint, 1.0);
       layer.material.color = this._dustColor;

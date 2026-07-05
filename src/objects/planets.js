@@ -12,11 +12,11 @@ import { isPositionValid, findValidPosition, collectAllPositions } from '../util
 
 // v11: 行星类型参数
 const TYPE_PARAMS = {
-  rocky:  { color: [0.50,0.42,0.35], emissive: [0.02,0.02,0.03], roughness: 0.80, metalness: 0.10, hasAtm: true,  atmColor: [0.3,0.3,0.3], ringChance: 0.05 },
-  gas:    { color: [0.70,0.60,0.40], emissive: [0.05,0.03,0.01], roughness: 0.30, metalness: 0.0,  hasAtm: true,  atmColor: [0.5,0.4,0.3], ringChance: 0.35 },
-  lava:   { color: [0.60,0.25,0.10], emissive: [0.25,0.10,0.02], roughness: 0.60, metalness: 0.0,  hasAtm: true,  atmColor: [0.8,0.3,0.1], ringChance: 0.02 },
-  ice:    { color: [0.80,0.85,1.00], emissive: [0.02,0.03,0.05], roughness: 0.20, metalness: 0.30, hasAtm: true,  atmColor: [0.4,0.6,0.9], ringChance: 0.10 },
-  rogue:  { color: [0.25,0.22,0.20], emissive: [0.01,0.01,0.02], roughness: 0.90, metalness: 0.05, hasAtm: false, atmColor: [0,0,0],       ringChance: 0.0 },
+  rocky:  { color: [0.50,0.42,0.35], emissive: [0.02,0.02,0.03], roughness: 0.80, metalness: 0.10, hasAtm: true,  atmColor: [0.3,0.5,0.9], atmAlpha: 0.55, ringChance: 0.05 },
+  gas:    { color: [0.70,0.60,0.40], emissive: [0.05,0.03,0.01], roughness: 0.30, metalness: 0.0,  hasAtm: true,  atmColor: [0.8,0.65,0.35], atmAlpha: 0.7, ringChance: 0.35 },
+  lava:   { color: [0.60,0.25,0.10], emissive: [0.25,0.10,0.02], roughness: 0.60, metalness: 0.0,  hasAtm: true,  atmColor: [0.9,0.35,0.12], atmAlpha: 0.4, ringChance: 0.02 },
+  ice:    { color: [0.80,0.85,1.00], emissive: [0.02,0.03,0.05], roughness: 0.20, metalness: 0.30, hasAtm: true,  atmColor: [0.45,0.65,1.0], atmAlpha: 0.5, ringChance: 0.10 },
+  rogue:  { color: [0.25,0.22,0.20], emissive: [0.01,0.01,0.02], roughness: 0.90, metalness: 0.05, hasAtm: false, atmColor: [0,0,0],         atmAlpha: 0,   ringChance: 0.0 },
 };
 
 function _srng(seed) {
@@ -152,10 +152,11 @@ export class PlanetSystem {
     group.add(lod);
     let atmLod = null;
     if (tp.hasAtm) {
+      const atmAlpha = tp.atmAlpha || 0.5;
       atmLod = new THREE.LOD();
-      atmLod.addLevel(this._createAtmosphere(radius, tp.atmColor, 64), 0);
-      atmLod.addLevel(this._createAtmosphere(radius, tp.atmColor, 32), 800);
-      atmLod.addLevel(this._createAtmosphere(radius, tp.atmColor, 16), 2000);
+      atmLod.addLevel(this._createAtmosphere(radius, tp.atmColor, atmAlpha, 64), 0);
+      atmLod.addLevel(this._createAtmosphere(radius, tp.atmColor, atmAlpha, 32), 800);
+      atmLod.addLevel(this._createAtmosphere(radius, tp.atmColor, atmAlpha, 16), 2000);
       group.add(atmLod);
     }
     if (Math.random() < tp.ringChance) group.add(this._createRing(radius));
@@ -201,6 +202,7 @@ export class PlanetSystem {
       blending: THREE.AdditiveBlending, side: THREE.BackSide, transparent: true, depthWrite: false,
     });
     starGroup.add(new THREE.Mesh(new THREE.SphereGeometry(r*2.5,16,16), glowMat));
+    starGroup.userData.isHostStar = true;
     return starGroup;
   }
 
@@ -240,14 +242,46 @@ export class PlanetSystem {
     return { mesh, asteroids, dummy: new THREE.Object3D() };
   }
 
-  _createAtmosphere(radius, atmColor, segments) {
-    const atmR = radius * (config.planets.atmosphereScale || 1.15);
-    return new THREE.Mesh(new THREE.SphereGeometry(atmR, segments, segments), new THREE.ShaderMaterial({
-      uniforms: { uAtmColor: { value: new THREE.Color(...atmColor) } },
-      vertexShader: `varying vec3 vNormal; varying vec3 vWorldPos; void main() { vNormal = normalize(normalMatrix * normal); vWorldPos = (modelMatrix * vec4(position,1.0)).xyz; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }`,
-      fragmentShader: `varying vec3 vNormal; varying vec3 vWorldPos; uniform vec3 uAtmColor; void main() { vec3 viewDir = normalize(cameraPosition - vWorldPos); float rim = 1.0 - max(0.0, dot(viewDir, vNormal)); float alpha = pow(rim, 3.0) * 0.45; gl_FragColor = vec4(uAtmColor * rim, alpha); }`,
-      blending: THREE.AdditiveBlending, side: THREE.BackSide, transparent: true, depthWrite: false,
-    }));
+  _createAtmosphere(radius, atmColor, atmAlpha, segments) {
+    const atmR = radius * (config.planets.atmosphereScale || 1.25);
+    const mat = new THREE.ShaderMaterial({
+      uniforms: {
+        uAtmColor: { value: new THREE.Color(...atmColor) },
+        uAtmAlpha: { value: atmAlpha || 0.5 },
+        uSunPos: { value: new THREE.Vector3(0, 0, 0) },
+      },
+      vertexShader: `
+        varying vec3 vNormal;
+        varying vec3 vWorldPos;
+        void main() {
+          vNormal = normalize(normalMatrix * normal);
+          vWorldPos = (modelMatrix * vec4(position, 1.0)).xyz;
+          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        }
+      `,
+      fragmentShader: `
+        varying vec3 vNormal;
+        varying vec3 vWorldPos;
+        uniform vec3 uAtmColor;
+        uniform float uAtmAlpha;
+        uniform vec3 uSunPos;
+        void main() {
+          vec3 viewDir = normalize(cameraPosition - vWorldPos);
+          vec3 lightDir = normalize(uSunPos - vWorldPos);
+          float sunAlign = max(0.0, dot(vNormal, lightDir));
+          float rim = 1.0 - max(0.0, dot(viewDir, vNormal));
+          vec3 scatterColor = uAtmColor * (0.6 + sunAlign * 1.8);
+          float rimPow = pow(rim, 2.2);
+          float thickness = rimPow * (0.35 + sunAlign * 0.65);
+          gl_FragColor = vec4(scatterColor, thickness * uAtmAlpha);
+        }
+      `,
+      blending: THREE.AdditiveBlending,
+      side: THREE.BackSide,
+      transparent: true,
+      depthWrite: false,
+    });
+    return new THREE.Mesh(new THREE.SphereGeometry(atmR, segments, segments), mat);
   }
 
   _createRing(radius) {
@@ -298,6 +332,20 @@ export class PlanetSystem {
       }
       if (data.moonInstances) this._updateMoons(data.moonInstances, ms);
       if (data.asteroidBelt) this._updateAsteroids(data.asteroidBelt, ms);
+      // v13: 更新大气散射太阳位置
+      if (data.atmLod) {
+        let sunPos;
+        if (data.hostStar) {
+          sunPos = data.hostStar.getWorldPosition(new THREE.Vector3());
+        } else if (this.sceneObjects?.solarSystem?.sun) {
+          sunPos = this.sceneObjects.solarSystem.sun.getWorldPosition(new THREE.Vector3());
+        }
+        if (sunPos) {
+          data.atmLod.traverse(child => {
+            if (child.material?.uniforms?.uSunPos) child.material.uniforms.uSunPos.value.copy(sunPos);
+          });
+        }
+      }
       if (dist < cfg.infoDistance) this._showInfo(data);
     });
     if (this._hud && this._infoShown) {

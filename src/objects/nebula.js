@@ -65,6 +65,7 @@ export class NebulaSystem {
         uScale: { value: scale },
         uDensity: { value: densityBase },
         uCameraLocalPos: { value: new THREE.Vector3(0, 0, 2000) },
+        uSunDir: { value: new THREE.Vector3(1, 0.5, 0.3).normalize() },
       },
       vertexShader: `
         varying vec3 vLocalPos;
@@ -84,6 +85,7 @@ export class NebulaSystem {
         uniform float uScale;
         uniform float uDensity;
         uniform vec3 uCameraLocalPos;
+        uniform vec3 uSunDir;
 
         // ---- 轻量噪声（2 次乘法 hash） ----
         float hash(vec3 p) {
@@ -112,11 +114,14 @@ export class NebulaSystem {
           return v;
         }
 
-        // v8.2: 改进密度场 — 更多细节+更柔和球形衰减
+        // v8.2: 改进密度场 — 更多细节+更柔和球形衰减 + v13密度梯度
         float density(vec3 p) {
           vec3 np = p / (uScale * 0.5);
           float r = length(np);
-          float falloff = 1.0 - smoothstep(0.3, 1.0, r);
+          // v13: 密度梯度 — 中心更稠密，边缘稀薄
+          float gradientFalloff = 1.0 - smoothstep(0.0, 1.0, r);
+          gradientFalloff = pow(gradientFalloff, 1.5);
+          float falloff = gradientFalloff;
           if (falloff < 0.001) return 0.0;
 
           // v11: 增强湍流 — 使用配置中的湍流速度
@@ -176,6 +181,11 @@ export class NebulaSystem {
               float tc = d / uDensity;
               vec3 col = mix(uColor1, uColor2, smoothstep(0.1, 0.55, tc));
               col = mix(col, uColor3, smoothstep(0.5, 0.85, tc) * 0.4);
+
+              // v13: Mie前向散射 — 光源方向响应
+              float sunDot = max(0.0, dot(normalize(sp), uSunDir));
+              float miePhase = 0.5 * (1.0 + sunDot * sunDot); // Henyey-Greenstein近似
+              col += uColor1 * miePhase * 0.25;
 
               float alpha = d * stepSize * 0.18 * uOpacity;
               accColor += col * alpha * (1.0 - accAlpha);

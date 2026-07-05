@@ -53,6 +53,14 @@ export const config = {
       scale: 22.0,            // v8.2: 超大尺度，太阳系在旋臂中
       hazeCount: 3000,        // 雾气粒子数
     },
+    // v13: 深场背景星星
+    deepField: {
+      count: 80000,              // 深场星星数量
+      spread: 18000,             // 分布范围
+      opacity: 0.12,             // 基础透明度
+      minSize: 0.05,             // 最小尺寸
+      maxSize: 0.15,             // 最大尺寸
+    },
   },
 
   // ---- 行星系统（随机生成的额外星体）----
@@ -61,7 +69,7 @@ export const config = {
     minRadius: 40,           // 最小半径
     maxRadius: 200,          // 最大半径
     spread: 5000,            // 分布范围
-    atmosphereScale: 1.15,   // 大气层缩放
+    atmosphereScale: 1.25,   // v13: 更厚大气层（Space Engine 风格）
     respawnDistance: 8000,   // v8.0: 超出此距离重生行星
     respawnMin: 7000,        // v8.0: 严格远离太阳系
     respawnMax: 9000,        // v8.0
@@ -135,6 +143,26 @@ export const config = {
       enabled: false,
       strength: 0.03,
     },
+    // v13: 镜头光晕
+    lensFlare: {
+      enabled: true,
+      brightness: 0.6,         // 光晕亮度
+      fadeSpeed: 3.0,          // 淡入淡出速度
+    },
+    // v13: 景深
+    dof: {
+      enabled: true,
+      focusDistance: 100,       // 默认对焦距离
+      aperture: 0.02,          // 光圈大小
+      maxBlur: 0.008,          // 最大模糊量
+    },
+    // v13: 运动模糊
+    motionBlur: {
+      enabled: true,
+      intensity: 0.4,          // 模糊强度
+      samples: 8,              // 采样次数
+      speedThreshold: 2.0,     // 速度阈值（低于此不模糊）
+    },
   },
 
   // ---- 渲染器 ----
@@ -143,6 +171,8 @@ export const config = {
     alpha: false,
     powerPreference: 'high-performance',
     toneMappingExposure: 1.2, // v8.0: 提高曝光，适应更亮的太阳
+    contrast: 1.08,            // v13: 对比度增强
+    saturation: 1.12,          // v13: 饱和度增强
   },
 
   // ---- 速度线 ----
