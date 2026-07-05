@@ -300,6 +300,7 @@ export class NebulaSystem {
         `,
         transparent: true, depthWrite: false,
         blending: THREE.MultiplyBlending,
+        premultipliedAlpha: true,
       });
     }
 
