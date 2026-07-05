@@ -353,14 +353,14 @@ export class NebulaSystem {
   }
 
   /**
-   * 重生星云到相机附近的新位置
+   * v19.9: 重生星云 — 转换为世界坐标，正确处理galaxyGroup偏移
    */
   respawnNebula(nebula, index, camera, cfg) {
     const camPos = camera.position;
 
-    const chunkX = Math.round(camPos.x / 1500);
-    const chunkY = Math.round(camPos.y / 1500);
-    const chunkZ = Math.round(camPos.z / 1500);
+    const chunkX = Math.round(camPos.x / 2000);
+    const chunkY = Math.round(camPos.y / 2000);
+    const chunkZ = Math.round(camPos.z / 2000);
     const seed = hashCoords(chunkX + index * 7919, chunkY, chunkZ);
     const rng = seededRandom(seed);
 
@@ -368,11 +368,17 @@ export class NebulaSystem {
     const phi = Math.acos(2 * rng() - 1);
     const r = cfg.respawnMin + rng() * (cfg.respawnMax - cfg.respawnMin);
 
-    nebula.position.set(
+    const worldPos = new THREE.Vector3(
       camPos.x + r * Math.sin(phi) * Math.cos(theta),
       camPos.y + r * Math.sin(phi) * Math.sin(theta) * 0.3,
       camPos.z + r * Math.cos(phi)
     );
+
+    if (nebula.parent) {
+      const invMat = new THREE.Matrix4().copy(nebula.parent.matrixWorld).invert();
+      worldPos.applyMatrix4(invMat);
+    }
+    nebula.position.copy(worldPos);
   }
 
   dispose(scene) {

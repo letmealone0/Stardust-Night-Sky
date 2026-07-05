@@ -105,17 +105,17 @@ export const config = {
 
   // ---- 星云效果（体积光线步进）----
   nebula: {
-    count: 3,                // v8.2: 减少数量，提升质量
-    scale: 600,              // v8.2: 稍小但更精致
-    opacity: 2.5,            // v15: 增大体积浓度让星云更浓密
+    count: 3,
+    scale: 4000,              // v19.9: 5倍增大，5万距离可见
+    opacity: 4.0,             // 更浓密
     colors: [
-      { r: 0.25, g: 0.08, b: 0.55 },  // 深紫
-      { r: 0.08, g: 0.3, b: 0.65 },   // 深蓝
-      { r: 0.5, g: 0.12, b: 0.2 },    // 暗红
+      { r: 0.25, g: 0.08, b: 0.55 },
+      { r: 0.08, g: 0.3, b: 0.65 },
+      { r: 0.5, g: 0.12, b: 0.2 },
     ],
-    respawnDistance: 8000,   // v8.2: 匹配更大世界
-    respawnMin: 4000,        // v8.2
-    respawnMax: 7000,        // v8.2
+    respawnDistance: 15000,
+    respawnMin: 3000,
+    respawnMax: 9000,
     // v11: 三类星云 + 湍流 + 飞入
     types: ['emission', 'reflection', 'dark'],
     // v19.9: 三层渐变 — 核心/中间/边缘（参考真实星云光谱）
