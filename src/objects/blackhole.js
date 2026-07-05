@@ -1,19 +1,14 @@
 /**
- * 黑洞系统 v13 — 真实物理黑洞渲染
+ * 黑洞系统 v14 — 真实物理黑洞渲染
  * 橙黄温度梯度吸积盘 + 引力透镜 + 纯黑事件视界 + 螺旋坠落粒子
  * + 引力效果 + 行星潮汐瓦解吸收 + 引力透镜后处理
  *
- * v13 核心改进：
- * - 吸积盘配色：内白→中金→外暗红，温度梯度，彻底去紫
- * - 吸积盘形态：厚度压缩至1/3，外薄内厚，35°倾斜呈现立体薄盘
- * - 光子球：事件视界外极细亮环，非球面发光
- * - 外层光晕：暖橙黄微光，透明度-60%，不抢主体
- * - 事件视界：绝对纯黑、不透明、无反射
- * - 引力透镜：强度+50%，范围+40%，中等距离即见环形拉伸
- * - 吸积盘动态：内圈5-8倍速差，螺旋内落，粒子近内缘消失
- * - 坠落粒子：螺旋轨道下落，近心角速度↑亮度↑尺寸↓
- * - 喷流：亮度×2+长度×1.5，底部亮顶暗，暖色高速流动
- * - 所有动画×delta帧率解耦
+ * v14 核心改进：
+ * - 轴向统一：光子环+吸积盘+喷流挂载同一盘容器，喷流⊥盘面
+ * - 吸积盘弯折：远侧半盘沿Y抬升，越近视界幅度越大，模拟环绕视觉
+ * - 亮度扰动：片元着色器叠加旋转2D噪声，±20%湍流热斑
+ * - 喷流优化：高准直度（底细远扩）+ 轴向周期亮斑节点 + 流速×2.5
+ * - 引力透镜平方反比衰减：中心强、外围快速减弱
  */
 
 import * as THREE from 'three';
@@ -42,6 +37,7 @@ export class BlackHole {
     this._debrisActive = false;
     this._debrisProgress = 0;
     this._diskBrightnessPulse = 0;
+    this._diskContainer = null;  // v14: 盘容器（光子环+盘+喷流统一倾斜）
   }
 
   init(scene, camera, planetSystem) {
@@ -55,13 +51,19 @@ export class BlackHole {
     const horizonMat = new THREE.MeshBasicMaterial({ color: 0x000000 });
     this.group.add(new THREE.Mesh(horizonGeo, horizonMat));
 
-    // 2. v13: 光子球 → 极细亮环（非球面）
+    // v14: 吸积盘容器 — 光子环+吸积盘+喷流统一倾斜，喷流⊥盘面
+    this._diskContainer = new THREE.Group();
+    this._diskContainer.rotation.x = Math.PI * 0.5 + 0.61; // 35°倾斜
+    this._diskContainer.rotation.y = Math.random() * Math.PI * 2;
+    this.group.add(this._diskContainer);
+
+    // 2. v14: 光子球 → 极细亮环（挂载到盘容器，与盘面共面）
     this.createPhotonSphere(cfg);
 
-    // 3. v13: 吸积盘（橙黄温度梯度 + 35°倾斜 + 1/3厚度）
+    // 3. v14: 吸积盘（挂载到盘容器）
     this.createAccretionDisk(cfg);
 
-    // 4. v13: 喷流（暖色 + 亮度×2 + 长度×1.5）
+    // 4. v14: 喷流（挂载到盘容器，自动⊥盘面）
     this.createJets(cfg);
 
     // 5. v13: 外层光晕（暖橙微光，透明度-60%）
@@ -80,18 +82,17 @@ export class BlackHole {
     this.createDebrisParticles(cfg);
 
     scene.add(this.group);
-    console.log('[BlackHole] v13 真实黑洞渲染初始化完成');
+    console.log('[BlackHole] v14 真实黑洞渲染初始化完成');
   }
 
-  // ==================== v13: 光子球 → 极细亮环 ====================
+  // ==================== v14: 光子球 → 极细亮环（挂载盘容器，与盘面共面） ====================
   createPhotonSphere(cfg) {
     const r = cfg.photonSphereRadius || cfg.eventHorizonRadius * 1.5;
-    // v13: 用 Torus 替代球体，形成纤细光环
     const torusGeo = new THREE.TorusGeometry(r, cfg.eventHorizonRadius * 0.08, 16, 128);
     const torusMat = new THREE.ShaderMaterial({
       uniforms: {
         uTime: { value: 0 },
-        uColor: { value: new THREE.Color(1.0, 0.85, 0.6) }, // 暖白
+        uColor: { value: new THREE.Color(1.0, 0.85, 0.6) },
       },
       vertexShader: `
         varying vec3 vWorldPos;
@@ -110,7 +111,6 @@ export class BlackHole {
         uniform vec3 uColor;
         void main() {
           vec3 viewDir = normalize(cameraPosition - vWorldPos);
-          // v13: 仅边缘可见（极细环），正面不可见
           float rim = 1.0 - abs(dot(normalize(vNormal), viewDir));
           float ring = pow(rim, 8.0);
           float pulse = 0.8 + sin(uTime * 4.0) * 0.2;
@@ -123,10 +123,9 @@ export class BlackHole {
       transparent: true, depthWrite: false,
     });
     this._photonSphere = new THREE.Mesh(torusGeo, torusMat);
-    // v13: 环随机倾斜，不完全在吸积盘平面
-    this._photonSphere.rotation.x = Math.PI * 0.5 + (Math.random() - 0.5) * 0.2;
-    this._photonSphere.rotation.y = Math.random() * Math.PI * 2;
-    this.group.add(this._photonSphere);
+    // v14: 环从默认XY面旋转到XZ面（与盘面共面），由盘容器统一倾斜
+    this._photonSphere.rotation.x = Math.PI * 0.5;
+    this._diskContainer.add(this._photonSphere);
   }
 
   // ==================== v13: 吸积盘（橙黄温度梯度+薄盘+螺旋内落） ====================
@@ -204,6 +203,7 @@ export class BlackHole {
         varying vec3 vColor;
         varying float vAlpha;
         varying float vDistNorm;
+        varying vec3 vWPos;
 
         void main() {
           vColor = color;
@@ -218,10 +218,9 @@ export class BlackHole {
           float rz = pos.x * sa + pos.z * ca;
           pos.x = rx; pos.z = rz;
 
-          // v13: 螺旋内落 — 粒子缓慢向内迁移，到达内缘后重生
+          // v13: 螺旋内落
           float infallT = mod(uTime * uInfallSpeed * 0.08 + aRandom * 3.0, 1.0);
           float currentR = uOuterRadius - (uOuterRadius - uInnerRadius) * infallT;
-          // 近内缘加速内落
           float accelFactor = 1.0 + 3.0 * pow(1.0 - infallT, 2.0);
           currentR = uOuterRadius - (uOuterRadius - uInnerRadius) * min(infallT * accelFactor, 1.0);
           currentR = max(currentR, uInnerRadius * 1.02);
@@ -232,19 +231,28 @@ export class BlackHole {
           // 高度微扰
           pos.y += sin(uTime * 3.0 + aRandom * 10.0) * 0.3 * (1.0 - rNorm);
 
-          // v13: 亮度指数衰减（内亮外暗），近内缘加亮
+          // v14: 引力弯折 — 远侧半盘向上抬升（模拟环绕视觉）
+          vec4 bhWorld = modelMatrix * vec4(0.0, 0.0, 0.0, 1.0);
+          vec3 dirToCamera = normalize(cameraPosition - bhWorld.xyz);
+          vec4 particleWorld = modelMatrix * vec4(pos, 1.0);
+          vec3 dirToParticle = normalize(particleWorld.xyz - bhWorld.xyz);
+          float alignment = dot(dirToParticle, dirToCamera);
+          float farSide = 1.0 - smoothstep(-0.35, 0.35, alignment);
+          float warpAmount = exp(-rNorm * 3.5) * uEventHorizonR * 2.5;
+          pos.y += farSide * warpAmount;
+
+          // v13: 亮度指数衰减
           float distFactor = clamp((currentR - uInnerRadius) / (uOuterRadius - uInnerRadius), 0.0, 1.0);
           vDistNorm = distFactor;
-          // 中心最亮，向外指数衰减
           float brightness = exp(-distFactor * 2.5) * 1.2;
-          // 接近事件视界：额外增亮
           brightness += exp(-distFactor * 8.0) * 0.8;
           brightness += uBrightnessPulse * exp(-distFactor * 3.0);
           vAlpha = clamp(brightness * (0.6 + 0.4 * (1.0 - distFactor)), 0.0, 1.0);
           vColor *= brightness;
 
+          vec4 wp = modelMatrix * vec4(pos, 1.0); vWPos = wp.xyz;
+
           vec4 mvPosition = modelViewMatrix * vec4(pos, 1.0);
-          // v13: 内圈粒子更小更亮（模拟物质压缩）
           float size = 1.2 + (1.0 - distFactor) * 0.6;
           gl_PointSize = size * uPixelRatio * (220.0 / max(-mvPosition.z, 1.0));
           gl_PointSize = clamp(gl_PointSize, 0.8, 12.0);
@@ -256,14 +264,33 @@ export class BlackHole {
         varying vec3 vColor;
         varying float vAlpha;
         varying float vDistNorm;
+        varying vec3 vWPos;
+        uniform float uTime;
+        uniform float uOuterRadius;
+
+        // v14: 2D噪声（湍流热斑扰动）
+        float hash2(vec2 p) { return fract(sin(dot(p, vec2(127.1,311.7)))*43758.5453); }
+        float noise2D(vec2 p) {
+          vec2 i = floor(p), f = fract(p);
+          f = f*f*(3.0-2.0*f);
+          return mix(mix(hash2(i), hash2(i+vec2(1,0)), f.x),
+                     mix(hash2(i+vec2(0,1)), hash2(i+vec2(1,1)), f.x), f.y);
+        }
+
         void main() {
           float d = length(gl_PointCoord - 0.5) * 2.0;
-          // v13: 极柔光斑
           float alpha = 1.0 - smoothstep(0.0, 1.0, d);
           alpha = pow(alpha, 0.6);
-          alpha *= vAlpha;
+
+          // v14: 旋转噪声扰动亮度 ±20%，模拟湍流热斑
+          float angle = atan(vWPos.z, vWPos.x) + uTime * 0.35;
+          float r2 = length(vWPos.xz) / max(uOuterRadius, 1.0);
+          float n = noise2D(vec2(cos(angle)*3.5, r2*6.0 + uTime*0.15));
+          float brightnessMod = 0.8 + n * 0.4;
+
+          alpha *= vAlpha * brightnessMod;
           if (alpha < 0.008) discard;
-          gl_FragColor = vec4(vColor, alpha);
+          gl_FragColor = vec4(vColor * brightnessMod, alpha);
         }
       `,
       transparent: true, depthWrite: false,
@@ -271,21 +298,18 @@ export class BlackHole {
     });
 
     this.accretionDisk = new THREE.Points(geometry, this.diskMaterial);
-    // v13: 35°倾斜（不正面镜头，呈现薄盘立体感）
-    this.accretionDisk.rotation.x = Math.PI * 0.5 + 0.61;
-    // 随机方位角
-    this.accretionDisk.rotation.y = Math.random() * Math.PI * 2;
-    this.group.add(this.accretionDisk);
+    // v14: 挂载到盘容器（容器统一倾斜，盘无需独立旋转）
+    this._diskContainer.add(this.accretionDisk);
   }
 
-  // ==================== v13: 喷流（暖色 + 亮度×2 + 长度×1.5） ====================
+  // ==================== v14: 喷流（挂载盘容器⊥盘面 + 准直+节点亮斑+高速流动） ====================
   createJets(cfg) {
-    const jetCount = 600; // 每侧600个（增加）
+    const jetCount = 600;
     const totalCount = jetCount * 2;
     const positions = new Float32Array(totalCount * 3);
     const colors = new Float32Array(totalCount * 3);
     const phases = new Float32Array(totalCount);
-    const jetLen = cfg.jetLength * 1.5; // v13: 长度+50%
+    const jetLen = cfg.jetLength * 1.5;
 
     for (let jet = 0; jet < 2; jet++) {
       const dir = jet === 0 ? 1 : -1;
@@ -293,20 +317,21 @@ export class BlackHole {
         const idx = jet * jetCount + i;
         const i3 = idx * 3;
         const t = Math.random();
-        const r = cfg.eventHorizonRadius * 0.12 + t * cfg.eventHorizonRadius * 0.1;
+        // v14: 高准直度 — 底部极细，远处缓慢扩散（平方根增长）
+        const baseRadius = cfg.eventHorizonRadius * 0.06;
+        const r = baseRadius + t * t * cfg.eventHorizonRadius * 0.15;
         const angle = Math.random() * Math.PI * 2;
         const y = cfg.eventHorizonRadius * 1.1 + t * jetLen;
         positions[i3] = Math.cos(angle) * r;
         positions[i3 + 1] = dir * y;
         positions[i3 + 2] = Math.sin(angle) * r;
-        // v13: 暖色喷流（底亮白→中金黄→顶暗橙）
-        const brightness = 1.0 - t * 0.5;
-        if (t < 0.2) {
-          colors[i3] = 0.95; colors[i3 + 1] = 0.85; colors[i3 + 2] = 0.55;
-        } else if (t < 0.6) {
-          colors[i3] = 0.9; colors[i3 + 1] = 0.55; colors[i3 + 2] = 0.1;
+        // v13 暖色：底亮白→中金黄→顶暗橙
+        if (t < 0.15) {
+          colors[i3] = 0.95; colors[i3 + 1] = 0.88; colors[i3 + 2] = 0.60;
+        } else if (t < 0.5) {
+          colors[i3] = 0.9; colors[i3 + 1] = 0.55; colors[i3 + 2] = 0.12;
         } else {
-          colors[i3] = 0.5; colors[i3 + 1] = 0.2; colors[i3 + 2] = 0.03;
+          colors[i3] = 0.5; colors[i3 + 1] = 0.18; colors[i3 + 2] = 0.03;
         }
         phases[idx] = t;
       }
@@ -331,11 +356,13 @@ export class BlackHole {
         uniform float uPixelRatio;
         varying vec3 vColor;
         varying float vAlpha;
+        varying float vPhase;
         void main() {
           vColor = color;
           vec3 pos = position;
-          // v13: 高速向外流动（速度×2）
-          float flow = mod(uTime * 1.6 + aPhase * 2.0, 2.0);
+          vPhase = aPhase;
+          // v14: 流速×2.5
+          float flow = mod(uTime * 2.0 + aPhase * 2.0, 2.0);
           float flowY = flow * uJetLength * 0.5;
           pos.y += sign(pos.y) * flowY;
           float absY = abs(pos.y);
@@ -343,11 +370,12 @@ export class BlackHole {
             pos.y = sign(pos.y) * uEHRadius * 1.1;
           }
           float t = clamp((absY - uEHRadius * 1.1) / uJetLength, 0.0, 1.0);
-          // v13: 底部亮度×2
-          vAlpha = (1.0 - t * 0.7) * 0.9;
+          // v14: 周期节点亮斑（沿轴向sin调制）
+          float nodePulse = 1.0 + sin(t * 18.0 + uTime * 2.0) * 0.35;
+          vAlpha = (1.0 - t * 0.65) * 0.9 * nodePulse;
           vec4 mvPosition = modelViewMatrix * vec4(pos, 1.0);
-          gl_PointSize = (1.2 + (1.0 - t) * 0.8) * uPixelRatio * (250.0 / max(-mvPosition.z, 1.0));
-          gl_PointSize = clamp(gl_PointSize, 1.0, 18.0);
+          gl_PointSize = (0.8 + (1.0 - t) * 0.8) * uPixelRatio * (280.0 / max(-mvPosition.z, 1.0));
+          gl_PointSize = clamp(gl_PointSize, 0.8, 16.0);
           gl_Position = projectionMatrix * mvPosition;
         }
       `,
@@ -355,20 +383,22 @@ export class BlackHole {
         precision highp float;
         varying vec3 vColor;
         varying float vAlpha;
+        varying float vPhase;
         void main() {
           float d = length(gl_PointCoord - 0.5) * 2.0;
           float alpha = 1.0 - smoothstep(0.0, 1.0, d);
-          alpha = pow(alpha, 0.55);
+          alpha = pow(alpha, 0.5);
           alpha *= vAlpha;
-          if (alpha < 0.01) discard;
-          gl_FragColor = vec4(vColor * 1.2, alpha);
+          if (alpha < 0.008) discard;
+          gl_FragColor = vec4(vColor * 1.15, alpha);
         }
       `,
       transparent: true, depthWrite: false,
       blending: THREE.AdditiveBlending, vertexColors: true,
     });
     this.jetParticles = new THREE.Points(geo, this._jetMaterial);
-    this.group.add(this.jetParticles);
+    // v14: 挂载到盘容器，自动⊥盘面
+    this._diskContainer.add(this.jetParticles);
   }
 
   // ==================== v13: 外层光晕（暖橙微光，透明度-60%） ====================
@@ -779,12 +809,11 @@ export class BlackHole {
     }
   }
 
-  // ==================== 后处理（v13: 引力透镜增强） ====================
+  // ==================== 后处理（v14: 引力透镜平方反比衰减） ====================
   updatePostEffects(uniforms, camera) {
     const cfg = config.blackhole;
     if (!camera || !this.group) return;
     const dist = this.group.position.distanceTo(camera.position);
-    // v13: 扩大透镜影响范围
     const lensingRange = (cfg.distorionRadius || 600) * 1.4;
     if (dist < lensingRange && this.dangerLevel > 0) {
       this._tempVec.copy(this.group.position).project(camera);
@@ -792,9 +821,13 @@ export class BlackHole {
       const screenY = (this._tempVec.y + 1) * 0.5;
       if (screenX > -0.1 && screenX < 1.1 && screenY > -0.1 && screenY < 1.1) {
         uniforms.uLensCenter.value.set(screenX, screenY);
-        // v13: 强度+50%，范围+40%
-        uniforms.uLensStrength.value = (cfg.lensingStrength || 0.35) * 1.5 * this.dangerLevel;
-        uniforms.uLensRadius.value = 0.18 + this.dangerLevel * 0.22;
+        // v14: 平方反比衰减 — 中心强、外围快速减弱，过渡自然
+        const maxStrength = (cfg.lensingStrength || 0.35) * 1.5 * this.dangerLevel;
+        const screenDist = Math.sqrt(
+          (screenX - 0.5) * (screenX - 0.5) + (screenY - 0.5) * (screenY - 0.5)
+        );
+        uniforms.uLensStrength.value = maxStrength / (1.0 + screenDist * screenDist * 80.0);
+        uniforms.uLensRadius.value = 0.16 + this.dangerLevel * 0.18;
       } else { uniforms.uLensStrength.value = 0; }
     } else { uniforms.uLensStrength.value = 0; }
   }
