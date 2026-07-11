@@ -1,13 +1,15 @@
 /**
- * 黑洞系统 v18 — 喷流透视消隐+吸积盘陡峭亮度层次
+ * 黑洞系统 v19 — 黑核主导+多普勒月牙不对称+盘状光晕
  *
- * v18 核心改进：
- * - 喷流透视衰减：视线·喷流轴向点积，正对时仅15%可见，消除贯穿亮线
- * - 喷流指数轴向衰减：exp(-t*3.5)替代线性，末端自然消散
- * - 喷流径向湍流：随距离增大横向扰动，边缘弥散
- * - 吸积盘5级色阶+陡峭亮度：内圈4~6×外圈，蓝白核心18%占比
- * - 大尺度带状噪声：明暗带打破均匀感
- * - 引力弯折+30% / 多普勒×1.8增强 / 光晕降饱和暗红褐
+ * v19 核心改进：
+ * - 整体压暗30%：亮度baseline×0.7，黑核主导视觉
+ * - 内缘裁剪：<1.1×事件视界粒子直接透明，保证黑核纯黑
+ * - 多普勒2.8×：朝向侧月牙形亮环，远离侧暗红，打破正圆对称
+ * - 引力弯折+50%：远侧盘面上半弧包裹黑洞顶部
+ * - 光子球弱化：透明度-60%+粗细减半(rim^12)
+ * - 光晕盘状化：垂直方向exp衰减，仅盘面附近微光
+ * - 螺旋暗带：大尺度角向噪声2-3条不规则亮暗带
+ * - 坠落粒子压暗
  */
 
 import * as THREE from 'three';
@@ -81,13 +83,14 @@ export class BlackHole {
     this.createDebrisParticles(cfg);
 
     scene.add(this.group);
-    console.log('[BlackHole] v18 喷流消隐+陡峭层次初始化完成');
+    console.log('[BlackHole] v19 黑核主导+月牙不对称初始化完成');
   }
 
   // ==================== v14: 光子球 → 极细亮环（挂载盘容器，与盘面共面） ====================
   createPhotonSphere(cfg) {
     const r = cfg.photonSphereRadius || cfg.eventHorizonRadius * 1.5;
-    const torusGeo = new THREE.TorusGeometry(r, cfg.eventHorizonRadius * 0.08, 16, 128);
+    // v19: 光子球 — 透明度-60% + 粗细减半，仅极淡光学边界
+    const torusGeo = new THREE.TorusGeometry(r, cfg.eventHorizonRadius * 0.04, 12, 96);
     const torusMat = new THREE.ShaderMaterial({
       uniforms: {
         uTime: { value: 0 },
@@ -111,11 +114,11 @@ export class BlackHole {
         void main() {
           vec3 viewDir = normalize(cameraPosition - vWorldPos);
           float rim = 1.0 - abs(dot(normalize(vNormal), viewDir));
-          float ring = pow(rim, 10.0);
+          float ring = pow(rim, 12.0);
           float pulse = 0.8 + sin(uTime * 4.0) * 0.2;
-          float a = ring * 0.7 * pulse;
+          float a = ring * 0.28 * pulse; // v19: 0.7→0.28 (-60%)
           if (a < 0.02) discard;
-          gl_FragColor = vec4(uColor * ring * pulse * 2.5, a);
+          gl_FragColor = vec4(uColor * ring * pulse * 1.0, a);
         }
       `,
       blending: THREE.AdditiveBlending,
@@ -252,27 +255,31 @@ export class BlackHole {
           vec3 dirToParticle = normalize(particleWorld.xyz - bhWorld.xyz);
           float alignment = dot(dirToParticle, dirToCamera);
           float farSide = 1.0 - smoothstep(-0.35, 0.35, alignment);
-          float warpAmount = exp(-rNorm * 2.8) * uEventHorizonR * 2.4;
+          float warpAmount = exp(-rNorm * 2.5) * uEventHorizonR * 3.6; // v19: +50%
           pos.y += farSide * warpAmount;
 
           // v15: 多普勒计算
           vec3 toCamera = normalize(cameraPosition - particleWorld.xyz);
           vDoppler = dot(orbitTangent, toCamera);
 
-          // v18: 亮度指数衰减更陡峭 — 内圈4~6倍于外圈
+          // v19: 亮度压暗30% — 黑核主导视觉
           float distFactor = clamp((currentR - uInnerRadius) / (uOuterRadius - uInnerRadius), 0.0, 1.0);
           vDistNorm = distFactor;
-          float brightness = exp(-distFactor * 3.5) * 1.5;
-          brightness += exp(-distFactor * 10.0) * 1.2;
+          float brightness = exp(-distFactor * 3.5) * 1.05;
+          brightness += exp(-distFactor * 10.0) * 0.85;
           brightness += uBrightnessPulse * exp(-distFactor * 4.0);
 
-          // v15: 内缘消失 + 外缘淡入（吞噬感）
+          // v19: 内缘裁剪 — <1.1×事件视界直接透明，保证黑核纯黑
+          float distFromEH = currentR / uEventHorizonR;
+          float ehClip = smoothstep(1.0, 1.15, distFromEH);
+
+          // 内缘消失 + 外缘淡入
           float fadeNearInner = 1.0 - smoothstep(0.88, 1.0, infallT);
           float fadeFromOuter = smoothstep(0.0, 0.06, infallT);
           float fadeAlpha = fadeNearInner * max(fadeFromOuter, 0.15);
 
-          vAlpha = clamp(brightness * (0.6 + 0.4 * (1.0 - distFactor)) * fadeAlpha, 0.0, 1.0);
-          vColor *= brightness;
+          vAlpha = clamp(brightness * (0.6 + 0.4 * (1.0 - distFactor)) * fadeAlpha * ehClip, 0.0, 1.0);
+          vColor *= brightness * ehClip;
 
           vec4 wp = modelMatrix * vec4(pos, 1.0); vWPos = wp.xyz;
 
@@ -306,22 +313,23 @@ export class BlackHole {
           float alpha = 1.0 - smoothstep(0.0, 1.0, d);
           alpha = pow(alpha, 0.6);
 
-          // v18: 大尺度带状噪声（明暗带打破均匀感）+ 小尺度斑驳
-          float angle = atan(vWPos.z, vWPos.x) + uTime * 0.35;
+          // v19: 大尺度角向噪声带（2-3条不规则螺旋暗带/亮带）
+          float angle2 = atan(vWPos.z, vWPos.x);
           float r2 = length(vWPos.xz) / max(uOuterRadius, 1.0);
-          float n = noise2D(vec2(cos(angle)*3.5, r2*6.0 + uTime*0.15));
-          float bandNoise = noise2D(vec2(cos(angle)*1.2, r2*2.5 + uTime*0.05));
-          float brightnessMod = 0.55 + n * 0.7 + bandNoise * 0.2;
+          float n = noise2D(vec2(cos(angle2)*3.5, r2*6.0 + uTime*0.15));
+          float spiralBand = noise2D(vec2(angle2 * 1.5 + r2 * 4.0, uTime * 0.04)) * 0.4;
+          float bandNoise = noise2D(vec2(cos(angle2)*1.2, r2*2.5 + uTime*0.05));
+          float brightnessMod = 0.55 + n * 0.7 + bandNoise * 0.2 + spiralBand * 0.3;
 
-          // v18: 多普勒增强 — 朝向侧更亮更蓝，远离侧更暗更红
-          float dopplerBright = 1.0 + vDoppler * 1.8;
+          // v19: 多普勒增强 — 2.8×不对称，月牙形亮环
+          float dopplerBright = 1.0 + vDoppler * 2.8;
 
           alpha *= vAlpha * brightnessMod * dopplerBright;
           if (alpha < 0.008) discard;
 
-          // v18: 多普勒色偏增强 — 接近侧更蓝白，远离侧更暗红
+          // v19: 多普勒色偏增强 — 月牙不对称蓝白/暗红
           vec3 finalColor = vColor * brightnessMod * dopplerBright;
-          finalColor += vec3(-0.06, -0.02, 0.10) * vDoppler;
+          finalColor += vec3(-0.10, -0.03, 0.15) * vDoppler;
 
           gl_FragColor = vec4(finalColor, alpha);
         }
@@ -460,20 +468,22 @@ export class BlackHole {
     this._diskContainer.add(this.jetParticles);
   }
 
-  // ==================== v13: 外层光晕（暖橙微光，透明度-60%） ====================
+  // ==================== v19: 外层光晕（盘状分布 + 透明度-50%，取消球形弥散） ====================
   createGlow(cfg) {
     const glowGeo = new THREE.SphereGeometry(cfg.eventHorizonRadius * 3.5, 32, 32);
     this.glowMaterial = new THREE.ShaderMaterial({
       uniforms: {
         uTime: { value: 0 },
-        uColor: { value: new THREE.Color(0.6, 0.25, 0.12) }, // v18: 暗红褐，降饱和
+        uColor: { value: new THREE.Color(0.6, 0.25, 0.12) },
       },
       vertexShader: `
         varying vec3 vNormal;
         varying vec3 vWorldPos;
+        varying vec3 vLocalPos;
         void main() {
           vec4 wp = modelMatrix * vec4(position, 1.0);
           vWorldPos = wp.xyz;
+          vLocalPos = position;
           vNormal = normalize(mat3(modelMatrix) * normal);
           gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
         }
@@ -481,16 +491,21 @@ export class BlackHole {
       fragmentShader: `
         varying vec3 vNormal;
         varying vec3 vWorldPos;
+        varying vec3 vLocalPos;
         uniform float uTime;
         uniform vec3 uColor;
         void main() {
           vec3 viewDir = normalize(cameraPosition - vWorldPos);
           float rim = 1.0 - max(0.0, abs(dot(vNormal, viewDir)));
-          float intensity = pow(rim, 5.0);
+          // v19: 盘状分布 — 垂直方向快速衰减（Y分量越大越暗）
+          float r = length(vLocalPos.xz);
+          float h = abs(vLocalPos.y);
+          float diskShape = exp(-h * h / (r * r * 0.08 + 1.0));
+          float intensity = pow(rim, 5.0) * diskShape;
           float pulse = 0.85 + sin(uTime * 0.5) * 0.15;
-          float alpha = intensity * 0.12 * pulse; // v18: 0.15→0.12（再降20%）
+          float alpha = intensity * 0.06 * pulse; // v19: 0.12→0.06 (-50%)
           if (alpha < 0.003) discard;
-          gl_FragColor = vec4(uColor * intensity * pulse * 0.7, alpha);
+          gl_FragColor = vec4(uColor * intensity * pulse * 0.5, alpha);
         }
       `,
       blending: THREE.AdditiveBlending,
@@ -499,7 +514,7 @@ export class BlackHole {
     this.group.add(new THREE.Mesh(glowGeo, this.glowMaterial));
   }
 
-  // ==================== v13: 环境螺旋坠落粒子 ====================
+  // ==================== v19: 环境螺旋坠落粒子 ====================
   createInfallParticles(cfg) {
     const count = cfg.infallParticleCount || 2000;
     const range = cfg.infallRange || cfg.accretionOuterRadius * 2;
@@ -548,8 +563,8 @@ export class BlackHole {
           float dist = length(position);
           vDist = dist;
           float distNorm = clamp(dist / (uEHRadius * 10.0), 0.0, 1.0);
-          // 越近越亮越小（物质被压缩加热）
-          vAlpha = aAlpha * (0.15 + (1.0 - distNorm) * 0.85);
+          // v19: 压暗坠落粒子 + 盘面附近稍亮
+          vAlpha = aAlpha * (0.08 + (1.0 - distNorm) * 0.7);
           float sizeScale = 0.25 + distNorm * 0.75;
           vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
           gl_PointSize = aSize * sizeScale * uPixelRatio * (600.0 / max(-mvPosition.z, 1.0));
