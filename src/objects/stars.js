@@ -20,128 +20,17 @@ export class StarField {
   }
 
   init(scene) {
-    const { layers, spread } = config.stars;
+    const { spread } = config.stars;
 
-    layers.forEach((layer, index) => {
-      this.createStarLayer(scene, layer, spread, index);
-    });
-
+    // v25-fix5: 精简星空层次，
+    // 由「银河系（核球+旋臂+尘埃+银晕）+ 高亮星」承担
     this.createBrightStars(scene, spread);
     this.createMilkyWay(scene, spread);
-    // v13: 深场背景星星 (挂到scene而非galaxyGroup，作为固定背景)
-    this.createDeepField(scene);
 
-    console.log('[StarField] 星空初始化完成');
+    console.log('[StarField] 星空初始化完成（仅银河系+高亮星）');
   }
 
-  createStarLayer(scene, layer, spread, layerIndex) {
-    const geometry = new THREE.BufferGeometry();
-    const positions = new Float32Array(layer.count * 3);
-    const colors = new Float32Array(layer.count * 3);
-    const sizes = new Float32Array(layer.count);
 
-    for (let i = 0; i < layer.count; i++) {
-      const i3 = i * 3;
-
-      const theta = Math.random() * Math.PI * 2;
-      const phi = Math.acos(2 * Math.random() - 1);
-      const r = spread * (0.5 + Math.random() * 0.5);
-
-      positions[i3] = r * Math.sin(phi) * Math.cos(theta);
-      positions[i3 + 1] = r * Math.sin(phi) * Math.sin(theta);
-      positions[i3 + 2] = r * Math.cos(phi);
-
-      // 真实星色分布（OBAFGKM）
-      const starType = Math.random();
-      let hue, saturation, lightness;
-      if (starType < 0.15) {
-        // O/B: 蓝巨星
-        hue = 0.58 + Math.random() * 0.04;
-        saturation = 0.2 + Math.random() * 0.3;
-        lightness = 0.8 + Math.random() * 0.2;
-      } else if (starType < 0.35) {
-        // A/F: 白色
-        hue = 0.08 + Math.random() * 0.04;
-        saturation = 0.05 + Math.random() * 0.1;
-        lightness = 0.8 + Math.random() * 0.2;
-      } else if (starType < 0.60) {
-        // G: 黄色（类太阳）
-        hue = 0.10 + Math.random() * 0.05;
-        saturation = 0.2 + Math.random() * 0.3;
-        lightness = 0.7 + Math.random() * 0.3;
-      } else if (starType < 0.85) {
-        // K: 橙色
-        hue = 0.07 + Math.random() * 0.03;
-        saturation = 0.4 + Math.random() * 0.3;
-        lightness = 0.6 + Math.random() * 0.2;
-      } else {
-        // M: 红矮星
-        hue = 0.01 + Math.random() * 0.03;
-        saturation = 0.5 + Math.random() * 0.4;
-        lightness = 0.4 + Math.random() * 0.3;
-      }
-
-      const color = new THREE.Color().setHSL(hue, saturation, lightness);
-
-      colors[i3] = color.r;
-      colors[i3 + 1] = color.g;
-      colors[i3 + 2] = color.b;
-
-      sizes[i] = randomRange(layer.size[0], layer.size[1]);
-    }
-
-    geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-    geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
-    geometry.setAttribute('size', new THREE.BufferAttribute(sizes, 1));
-
-    const material = new THREE.ShaderMaterial({
-      uniforms: {
-        uPixelRatio: { value: Math.min(window.devicePixelRatio, 2) },
-      },
-      vertexShader: `
-        attribute float size;
-        uniform float uPixelRatio;
-        varying vec3 vColor;
-        varying float vDepth;
-        void main() {
-          vColor = color;
-          vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
-          vDepth = -mvPosition.z; // view-space depth
-          gl_PointSize = size * uPixelRatio * (300.0 / -mvPosition.z);
-          gl_Position = projectionMatrix * mvPosition;
-        }
-      `,
-      fragmentShader: `
-        precision highp float;
-        varying vec3 vColor;
-        varying float vDepth;
-        void main() {
-          float d = length(gl_PointCoord - 0.5) * 2.0;
-          float alpha = 1.0 - smoothstep(0.0, 1.0, d);
-          alpha *= 0.8;
-          if (alpha < 0.01) discard;
-          // v23: 星际消光 — 远处恒星偏红偏暗，模拟星际尘埃遮挡
-          float dustFactor = smoothstep(3000.0, 12000.0, vDepth);
-          vec3 reddened = mix(vColor, vColor * vec3(1.0, 0.7, 0.45), dustFactor * 0.5);
-          float dimming = 1.0 - dustFactor * 0.35;
-          gl_FragColor = vec4(reddened * dimming, alpha * dimming);
-        }
-      `,
-      transparent: true,
-      depthWrite: false,
-      blending: THREE.AdditiveBlending,
-      vertexColors: true,
-    });
-
-    const points = new THREE.Points(geometry, material);
-    points.userData.layerIndex = layerIndex;
-    points.userData.depth = layer.depth;
-
-    scene.add(points);
-    this.meshes.push(points);
-    this.materials.push(material);
-    this.geometries.push(geometry);
-  }
 
   createBrightStars(scene, spread) {
     const count = 50;
@@ -558,66 +447,6 @@ export class StarField {
     this.meshes.push(hazePoints);
     this.materials.push(hazeMat);
     this.geometries.push(geo);
-  }
-
-  /** v13: 深场背景星星 — 数十万微小暗淡的点，模拟真实天文照片背景密度 */
-  createDeepField(scene) {
-    const cfg = config.stars.deepField;
-    if (!cfg) return;
-    const { count, spread, opacity, minSize, maxSize } = cfg;
-
-    const geometry = new THREE.BufferGeometry();
-    const positions = new Float32Array(count * 3);
-    const colors = new Float32Array(count * 3);
-
-    for (let i = 0; i < count; i++) {
-      const i3 = i * 3;
-      const theta = Math.random() * Math.PI * 2;
-      const phi = Math.acos(2 * Math.random() - 1);
-      const r = spread * (0.6 + Math.random() * 0.4);
-
-      positions[i3] = r * Math.sin(phi) * Math.cos(theta);
-      positions[i3 + 1] = r * Math.sin(phi) * Math.sin(theta);
-      positions[i3 + 2] = r * Math.cos(phi);
-
-      // 真实颜色分布：大部分暗红/暗黄，少量蓝白
-      const type = Math.random();
-      let c;
-      if (type < 0.6) {
-        // M/K型红矮星 (最常见)
-        c = new THREE.Color().setHSL(0.05 + Math.random() * 0.05, 0.3 + Math.random() * 0.3, 0.3 + Math.random() * 0.2);
-      } else if (type < 0.85) {
-        // G型黄星
-        c = new THREE.Color().setHSL(0.1 + Math.random() * 0.05, 0.15 + Math.random() * 0.2, 0.4 + Math.random() * 0.3);
-      } else {
-        // B/A型蓝白星 (稀少)
-        c = new THREE.Color().setHSL(0.58 + Math.random() * 0.06, 0.1 + Math.random() * 0.2, 0.6 + Math.random() * 0.3);
-      }
-      colors[i3] = c.r;
-      colors[i3 + 1] = c.g;
-      colors[i3 + 2] = c.b;
-    }
-
-    geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-    geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
-
-    const material = new THREE.PointsMaterial({
-      size: randomRange(minSize, maxSize),
-      vertexColors: true,
-      transparent: true,
-      opacity: opacity,
-      sizeAttenuation: true,
-      blending: THREE.AdditiveBlending,
-      depthWrite: false,
-    });
-
-    const points = new THREE.Points(geometry, material);
-    points.userData.isDeepField = true;
-    scene.add(points);
-
-    this.meshes.push(points);
-    this.materials.push(material);
-    this.geometries.push(geometry);
   }
 
   update(delta, elapsed) {

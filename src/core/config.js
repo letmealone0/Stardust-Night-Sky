@@ -50,7 +50,7 @@ export const config = {
       armSpread: 0.12,        // v25: 收紧旋臂让结构更清晰
       position: { x: -15000, y: 500, z: -30000 },
       tilt: 50,
-      scale: 22.0,
+      scale: 8.0,             // v25-fix4: 缩小到8（从22降），银河半径=40000，玩家在外部
       hazeCount: 3000,        // v25-fix: 减少雾气粒子数
       // v25-fix: 四层配比 — 减少核球和银晕，突出旋臂
       coreBulgeRatio: 0.06,   // v25-fix: 核球6%（从12%减半）
@@ -63,11 +63,11 @@ export const config = {
       // v25: 旋臂渐宽
       armWidenFactor: 0.08,   // 旋臂随半径增宽系数
     },
-    // v13: 深场背景星星
+    // v25-fix: 深场背景星星 — 极稀疏壳层，避免形成实心球
     deepField: {
-      count: 80000,              // 深场星星数量
+      count: 20000,              // v25-fix: 80000→20000，大幅减少
       spread: 18000,             // 分布范围
-      opacity: 0.12,             // 基础透明度
+      opacity: 0.08,             // v25-fix: 透明度降低
       minSize: 0.05,             // 最小尺寸
       maxSize: 0.15,             // 最大尺寸
     },
