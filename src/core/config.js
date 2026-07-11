@@ -42,7 +42,7 @@ export const config = {
       { count: 2500, depth: 0.5, size: [0.15, 0.3] },
       { count: 1500, depth: 1.0, size: [0.2, 0.5] },
     ],
-    // v25: 银河系 — 对数螺旋四层结构
+    // v25-fix: 银河系 — 对数螺旋四层结构
     galaxy: {
       count: 40000,           // v25: 增加到40000支撑四层
       armCount: 4,            // v25: 4条主旋臂（标准棒旋星系）
@@ -51,15 +51,15 @@ export const config = {
       position: { x: -15000, y: 500, z: -30000 },
       tilt: 50,
       scale: 22.0,
-      hazeCount: 5000,
-      // v25: 四层配比
-      coreBulgeRatio: 0.12,   // 核球12%
-      armRatio: 0.55,         // 旋臂主星55%
-      dustRatio: 0.15,        // 尘埃暗带15%
-      haloRatio: 0.18,        // 银晕18%
-      // v25: 核球参数
-      bulgeRadius: 0.08,      // 核球占旋臂长度比例
-      bulgeBrightness: 2.0,   // 核球亮度倍率
+      hazeCount: 3000,        // v25-fix: 减少雾气粒子数
+      // v25-fix: 四层配比 — 减少核球和银晕，突出旋臂
+      coreBulgeRatio: 0.06,   // v25-fix: 核球6%（从12%减半）
+      armRatio: 0.62,         // v25-fix: 旋臂62%（从55%增加）
+      dustRatio: 0.16,        // 尘埃暗带16%
+      haloRatio: 0.16,        // v25-fix: 银晕16%（从18%减少）
+      // v25-fix: 核球参数 — 缩小并压暗
+      bulgeRadius: 0.06,      // v25-fix: 核球6%（从8%缩小）
+      bulgeBrightness: 1.0,   // v25-fix: 核球不额外增亮（从2.0降到1.0）
       // v25: 旋臂渐宽
       armWidenFactor: 0.08,   // 旋臂随半径增宽系数
     },

@@ -278,23 +278,23 @@ export class StarField {
       let x, y, z;
 
       if (i < coreBulgeCount) {
-        // ===== 层1: 核球 — 密集椭球体，金白色，pow集中分布 =====
+        // ===== 层1: 核球 — v25-fix: 更小更暗 =====
         const theta = Math.random() * Math.PI * 2;
         const phi = Math.acos(2 * Math.random() - 1);
-        const r = Math.pow(Math.random(), 2.0) * bulgeR; // pow(2)集中到中心
+        const r = Math.pow(Math.random(), 2.5) * bulgeR; // v25-fix: pow(2.5)更集中到中心
         x = Math.cos(theta) * Math.sin(phi) * r;
         z = Math.sin(theta) * Math.sin(phi) * r;
-        y = Math.cos(phi) * r * 0.25; // 压扁
+        y = Math.cos(phi) * r * 0.15; // v25-fix: 更扁（0.25→0.15）
 
-        // 核球颜色：暖金白
+        // v25-fix: 核球颜色压暗（暖金白，但light降低）
         const hue = 0.1 + Math.random() * 0.04;
         const sat = 0.15 + Math.random() * 0.15;
-        const light = 0.75 + Math.random() * 0.25;
+        const light = 0.55 + Math.random() * 0.20; // v25-fix: light从0.75降到0.55
         const c = new THREE.Color().setHSL(hue, sat, light);
-        colors[i3] = c.r * bulgeBrightness;
-        colors[i3 + 1] = c.g * bulgeBrightness;
-        colors[i3 + 2] = c.b * bulgeBrightness;
-        sizes[i] = 0.2 + Math.random() * 0.5;
+        colors[i3] = c.r * bulgeBrightness * 0.7; // v25-fix: 额外压暗30%
+        colors[i3 + 1] = c.g * bulgeBrightness * 0.7;
+        colors[i3 + 2] = c.b * bulgeBrightness * 0.7;
+        sizes[i] = 0.15 + Math.random() * 0.35; // v25-fix: 粒子更小
 
       } else if (i < coreBulgeCount + armCount_) {
         // ===== 层2: 旋臂主星 — 对数螺旋分布 =====
@@ -358,18 +358,20 @@ export class StarField {
         sizes[i] = 0.06 + Math.random() * 0.12;
 
       } else {
-        // ===== 层4: 银晕 — 稀疏弥散冷色球体 =====
+        // ===== 层4: 银晕 — v25-fix: 极扁盘状分布，不是球 =====
         const theta = Math.random() * Math.PI * 2;
-        const phi = Math.acos(2 * Math.random() - 1);
-        const r = Math.pow(Math.random(), 0.3) * armLength * 1.2; // 延伸到更远
-        x = r * Math.sin(phi) * Math.cos(theta);
-        z = r * Math.sin(phi) * Math.sin(theta);
-        y = r * Math.cos(phi) * 0.4; // 略扁
+        // v25-fix: 用二维正态分布，Y轴极扁
+        const r2d = Math.sqrt(-2 * Math.log(1 - Math.random() * 0.999)) * armLength * 0.7;
+        const angle = theta + Math.random() * 0.3;
+        x = Math.cos(angle) * r2d;
+        z = Math.sin(angle) * r2d;
+        // v25-fix: Y轴极度压缩（从0.4降到0.08），形成薄盘
+        y = gaussianRandom(0, thickness * 0.08);
 
-        // 冷蓝白色（古老恒星）
+        // 冷蓝白色（古老恒星），透明度降低
         const c = new THREE.Color().setHSL(0.58 + Math.random() * 0.06, 0.08 + Math.random() * 0.12, 0.35 + Math.random() * 0.25);
-        colors[i3] = c.r; colors[i3 + 1] = c.g; colors[i3 + 2] = c.b;
-        sizes[i] = 0.08 + Math.random() * 0.18;
+        colors[i3] = c.r * 0.7; colors[i3 + 1] = c.g * 0.7; colors[i3 + 2] = c.b * 0.7; // v25-fix: 颜色压暗30%
+        sizes[i] = 0.05 + Math.random() * 0.12; // v25-fix: 粒子更小
       }
 
       positions[i3] = x;
@@ -457,41 +459,45 @@ export class StarField {
     this.createGalaxyHaze(scene, galaxyGroup, armCount, spin, armLength, thickness, galaxyScale, tiltDeg);
   }
 
-  /**
-   * v8.0: 银河雾气层 — 大粒子低透明度，模拟银河尘雾
-   */
+  // v25-fix: 银河雾气层 — 改用对数螺旋 + 扁平化 + 径向衰减
   createGalaxyHaze(scene, galaxyGroup, armCount, spin, armLength, thickness, galaxyScale, tiltDeg) {
     const hazeCount = config.stars.galaxy?.hazeCount || 3000;
     const geo = new THREE.BufferGeometry();
     const pos = new Float32Array(hazeCount * 3);
     const col = new Float32Array(hazeCount * 3);
 
+    // v25-fix: 复用对数螺旋参数，让雾气沿旋臂分布
+    const b = Math.log(armLength * 0.8 / (armLength * 0.06)) / (Math.PI * 2.5);
+    const a = (armLength * 0.06);
+
     for (let i = 0; i < hazeCount; i++) {
       const i3 = i * 3;
       const branchIndex = i % armCount;
       const branchAngle = (branchIndex / armCount) * Math.PI * 2;
-      const rand = Math.pow(Math.random(), 0.4);
-      const radius = rand * armLength;
-      const spinAngle = spin * radius / armLength;
-      const scatterAngle = gaussianRandom(0, 0.12);
 
-      const angle = branchAngle + spinAngle + scatterAngle;
-      const scatterR = gaussianRandom(0, armLength * 0.07);
+      // v25-fix: 对数螺旋半径（与主旋臂同步）
+      const t = Math.pow(Math.random(), 0.6);
+      const theta = t * Math.PI * 2.5;
+      const r = a * Math.exp(b * theta);
 
-      pos[i3]     = Math.cos(angle) * (radius + scatterR);
-      pos[i3 + 1] = gaussianRandom(0, thickness * 0.6);
-      pos[i3 + 2] = Math.sin(angle) * (radius + scatterR);
+      // v25-fix: 散射更小（0.08→0.05），雾气更贴合旋臂
+      const scatterAngle = gaussianRandom(0, 0.08);
+      const scatterR = gaussianRandom(0, r * 0.06);
+      const angle = branchAngle + theta + scatterAngle;
 
-      // 温暖的淡紫色/淡蓝色雾气
-      const hue = 0.6 + Math.random() * 0.15;
-      const c = new THREE.Color().setHSL(hue, 0.15 + Math.random() * 0.15, 0.35 + Math.random() * 0.25);
+      pos[i3]     = Math.cos(angle) * (r + scatterR);
+      pos[i3 + 1] = gaussianRandom(0, thickness * 0.3); // v25-fix: 厚度减半
+      pos[i3 + 2] = Math.sin(angle) * (r + scatterR);
+
+      // 暖棕色雾气（低饱和度，避免抢眼）
+      const c = new THREE.Color().setHSL(0.08 + Math.random() * 0.06, 0.12 + Math.random() * 0.1, 0.25 + Math.random() * 0.2);
       col[i3] = c.r; col[i3 + 1] = c.g; col[i3 + 2] = c.b;
     }
 
     geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
     geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
 
-    // v19.5: ShaderMaterial 让雾气随银河差速自转，与主盘同步
+    // v25-fix: ShaderMaterial — 旋臂同步旋转 + 粒子大小衰减
     const hazeMat = new THREE.ShaderMaterial({
       uniforms: {
         uTime: { value: 0 },
@@ -502,6 +508,7 @@ export class StarField {
       },
       vertexShader: `
         varying vec3 vColor;
+        varying float vAlpha;
         uniform float uTime;
         uniform float uCoreRotSpeed;
         uniform float uRadiusFalloff;
@@ -510,25 +517,32 @@ export class StarField {
         void main() {
           vColor = color;
           float r = length(position.xz) + 0.01;
+          // v25-fix: 差速旋转（内快外慢）
           float localSpeed = uCoreRotSpeed / (0.1 + r * uRadiusFalloff);
           float angle = uTime * localSpeed * uTimeScale;
           float cosA = cos(angle), sinA = sin(angle);
           vec3 pos = position;
           pos.x = position.x * cosA - position.z * sinA;
           pos.z = position.x * sinA + position.z * cosA;
+          // v25-fix: 径向衰减——内亮外暗，避免球形均匀感
+          float radialFade = 1.0 - smoothstep(0.0, 0.8, r / (length(vec3(1.0, 0.0, 1.0)) * 5000.0));
+          vAlpha = 0.08 * radialFade;
           vec4 mvPosition = modelViewMatrix * vec4(pos, 1.0);
-          gl_PointSize = 5.0 * uPixelRatio * (300.0 / -mvPosition.z);
+          // v25-fix: 粒子大小随距离衰减（近大远小）
+          gl_PointSize = (2.5 + radialFade * 2.5) * uPixelRatio * (300.0 / -mvPosition.z);
+          gl_PointSize = clamp(gl_PointSize, 0.5, 4.0);
           gl_Position = projectionMatrix * mvPosition;
         }
       `,
       fragmentShader: `
         precision highp float;
         varying vec3 vColor;
+        varying float vAlpha;
         void main() {
           float d = length(gl_PointCoord - 0.5) * 2.0;
           float alpha = 1.0 - smoothstep(0.0, 1.0, d);
-          alpha *= 0.12;
-          if (alpha < 0.005) discard;
+          alpha *= vAlpha;
+          if (alpha < 0.003) discard;
           gl_FragColor = vec4(vColor, alpha);
         }
       `,
