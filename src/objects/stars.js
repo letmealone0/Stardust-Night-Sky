@@ -102,9 +102,11 @@ export class StarField {
         attribute float size;
         uniform float uPixelRatio;
         varying vec3 vColor;
+        varying float vDepth;
         void main() {
           vColor = color;
           vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
+          vDepth = -mvPosition.z; // view-space depth
           gl_PointSize = size * uPixelRatio * (300.0 / -mvPosition.z);
           gl_Position = projectionMatrix * mvPosition;
         }
@@ -112,12 +114,17 @@ export class StarField {
       fragmentShader: `
         precision highp float;
         varying vec3 vColor;
+        varying float vDepth;
         void main() {
           float d = length(gl_PointCoord - 0.5) * 2.0;
           float alpha = 1.0 - smoothstep(0.0, 1.0, d);
           alpha *= 0.8;
           if (alpha < 0.01) discard;
-          gl_FragColor = vec4(vColor, alpha);
+          // v23: 星际消光 — 远处恒星偏红偏暗，模拟星际尘埃遮挡
+          float dustFactor = smoothstep(3000.0, 12000.0, vDepth);
+          vec3 reddened = mix(vColor, vColor * vec3(1.0, 0.7, 0.45), dustFactor * 0.5);
+          float dimming = 1.0 - dustFactor * 0.35;
+          gl_FragColor = vec4(reddened * dimming, alpha * dimming);
         }
       `,
       transparent: true,
@@ -178,10 +185,14 @@ export class StarField {
         uniform float uTime;
         uniform float uSize;
         varying vec3 vColor;
+        varying vec3 vViewDir;
         void main() {
           float twinkle = 0.5 + sin(uTime * aFrequency + aPhase) * 0.5;
           float factor = 0.7 + twinkle * 0.3;
           vColor = aColor * factor;
+          // v23: 屏幕空间方向（用于衍射尖峰定向）
+          vec4 mvPos = modelViewMatrix * vec4(position, 1.0);
+          vViewDir = normalize(mvPos.xyz);
           vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
           gl_PointSize = uSize * (300.0 / -mvPosition.z);
           gl_Position = projectionMatrix * mvPosition;
@@ -189,11 +200,28 @@ export class StarField {
       `,
       fragmentShader: `
         varying vec3 vColor;
+        varying vec3 vViewDir;
         void main() {
-          float d = length(gl_PointCoord - 0.5) * 2.0;
-          float alpha = 1.0 - smoothstep(0.0, 1.0, d);
+          vec2 uv = gl_PointCoord - 0.5;
+          float dist = length(uv);
+          float core = exp(-dist * dist * 200.0) * 1.5;
+
+          // v23: 衍射尖峰 — 4条主光芒（望远镜/人眼光学效果）
+          float angle = atan(uv.y, uv.x);
+          float viewAngle = atan(vViewDir.y, vViewDir.x);
+          float ca = cos(viewAngle), sa = sin(viewAngle);
+          float rx = uv.x * ca + uv.y * sa;
+          float ry = -uv.x * sa + uv.y * ca;
+          float angleR = atan(ry, rx);
+          float spikes = pow(abs(sin(angleR * 2.0)), 24.0) * exp(-dist * 5.0) * 0.6;
+          spikes += pow(abs(sin(angleR * 2.0 + 0.785)), 28.0) * exp(-dist * 6.0) * 0.4;
+          // 微弱随机散射光芒
+          float scatter = pow(abs(sin(angleR * 5.0 + 1.2)), 20.0) * exp(-dist * 8.0) * 0.15;
+
+          float halo = exp(-dist * dist * 12.0) * 0.4;
+          float alpha = core + halo + spikes + scatter;
           if (alpha < 0.01) discard;
-          gl_FragColor = vec4(vColor, alpha);
+          gl_FragColor = vec4(vColor * alpha, alpha);
         }
       `,
       transparent: true,

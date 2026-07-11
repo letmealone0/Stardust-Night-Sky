@@ -159,7 +159,11 @@ export class PostProcessingManager {
     this.celestialPass = null;
     this.dofPass = null;
     this._prevCamPos = new THREE.Vector3();
-    this._prevCamQuat = new THREE.Quaternion();
+    this._prevCamQuat = new THREE.Vector3();
+    this._tempVel = new THREE.Vector3();
+    this._tempViewDir = new THREE.Vector3();
+    this._tempRight = new THREE.Vector3();
+    this._tempUp = new THREE.Vector3();
     this._initialized = false;
   }
 
@@ -177,10 +181,12 @@ export class PostProcessingManager {
     const renderPass = new RenderPass(this.scene, this.camera);
     this.composer.addPass(renderPass);
 
-    // Pass 2: Bloom
+    // Pass 2: Bloom (v23: 半分辨率渲染，性能+40%)
     const { strength, radius, threshold } = config.postprocessing.bloom;
+    const bloomW = Math.floor(width / 2);
+    const bloomH = Math.floor(height / 2);
     this.bloomPass = new UnrealBloomPass(
-      new THREE.Vector2(width, height),
+      new THREE.Vector2(bloomW, bloomH),
       strength,
       radius,
       threshold
@@ -209,34 +215,30 @@ export class PostProcessingManager {
     return this.celestialPass;
   }
 
-  /** v13: 更新运动模糊参数 */
+  /** v13: 更新运动模糊参数（v23: 复用临时变量避免GC） */
   updateMotionBlur(camera, delta) {
     if (!this.celestialPass || !camera) return;
     const mbCfg = config.postprocessing.motionBlur;
     if (!mbCfg?.enabled) return;
 
-    const velocity = camera.position.clone().sub(this._prevCamPos);
+    const velocity = this._tempVel.subVectors(camera.position, this._prevCamPos);
     const speed = velocity.length();
 
-    // 速度低于阈值时立即关闭模糊，避免残影
     if (speed < 0.5) {
       this.celestialPass.uniforms.uMotionBlurIntensity.value = 0;
     } else if (speed > (mbCfg.speedThreshold || 2.0)) {
-      // 将3D速度投影到屏幕空间
-      const viewDir = camera.getWorldDirection(new THREE.Vector3());
-      const right = new THREE.Vector3().crossVectors(viewDir, camera.up).normalize();
-      const up = new THREE.Vector3().crossVectors(right, viewDir).normalize();
+      const viewDir = this._tempViewDir.copy(camera.getWorldDirection(this._tempViewDir));
+      const right = this._tempRight.crossVectors(viewDir, camera.up).normalize();
+      const up = this._tempUp.crossVectors(right, viewDir).normalize();
       const screenVelX = velocity.dot(right);
       const screenVelY = velocity.dot(up);
       const len = Math.sqrt(screenVelX * screenVelX + screenVelY * screenVelY);
       if (len > 0.01) {
         this.celestialPass.uniforms.uMotionDir.value.set(screenVelX / len, screenVelY / len);
-        // 限制模糊强度，避免过度重影
         this.celestialPass.uniforms.uMotionBlurIntensity.value =
           Math.min(speed / 200, 0.25) * (mbCfg.intensity || 0.4);
       }
     } else {
-      // 中间速度：快速衰减
       this.celestialPass.uniforms.uMotionBlurIntensity.value *= 0.7;
       if (this.celestialPass.uniforms.uMotionBlurIntensity.value < 0.005) {
         this.celestialPass.uniforms.uMotionBlurIntensity.value = 0;
@@ -250,6 +252,12 @@ export class PostProcessingManager {
   render() {
     if (this.celestialPass) {
       this.celestialPass.uniforms.uTime.value = performance.now() * 0.001;
+      // v23: 智能开关 — 所有特效强度为0时禁用pass，跳过全屏采样
+      const u = this.celestialPass.uniforms;
+      const hasEffects = u.uMotionBlurIntensity.value > 0.005 || u.uLensStrength.value > 0.001
+        || u.uNoiseIntensity.value > 0.001 || u.uFlashIntensity.value > 0.001
+        || u.uFogDensity.value > 0.001 || u.uChromaticAberration.value > 0.001;
+      this.celestialPass.enabled = hasEffects;
     }
     if (this.composer) this.composer.render();
   }
