@@ -1,15 +1,12 @@
 /**
- * 黑洞系统 v19 — 黑核主导+多普勒月牙不对称+盘状光晕
+ * 黑洞系统 v20 — 亮度大幅压暗+多普勒3.2×+内落视角偏置+螺旋噪声增强
  *
- * v19 核心改进：
- * - 整体压暗30%：亮度baseline×0.7，黑核主导视觉
- * - 内缘裁剪：<1.1×事件视界粒子直接透明，保证黑核纯黑
- * - 多普勒2.8×：朝向侧月牙形亮环，远离侧暗红，打破正圆对称
- * - 引力弯折+50%：远侧盘面上半弧包裹黑洞顶部
- * - 光子球弱化：透明度-60%+粗细减半(rim^12)
- * - 光晕盘状化：垂直方向exp衰减，仅盘面附近微光
- * - 螺旋暗带：大尺度角向噪声2-3条不规则亮暗带
- * - 坠落粒子压暗
+ * v20 核心改进：
+ * - 亮度大幅压暗：基线0.72/0.55（原1.05/0.85），"黑暗中扭曲火焰"
+ * - 多普勒3.2×：月牙亮弧更强烈，色偏×1.5
+ * - 内落视角偏置：朝向相机侧粒子更快内落，不对称内落
+ * - 螺旋噪声带增强：频率2.8/5.0，幅度0.6，更自然不规则
+ * - 光子环微调：rim^10（介于12和9之间）
  */
 
 import * as THREE from 'three';
@@ -83,7 +80,7 @@ export class BlackHole {
     this.createDebrisParticles(cfg);
 
     scene.add(this.group);
-    console.log('[BlackHole] v19 黑核主导+月牙不对称初始化完成');
+    console.log('[BlackHole] v20 黑暗火焰+内落视角偏置初始化完成');
   }
 
   // ==================== v14: 光子球 → 极细亮环（挂载盘容器，与盘面共面） ====================
@@ -114,7 +111,7 @@ export class BlackHole {
         void main() {
           vec3 viewDir = normalize(cameraPosition - vWorldPos);
           float rim = 1.0 - abs(dot(normalize(vNormal), viewDir));
-          float ring = pow(rim, 12.0);
+          float ring = pow(rim, 10.0);
           float pulse = 0.8 + sin(uTime * 4.0) * 0.2;
           float a = ring * 0.28 * pulse; // v19: 0.7→0.28 (-60%)
           if (a < 0.02) discard;
@@ -234,7 +231,11 @@ export class BlackHole {
           // v17: 湍流扰动幅度×3 — 径向+角度双混沌
           float noisePhase = sin(aRandom * 12.3 + uTime * 0.2) * 0.45;
           float noisePhase2 = cos(aRandom * 7.9 + uTime * 0.35) * 0.3;
-          float currentT = clamp(infallT + noisePhase + noisePhase2 * 0.5, 0.0, 1.0);
+          // v20: 内落视角偏置 — 朝向相机侧粒子更快内落
+          vec3 dirBias = normalize(cameraPosition - (modelMatrix * vec4(pos, 1.0)).xyz);
+          float viewDirDot = dot(orbitTangent, dirBias);
+          float directionBias = 0.35 * viewDirDot;
+          float currentT = clamp(infallT + noisePhase + noisePhase2 * 0.5 + directionBias, 0.0, 1.0);
           float accelFactor = 1.0 + 3.0 * pow(1.0 - currentT, 2.0);
           float currentR = uOuterRadius - (uOuterRadius - uInnerRadius) * min(currentT * accelFactor, 1.0);
           currentR = max(currentR, uInnerRadius * 1.02);
@@ -262,12 +263,12 @@ export class BlackHole {
           vec3 toCamera = normalize(cameraPosition - particleWorld.xyz);
           vDoppler = dot(orbitTangent, toCamera);
 
-          // v19: 亮度压暗30% — 黑核主导视觉
+          // v20: 亮度大幅压暗 — "黑暗中扭曲火焰"而非发光球
           float distFactor = clamp((currentR - uInnerRadius) / (uOuterRadius - uInnerRadius), 0.0, 1.0);
           vDistNorm = distFactor;
-          float brightness = exp(-distFactor * 3.5) * 1.05;
-          brightness += exp(-distFactor * 10.0) * 0.85;
-          brightness += uBrightnessPulse * exp(-distFactor * 4.0);
+          float brightness = exp(-distFactor * 4.2) * 0.72;
+          brightness += exp(-distFactor * 12.0) * 0.55;
+          brightness += uBrightnessPulse * exp(-distFactor * 5.0);
 
           // v19: 内缘裁剪 — <1.1×事件视界直接透明，保证黑核纯黑
           float distFromEH = currentR / uEventHorizonR;
@@ -313,23 +314,23 @@ export class BlackHole {
           float alpha = 1.0 - smoothstep(0.0, 1.0, d);
           alpha = pow(alpha, 0.6);
 
-          // v19: 大尺度角向噪声带（2-3条不规则螺旋暗带/亮带）
+          // v20: 大尺度角向噪声带（2-3条不规则螺旋暗带/亮带）— 更强扰动
           float angle2 = atan(vWPos.z, vWPos.x);
           float r2 = length(vWPos.xz) / max(uOuterRadius, 1.0);
           float n = noise2D(vec2(cos(angle2)*3.5, r2*6.0 + uTime*0.15));
-          float spiralBand = noise2D(vec2(angle2 * 1.5 + r2 * 4.0, uTime * 0.04)) * 0.4;
+          float spiralBand = noise2D(vec2(angle2 * 2.8 + r2 * 5.0, uTime * 0.08)) * 0.6;
           float bandNoise = noise2D(vec2(cos(angle2)*1.2, r2*2.5 + uTime*0.05));
-          float brightnessMod = 0.55 + n * 0.7 + bandNoise * 0.2 + spiralBand * 0.3;
+          float brightnessMod = 0.48 + n * 0.6 + spiralBand * 0.35 + bandNoise * 0.2;
 
-          // v19: 多普勒增强 — 2.8×不对称，月牙形亮环
-          float dopplerBright = 1.0 + vDoppler * 2.8;
+          // v20: 多普勒 3.2× — 接近侧月牙亮弧，远离侧暗红
+          float dopplerBright = 1.0 + vDoppler * 3.2;
 
           alpha *= vAlpha * brightnessMod * dopplerBright;
           if (alpha < 0.008) discard;
 
-          // v19: 多普勒色偏增强 — 月牙不对称蓝白/暗红
+          // v20: 多普勒色偏增强 — 月牙不对称蓝白/暗红（×1.5 加强）
           vec3 finalColor = vColor * brightnessMod * dopplerBright;
-          finalColor += vec3(-0.10, -0.03, 0.15) * vDoppler;
+          finalColor += vec3(-0.12, -0.04, 0.18) * vDoppler * 1.5;
 
           gl_FragColor = vec4(finalColor, alpha);
         }
