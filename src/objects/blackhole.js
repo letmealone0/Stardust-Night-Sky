@@ -1,13 +1,13 @@
 /**
- * 黑洞系统 v17 — 湍流弥散吸积盘
- * 内落速度去同步 + 湍流3×增强 + Y轴垂直扰动 + 亮度±35%斑驳
+ * 黑洞系统 v18 — 喷流透视消隐+吸积盘陡峭亮度层次
  *
- * v17 核心改进：
- * - 内落速度去同步：每粒子独立infallSpeed倍率(0.6~1.8×)，打破同步亮线
- * - 湍流3×增强：径向+角度双噪声幅度×3，轨迹彻底弥散混沌
- * - 物质流线弱化：粒子数-60%+透明度-70%，消除臂感
- * - Y轴垂直湍流：双频sin+cos叠加，弱化纯平面线条
- * - 亮度扰动±20→±35%：更强斑驳明暗，打破连续线条
+ * v18 核心改进：
+ * - 喷流透视衰减：视线·喷流轴向点积，正对时仅15%可见，消除贯穿亮线
+ * - 喷流指数轴向衰减：exp(-t*3.5)替代线性，末端自然消散
+ * - 喷流径向湍流：随距离增大横向扰动，边缘弥散
+ * - 吸积盘5级色阶+陡峭亮度：内圈4~6×外圈，蓝白核心18%占比
+ * - 大尺度带状噪声：明暗带打破均匀感
+ * - 引力弯折+30% / 多普勒×1.8增强 / 光晕降饱和暗红褐
  */
 
 import * as THREE from 'three';
@@ -81,7 +81,7 @@ export class BlackHole {
     this.createDebrisParticles(cfg);
 
     scene.add(this.group);
-    console.log('[BlackHole] v17 湍流弥散吸积盘初始化完成');
+    console.log('[BlackHole] v18 喷流消隐+陡峭层次初始化完成');
   }
 
   // ==================== v14: 光子球 → 极细亮环（挂载盘容器，与盘面共面） ====================
@@ -153,24 +153,24 @@ export class BlackHole {
       positions[i3 + 2] = Math.sin(angle) * r;
       radii[i] = r;
 
-      // v15: 温度梯度：内蓝白→中金→外暗红
+      // v18: 温度梯度：扩大蓝白内圈 + 5区明显冷暖差
       const t = rNorm;
       let cr, cg, cb;
-      if (t < 0.12) {
-        // v15: 最内圈蓝白（>10000K）
-        cr = 0.85 + Math.random() * 0.15; cg = 0.88 + Math.random() * 0.12; cb = 0.95 + Math.random() * 0.05;
-      } else if (t < 0.30) {
-        // 内圈：亮白（~8000K）
-        cr = 0.92 + Math.random() * 0.08; cg = 0.85 + Math.random() * 0.15; cb = 0.65 + Math.random() * 0.25;
-      } else if (t < 0.4) {
-        // 中内圈：金黄（~5000K）
-        cr = 1.0; cg = 0.6 + Math.random() * 0.3; cb = 0.1 + Math.random() * 0.15;
+      if (t < 0.18) {
+        // v18: 蓝白核心区扩大 12%→18%（>10000K）
+        cr = 0.82 + Math.random() * 0.18; cg = 0.85 + Math.random() * 0.15; cb = 0.92 + Math.random() * 0.08;
+      } else if (t < 0.35) {
+        // 暖白（~8000K）
+        cr = 0.88 + Math.random() * 0.12; cg = 0.78 + Math.random() * 0.2; cb = 0.55 + Math.random() * 0.3;
       } else if (t < 0.55) {
-        // v16: 中外圈：橙色（降低亮度20%，让蓝白内圈主导视觉）
-        cr = 0.65 + Math.random() * 0.15; cg = 0.18 + Math.random() * 0.15; cb = 0.01 + Math.random() * 0.04;
+        // v18: 金黄（~4500K）
+        cr = 0.95 + Math.random() * 0.05; cg = 0.45 + Math.random() * 0.3; cb = 0.05 + Math.random() * 0.1;
+      } else if (t < 0.75) {
+        // v18: 暗橙（~2500K，压暗）
+        cr = 0.50 + Math.random() * 0.15; cg = 0.12 + Math.random() * 0.1; cb = 0.01 + Math.random() * 0.02;
       } else {
-        // v16: 外圈：暗红（降低亮度25%）
-        cr = 0.30 + Math.random() * 0.18; cg = 0.03 + Math.random() * 0.06; cb = 0.01 + Math.random() * 0.02;
+        // v18: 深暗红（~1200K，大幅压暗）
+        cr = 0.20 + Math.random() * 0.12; cg = 0.02 + Math.random() * 0.03; cb = 0.0 + Math.random() * 0.02;
       }
       colors[i3] = cr; colors[i3 + 1] = cg; colors[i3 + 2] = cb;
       randoms[i] = Math.random();
@@ -245,26 +245,26 @@ export class BlackHole {
                       + cos(uTime * 1.8 + aRandom * 7.3) * 0.4 * rNorm;
           pos.y += yTurb;
 
-          // v15: 引力弯折（幅度微调）
+          // v18: 引力弯折（幅度+30%）
           vec4 bhWorld = modelMatrix * vec4(0.0, 0.0, 0.0, 1.0);
           vec3 dirToCamera = normalize(cameraPosition - bhWorld.xyz);
           vec4 particleWorld = modelMatrix * vec4(pos, 1.0);
           vec3 dirToParticle = normalize(particleWorld.xyz - bhWorld.xyz);
           float alignment = dot(dirToParticle, dirToCamera);
           float farSide = 1.0 - smoothstep(-0.35, 0.35, alignment);
-          float warpAmount = exp(-rNorm * 3.0) * uEventHorizonR * 1.8;
+          float warpAmount = exp(-rNorm * 2.8) * uEventHorizonR * 2.4;
           pos.y += farSide * warpAmount;
 
           // v15: 多普勒计算
           vec3 toCamera = normalize(cameraPosition - particleWorld.xyz);
           vDoppler = dot(orbitTangent, toCamera);
 
-          // 亮度指数衰减 + v15: 近心蓝白偏色
+          // v18: 亮度指数衰减更陡峭 — 内圈4~6倍于外圈
           float distFactor = clamp((currentR - uInnerRadius) / (uOuterRadius - uInnerRadius), 0.0, 1.0);
           vDistNorm = distFactor;
-          float brightness = exp(-distFactor * 2.5) * 1.2;
-          brightness += exp(-distFactor * 8.0) * 0.8;
-          brightness += uBrightnessPulse * exp(-distFactor * 3.0);
+          float brightness = exp(-distFactor * 3.5) * 1.5;
+          brightness += exp(-distFactor * 10.0) * 1.2;
+          brightness += uBrightnessPulse * exp(-distFactor * 4.0);
 
           // v15: 内缘消失 + 外缘淡入（吞噬感）
           float fadeNearInner = 1.0 - smoothstep(0.88, 1.0, infallT);
@@ -306,21 +306,22 @@ export class BlackHole {
           float alpha = 1.0 - smoothstep(0.0, 1.0, d);
           alpha = pow(alpha, 0.6);
 
-          // v17: 旋转噪声扰动亮度 ±35%（斑驳明暗打破连续线条）
+          // v18: 大尺度带状噪声（明暗带打破均匀感）+ 小尺度斑驳
           float angle = atan(vWPos.z, vWPos.x) + uTime * 0.35;
           float r2 = length(vWPos.xz) / max(uOuterRadius, 1.0);
           float n = noise2D(vec2(cos(angle)*3.5, r2*6.0 + uTime*0.15));
-          float brightnessMod = 0.65 + n * 0.7;
+          float bandNoise = noise2D(vec2(cos(angle)*1.2, r2*2.5 + uTime*0.05));
+          float brightnessMod = 0.55 + n * 0.7 + bandNoise * 0.2;
 
-          // v15: 多普勒亮度调制 — 接近侧增亮 +30%，远离侧变暗
-          float dopplerBright = 1.0 + vDoppler * 1.3;
+          // v18: 多普勒增强 — 朝向侧更亮更蓝，远离侧更暗更红
+          float dopplerBright = 1.0 + vDoppler * 1.8;
 
           alpha *= vAlpha * brightnessMod * dopplerBright;
           if (alpha < 0.008) discard;
 
-          // v15: 多普勒色偏 — 接近侧偏蓝白，远离侧偏红
+          // v18: 多普勒色偏增强 — 接近侧更蓝白，远离侧更暗红
           vec3 finalColor = vColor * brightnessMod * dopplerBright;
-          finalColor += vec3(-0.04, -0.01, 0.06) * vDoppler;
+          finalColor += vec3(-0.06, -0.02, 0.10) * vDoppler;
 
           gl_FragColor = vec4(finalColor, alpha);
         }
@@ -389,11 +390,17 @@ export class BlackHole {
         varying vec3 vColor;
         varying float vAlpha;
         varying float vPhase;
+        varying vec3 vWorldPos;
+        varying vec3 vJetDir;
         void main() {
           vColor = color;
           vec3 pos = position;
           vPhase = aPhase;
-          // v14: 流速×2.5
+          // v18: 喷流方向（在局部空间为±Y，需转世界空间）
+          vec3 localJetDir = vec3(0.0, sign(pos.y), 0.0);
+          vJetDir = normalize(mat3(modelMatrix) * localJetDir);
+
+          // 流速×2.5
           float flow = mod(uTime * 2.0 + aPhase * 2.0, 2.0);
           float flowY = flow * uJetLength * 0.5;
           pos.y += sign(pos.y) * flowY;
@@ -402,12 +409,24 @@ export class BlackHole {
             pos.y = sign(pos.y) * uEHRadius * 1.1;
           }
           float t = clamp((absY - uEHRadius * 1.1) / uJetLength, 0.0, 1.0);
-          // v14: 周期节点亮斑（沿轴向sin调制）
-          float nodePulse = 1.0 + sin(t * 18.0 + uTime * 2.0) * 0.35;
-          vAlpha = (1.0 - t * 0.65) * 0.9 * nodePulse;
+
+          // v18: 径向湍流 — 随距离增大横向扰动，打破笔直线条
+          float radialTurb = sin(aPhase * 15.0 + uTime * 1.5) * t * t * uEHRadius * 0.25;
+          pos.x += radialTurb * cos(aPhase * 6.28);
+          pos.z += radialTurb * sin(aPhase * 6.28);
+
+          // v18: 强化轴向衰减 — 指数衰减替代线性，末端自然消散
+          float axialFade = exp(-t * 3.5);
+          // 周期节点亮斑（减弱）
+          float nodePulse = 1.0 + sin(t * 18.0 + uTime * 2.0) * 0.2;
+          // v18: 整体透明度-30%
+          vAlpha = axialFade * 0.63 * nodePulse;
+
+          vec4 wp = modelMatrix * vec4(pos, 1.0); vWorldPos = wp.xyz;
           vec4 mvPosition = modelViewMatrix * vec4(pos, 1.0);
-          gl_PointSize = (0.8 + (1.0 - t) * 0.8) * uPixelRatio * (280.0 / max(-mvPosition.z, 1.0));
-          gl_PointSize = clamp(gl_PointSize, 0.8, 16.0);
+          // v18: 粒子尺寸也随轴向快速衰减
+          gl_PointSize = (0.6 + (1.0 - t) * 1.0) * axialFade * uPixelRatio * (280.0 / max(-mvPosition.z, 1.0));
+          gl_PointSize = clamp(gl_PointSize, 0.5, 14.0);
           gl_Position = projectionMatrix * mvPosition;
         }
       `,
@@ -416,13 +435,21 @@ export class BlackHole {
         varying vec3 vColor;
         varying float vAlpha;
         varying float vPhase;
+        varying vec3 vWorldPos;
+        varying vec3 vJetDir;
         void main() {
           float d = length(gl_PointCoord - 0.5) * 2.0;
           float alpha = 1.0 - smoothstep(0.0, 1.0, d);
           alpha = pow(alpha, 0.5);
-          alpha *= vAlpha;
-          if (alpha < 0.008) discard;
-          gl_FragColor = vec4(vColor * 1.15, alpha);
+
+          // v18: 视角衰减 — 正对喷流时几乎不可见，避免贯穿亮线
+          vec3 viewDir = normalize(cameraPosition - vWorldPos);
+          float viewDot = abs(dot(viewDir, vJetDir));
+          float viewFade = 0.15 + viewDot * 0.85; // 正对时仅15%可见
+
+          alpha *= vAlpha * viewFade;
+          if (alpha < 0.006) discard;
+          gl_FragColor = vec4(vColor * 0.9, alpha);
         }
       `,
       transparent: true, depthWrite: false,
@@ -439,7 +466,7 @@ export class BlackHole {
     this.glowMaterial = new THREE.ShaderMaterial({
       uniforms: {
         uTime: { value: 0 },
-        uColor: { value: new THREE.Color(1.0, 0.55, 0.15) }, // 暖橙
+        uColor: { value: new THREE.Color(0.6, 0.25, 0.12) }, // v18: 暗红褐，降饱和
       },
       vertexShader: `
         varying vec3 vNormal;
@@ -459,12 +486,11 @@ export class BlackHole {
         void main() {
           vec3 viewDir = normalize(cameraPosition - vWorldPos);
           float rim = 1.0 - max(0.0, abs(dot(vNormal, viewDir)));
-          // v13: 极柔和的外层微光，不抢吸积盘主体
           float intensity = pow(rim, 5.0);
           float pulse = 0.85 + sin(uTime * 0.5) * 0.15;
-          float alpha = intensity * 0.15 * pulse; // v22: 0.4 → 0.15（-62%）
+          float alpha = intensity * 0.12 * pulse; // v18: 0.15→0.12（再降20%）
           if (alpha < 0.003) discard;
-          gl_FragColor = vec4(uColor * intensity * pulse * 0.8, alpha);
+          gl_FragColor = vec4(uColor * intensity * pulse * 0.7, alpha);
         }
       `,
       blending: THREE.AdditiveBlending,
