@@ -228,12 +228,17 @@ export class CosmicDust {
       const init = layer.initialPositions;
       const count = pos.length / 3;
 
+      // v25-fix: 壳层分布（中间密、边缘稀），不形成实心球
       for (let i = 0, i3 = 0; i < count; i++, i3 += 3) {
         const theta = Math.random() * Math.PI * 2;
         const phi = Math.acos(2 * Math.random() - 1);
-        const r = spread * (0.2 + Math.random() * 0.8);
+        // 壳层分布：innerRadius ~ outerRadius，中间密
+        const innerR = spread * 0.3;
+        const outerR = spread;
+        const t = Math.random();
+        const r = innerR + (outerR - innerR) * Math.pow(t, 0.6);
         const x = r * Math.sin(phi) * Math.cos(theta);
-        const y = r * Math.sin(phi) * Math.sin(theta);
+        const y = r * Math.sin(phi) * Math.sin(theta) * 0.3; // v25-fix: 扁平化
         const z = r * Math.cos(phi);
         init[i3] = camPos.x + x;
         init[i3 + 1] = camPos.y + y;
