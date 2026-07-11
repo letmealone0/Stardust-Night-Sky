@@ -113,7 +113,7 @@ export class BlackHole {
           float rim = 1.0 - abs(dot(normalize(vNormal), viewDir));
           float ring = pow(rim, 10.0);
           float pulse = 0.8 + sin(uTime * 4.0) * 0.2;
-          float a = ring * 0.28 * pulse; // v19: 0.7→0.28 (-60%)
+          float a = ring * 0.22 * pulse; // v21: 0.28→0.22 微调
           if (a < 0.02) discard;
           gl_FragColor = vec4(uColor * ring * pulse * 1.0, a);
         }
@@ -266,9 +266,9 @@ export class BlackHole {
           // v20: 亮度大幅压暗 — "黑暗中扭曲火焰"而非发光球
           float distFactor = clamp((currentR - uInnerRadius) / (uOuterRadius - uInnerRadius), 0.0, 1.0);
           vDistNorm = distFactor;
-          float brightness = exp(-distFactor * 4.2) * 0.72;
-          brightness += exp(-distFactor * 12.0) * 0.55;
-          brightness += uBrightnessPulse * exp(-distFactor * 5.0);
+          float brightness = exp(-distFactor * 4.8) * 0.62;
+          brightness += exp(-distFactor * 13.0) * 0.48;
+          brightness += uBrightnessPulse * exp(-distFactor * 5.5) * 0.8;
 
           // v19: 内缘裁剪 — <1.1×事件视界直接透明，保证黑核纯黑
           float distFromEH = currentR / uEventHorizonR;
@@ -320,10 +320,10 @@ export class BlackHole {
           float n = noise2D(vec2(cos(angle2)*3.5, r2*6.0 + uTime*0.15));
           float spiralBand = noise2D(vec2(angle2 * 2.8 + r2 * 5.0, uTime * 0.08)) * 0.6;
           float bandNoise = noise2D(vec2(cos(angle2)*1.2, r2*2.5 + uTime*0.05));
-          float brightnessMod = 0.48 + n * 0.6 + spiralBand * 0.35 + bandNoise * 0.2;
+          float brightnessMod = 0.42 + n * 0.55 + spiralBand * 0.32 + bandNoise * 0.18;
 
-          // v20: 多普勒 3.2× — 接近侧月牙亮弧，远离侧暗红
-          float dopplerBright = 1.0 + vDoppler * 3.2;
+          // v21: 多普勒 3.5× — 更戏剧化月牙
+          float dopplerBright = 1.0 + vDoppler * 3.5;
 
           alpha *= vAlpha * brightnessMod * dopplerBright;
           if (alpha < 0.008) discard;
