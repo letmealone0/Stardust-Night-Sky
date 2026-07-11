@@ -1,16 +1,12 @@
 /**
- * 黑洞系统 v15 — 真实物理黑洞渲染
- * 多普勒效应 + 螺旋坠落 + 内缘消失 + LOD + 喷流进动
+ * 黑洞系统 v16 — 真实物理黑洞渲染
+ * 螺旋噪声扰动 + 蓝白主导配色 + 湍流增强
  *
- * v15 核心改进：
- * - 多普勒效应：接近侧增亮偏蓝，远离侧变暗偏红
- * - Infall 粒子打破臂感：per-particle 随机轨道相位+倾角+速度
- * - 内缘粒子消失重生：近内缘 alpha→0，外缘淡入，强化吞噬感
- * - 黑洞 LOD：距离分级 drawRange，远距离减少粒子
- * - 喷流进动：缓慢正弦摆动，模拟 Kerr 黑洞参考系拖曳
- * - 近心蓝白偏色：最内圈温度 >10000K，偏蓝白
- * - 光子环更细锐：rim^10
- * - 远侧弯折幅度微调
+ * v16 核心改进：
+ * - 螺旋内落噪声扰动：径向+角度双扰动，彻底打破规则摆线臂感
+ * - 配色比例优化：内蓝白主导→中金黄过渡→外暗红背景，外圈-25%亮度
+ * - Infall 湍流增强：per-particle 正弦/余弦湍流速度调制
+ * - 喷流进动微扰：叠加第二频率随机摆动
  */
 
 import * as THREE from 'three';
@@ -84,7 +80,7 @@ export class BlackHole {
     this.createDebrisParticles(cfg);
 
     scene.add(this.group);
-    console.log('[BlackHole] v15 真实黑洞渲染初始化完成');
+    console.log('[BlackHole] v16 真实黑洞渲染初始化完成');
   }
 
   // ==================== v14: 光子球 → 极细亮环（挂载盘容器，与盘面共面） ====================
@@ -168,12 +164,12 @@ export class BlackHole {
       } else if (t < 0.4) {
         // 中内圈：金黄（~5000K）
         cr = 1.0; cg = 0.6 + Math.random() * 0.3; cb = 0.1 + Math.random() * 0.15;
-      } else if (t < 0.7) {
-        // 中外圈：橙色（~3000K）
-        cr = 0.8 + Math.random() * 0.2; cg = 0.25 + Math.random() * 0.2; cb = 0.02 + Math.random() * 0.05;
+      } else if (t < 0.55) {
+        // v16: 中外圈：橙色（降低亮度20%，让蓝白内圈主导视觉）
+        cr = 0.65 + Math.random() * 0.15; cg = 0.18 + Math.random() * 0.15; cb = 0.01 + Math.random() * 0.04;
       } else {
-        // 外圈：暗红（~1500K）
-        cr = 0.4 + Math.random() * 0.25; cg = 0.05 + Math.random() * 0.08; cb = 0.01 + Math.random() * 0.02;
+        // v16: 外圈：暗红（降低亮度25%）
+        cr = 0.30 + Math.random() * 0.18; cg = 0.03 + Math.random() * 0.06; cb = 0.01 + Math.random() * 0.02;
       }
       colors[i3] = cr; colors[i3 + 1] = cg; colors[i3 + 2] = cb;
       randoms[i] = Math.random();
@@ -228,13 +224,15 @@ export class BlackHole {
           // v15: 轨道切线方向（用于多普勒计算）
           vec3 orbitTangent = normalize(vec3(-pos.z, 0.0, pos.x));
 
-          // 螺旋内落
+          // v16: 螺旋内落 + 噪声扰动打破规则摆线
           float infallT = mod(uTime * uInfallSpeed * 0.08 + aRandom * 3.0, 1.0);
-          float currentR = uOuterRadius - (uOuterRadius - uInnerRadius) * infallT;
-          float accelFactor = 1.0 + 3.0 * pow(1.0 - infallT, 2.0);
-          currentR = uOuterRadius - (uOuterRadius - uInnerRadius) * min(infallT * accelFactor, 1.0);
+          // 噪声相位扰动 — 径向+角度双扰动，消除机械螺旋臂
+          float noisePhase = sin(aRandom * 12.3 + uTime * 0.2) * 0.15;
+          float currentT = clamp(infallT + noisePhase, 0.0, 1.0);
+          float accelFactor = 1.0 + 3.0 * pow(1.0 - currentT, 2.0);
+          float currentR = uOuterRadius - (uOuterRadius - uInnerRadius) * min(currentT * accelFactor, 1.0);
           currentR = max(currentR, uInnerRadius * 1.02);
-          float angle2 = atan(pos.z, pos.x);
+          float angle2 = atan(pos.z, pos.x) + noisePhase * 1.5;
           pos.x = cos(angle2) * currentR;
           pos.z = sin(angle2) * currentR;
 
@@ -674,9 +672,10 @@ export class BlackHole {
     // v15: 黑洞自转 × delta（帧率解耦）
     this.group.rotation.y += (cfg.selfRotationSpeed || 1.5) * dt * motionScale;
 
-    // v15: 喷流进动 — 缓慢正弦摆动（模拟 Kerr 参考系拖曳）
+    // v16: 喷流进动 — 缓慢正弦摆动 + 随机微扰
     if (this._diskContainer) {
-      this._diskContainer.rotation.z += Math.sin(elapsed * 0.15) * 0.004 * dt * motionScale;
+      const wobble = Math.sin(elapsed * 0.15) * 0.004 + Math.sin(elapsed * 0.37) * 0.0015;
+      this._diskContainer.rotation.z += wobble * dt * motionScale;
     }
 
     // v15: 黑洞 LOD — 距离分级调整吸积盘粒子数
@@ -750,9 +749,11 @@ export class BlackHole {
       }
 
       const nx = -x / dist, ny = -y / dist, nz = -z / dist;
-      // v15: per-particle 速度倍率（打破同步）
+      // v16: per-particle 速度倍率 + 湍流微扰
       const speedMult = vel[i3 + 1];
-      const radialSpeed = (15 + 200 * Math.sqrt(ehR / dist)) * speedMult;
+      const seed2 = i * 8.4 + elapsed * 0.3;
+      const turbulence = Math.sin(seed2) * 0.25 + Math.cos(i * 4.7) * 0.15;
+      const radialSpeed = (15 + 200 * Math.sqrt(ehR / dist)) * speedMult * (1.0 + turbulence);
       const tangentialSpeed = radialSpeed * 0.35 * Math.min(1.0, dist / (ehR * 3));
 
       // v15: 切向方向加随机倾角偏移
