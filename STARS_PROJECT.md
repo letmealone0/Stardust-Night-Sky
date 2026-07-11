@@ -3,7 +3,7 @@
 > **项目**: `stars-project/` 
 >
 > **一句话描述**: 基于 Three.js 3D 引擎的第一人称深空探索体验，WASD 移动 + 鼠标视角，
-> 可探索真实太阳系（太阳+8行星+卫星+星环）、银河系背景、体积光线步进星云、宇宙尘埃、黑洞（含行星吸收）和脉冲星。
+> 可探索真实太阳系（太阳+8行星+卫星+星环）、银河系背景、多层粒子系统星云（含暗尘埃+虚拟光源+纤维噪声）、宇宙尘埃、黑洞（橙黄吸积盘+螺旋坠落+行星吸收+引力透镜）和脉冲星。
 
 ---
 
@@ -88,9 +88,9 @@ npm run preview      # 本地预览构建结果
 | **渲染引擎** | Three.js v0.184.0 |
 | **构建工具** | Vite 6.x |
 | **语言** | JavaScript (ES Modules) |
-| **后处理** | EffectComposer (Bloom + OutputPass) |
+| **后处理** | EffectComposer (Bloom + Vignette + 引力透镜 + 色差 + 动态模糊) |
 | **色调映射** | ACES Filmic ToneMapping |
-| **模块数** | 31 个（构建产物 ~143 KB gzip） |
+| **模块数** | 32 个源文件（构建产物 ~145 KB gzip） |
 
 ---
 
@@ -119,13 +119,16 @@ stars-project/
 │   ├── objects/
 │   │   ├── stars.js            # 星空 + 银河系（对数螺旋臂 + GPU 自转）+ 亮星闪烁
 │   │   ├── planets.js          # 随机行星（纹理/大气层/环/LOD/公转/重生/防重叠）
-│   │   ├── solarSystem.js      # 太阳系（太阳+8行星+卫星+星环+日冕）
-│   │   ├── nebula.js           # 星云（体积光线步进 Raymarching + 三色渐变）
-│   │   ├── speedlines.js       # 速度线（方向感知 LineSegments）
-│   │   ├── particleFlow.js     # 全方向粒子流（垂直运动粒子反馈，新增）
-│   │   ├── cosmicdust.js       # 宇宙尘埃（2000 粒子漂浮+跟随重居中+推开效果）
-│   │   ├── blackhole.js        # 黑洞（事件视界/吸积盘湍流/喷流/引力/重生）
-│   │   └── pulsar.js           # 脉冲星（中子星/双锥光束/快速旋转/重生）
+│   │   ├── planetTextures.js   # 行星 Canvas 2D 程序化纹理生成
+│   │   ├── solarSystem.js      # 太阳系（太阳+8行星+卫星+星环+日冕+标签面板）
+│   │   ├── nebula.js           # 星云（5层粒子: 暗尘+中层暗纹+发光层, CPU FBM过滤, 虚拟光源, 纤维噪声）
+│   │   ├── speedlines.js       # 冲刺速度线（400线段, 屏幕边缘分布, 冷蓝色调）
+│   │   ├── particleFlow.js     # 全方向粒子流（3000粒子, 相对运动方向反馈）
+│   │   ├── cosmicdust.js       # 宇宙尘埃（2500粒子, 3层结构, 跟随重居中）
+│   │   ├── blackhole.js        # 黑洞（橙黄吸积盘+螺旋坠落+光子环+喷流+引力透镜+行星吸收）
+│   │   ├── pulsar.js           # 脉冲星（中子星/双锥光束/快速旋转/重生）
+│   │   ├── lensFlare.js        # 镜头光晕（对着亮源时的光学耀斑）
+│   │   └── starGlow.js         # 亮星辉光（ShaderMaterial 光晕）
 │   │
 │   ├── postprocessing/
 │   │   └── composer.js         # EffectComposer（Bloom + OutputPass）
@@ -155,11 +158,11 @@ main.js
        │    ├─ StarField         (8000 星 + 螺旋臂银河盘 + 尘埃带 + 亮星 GPU 闪烁)
        │    ├─ PlanetSystem      (4 额外随机行星, LOD, 重生系统, 防重叠)
        │    ├─ SolarSystem       (太阳 + 8 行星 + 卫星 + 星环 + 日冕, 真实纹理)
-       │    ├─ NebulaSystem      (4 星云, 体积 Raymarching, 三色渐变, 重生系统)
-       │    ├─ SpeedLines        (相机子对象, 方向感知, 跟随视角)
-       │    ├─ ParticleFlow      (3000 粒子, 全方向粒子流, 垂直运动反馈, 新增)
-       │    ├─ CosmicDust        (2000 粒子, 跟随重居中, 移动推开效果)
-       │    ├─ BlackHole         (事件视界 + 吸积盘湍流 + 喷流 + 引力 + 重生)
+       │    ├─ NebulaSystem      (3 星云, 5层粒子系统, CPU噪声过滤, MultiplyBlending暗尘, 虚拟光源, LOD)
+       │    ├─ SpeedLines        (400 线段, 冲刺时屏幕边缘, 冷蓝色调, 速度驱动)
+       │    ├─ ParticleFlow      (3000 粒子, 全方向粒子流, 速度驱动色温+拖尾)
+       │    ├─ CosmicDust        (2500 粒子, 3层结构, 跟随重居中, 湍流扰动)
+       │    ├─ BlackHole         (橙黄吸积盘 + 螺旋坠落 + 光子环 + 双极喷流 + 引力透镜 + 行星吸收)
        │    └─ Pulsar            (中子星 + 双锥光束 + 重生)
        ├─ RendererManager    ─→  WebGLRenderer
        ├─ PlayerController   ─→  PointerLockControls + 键盘
@@ -226,31 +229,40 @@ main.js
 - **轨道线**：半透明圆形轨道参考线
 - **时间缩放**：1 秒 ≈ 0.5 天（一年约 730 秒）
 
-### objects/nebula.js
-- **体积光线步进（Raymarching）**：立方体包围盒内逐采样点累积密度
-- FBM 噪声（2 层标准 + 1 层 turbulence）创建有机丝絮形态
-- 球形衰减 + 色彩渐变（主色 → 二次色随密度过渡）
-- 自适应步数（6-24 步），相机位置转局部空间计算
-- 脉冲缩放 + 缓慢自转
+### objects/nebula.js（v23 摄影级星云）
+- **5 层 Points 粒子系统**：dustBg(暗尘) → outer(外层气) → dustMid(中层暗纹) → mid(中层气) → inner(内层气)
+- **CPU 端 FBM 噪声过滤**：仅在高噪声密度区放置粒子，源头打破球形
+- **MultiplyBlending 暗尘**：dustBg 和 dustMid 使用乘法混合，真实吸光遮挡背景星光
+- **统一轴向拉伸 + 各向异性纤维噪声**：Shader 端沿拉伸轴制造丝缕纹理
+- **2 个内部虚拟光源**：距离平方反比衰减 + 缓慢漂移 + 呼吸脉动，打造立体感
+- **5 色阶渐变**：蓝紫→品红→灰褐（宇宙尘埃色）→粉橙→暗红，噪声扰动色彩混合
+- **LOD 三级平滑淡出**：drawRange + uLodFade，远距离自然过渡
+- **FBM 湍流替代 sin/cos**：低频平滑位移，模拟自然气体流动
+- 宏观自转（×delta 帧率解耦）+ 分层差异化湍流速度
 
-### objects/speedlines.js
-- 300 条线段（`LineSegments`），白→蓝渐变
-- 相机子对象（跟随视角旋转）
-- 速度驱动透明度和显示
+### objects/speedlines.js（v19 优化）
+- **400 条线段**（`LineSegments`），仅冲刺时可见（速度 > 60% 冲刺速度）
+- **屏幕边缘分布**（sqrt 分布），短线段（4-16 单位），低透明度（0.22）
+- 冷蓝色调，速度驱动显隐
 
-### objects/cosmicdust.js
-- 2000 粒子球壳分布
-- 正弦漂移动画（**v6.0: 预计算相位偏移**）
-- 脉冲透明度（0.1 ~ 0.2）
+### objects/cosmicdust.js（v11 三层结构）
+- **2500 粒子**，3 层分布（远景 1000 + 中景 1000 + 近景 500）
+- 不同透明度（0.08 / 0.12 / 0.20）和漂移速度
+- 超出范围自动重居中，湍流扰动，沿银河旋臂分布
 
-### objects/blackhole.js（v6.0 新增，v6.1 增强）
-- 事件视界（纯黑球体）
-- 吸积盘（5000 粒子，内圈更密集更亮，外圈偏红暗）
-- 双极喷流（400 粒子，脉冲透明度，更长更亮）
-- 外层光晕（Shader 边缘发光 + 脉动，范围扩大）
-- 引力拖拽效果（距离驱动，影响玩家移动，范围 200/强度 80）
-- 危险等级系统（HUD 红色警告联动，危险半径 400）
-- **行星吸收系统**（v6.1 新增）：检测距离 < 80 的行星，逐渐缩小 + 颜色偏红 + 螺旋粒子流 + 最终移除
+### objects/blackhole.js（v14 真实物理黑洞）
+- **事件视界**：纯黑不透明球体，绝对无反射
+- **光子环**：TorusGeometry 极细亮环（rim^8），暖白色，非球面发光
+- **吸积盘**：10000 粒子，橙黄温度梯度（内白→中金→外暗红），35°倾斜薄盘
+  - Kepler 差速旋转（内圈 5-8 倍速），螺旋内落，近内缘粒子消失
+  - 顶点着色器引力弯折（远侧半盘 Y 轴抬升，模拟环绕视觉）
+  - 片元着色器旋转 2D 噪声 ±20% 亮度扰动（湍流热斑）
+- **双极喷流**：1200 粒子，暖色（白→金→暗橙），高准直度，轴向周期亮斑节点，流速 ×2.5
+- **螺旋坠落粒子**：2000 粒子，径向内落 + 切向旋转，近心更快更亮更小
+- **引力透镜**：平方反比衰减，中心强外围自然减弱
+- **行星吸收 + 碎片喷射**：潮汐拉伸 + 颜色偏红 + 螺旋粒子流 + 完全移除 + 吸积盘亮度脉冲
+- **轴向统一**：光子环+吸积盘+喷流挂载同一 `diskContainer`，喷流 ⊥ 盘面
+- 所有动画 ×delta 帧率解耦
 
 ### objects/pulsar.js（v6.0 新增）
 - 中子星本体（Shader 高亮球体 + 核心发光 + 边缘光晕）
@@ -279,16 +291,19 @@ main.js
 {
   camera: {
     fov: 75,                        // 视野角度
-    near: 1,                        // 近裁剪面（v6.3 加大，防穿模）
-    far: 20000,                     // 远裁剪面（v6.2 加大）
-    startPosition: { x:0, y:0, z:100 }
+    near: 1,                        // 近裁剪面
+    far: 200000,                    // 远裁剪面（v16 加大，探索更远）
+    startPosition: { x:37500, y:1200, z:-28500 } // 远离太阳，可观地球
   },
   player: {
-    moveSpeed: 50,                  // 基础移动速度
-    sprintMultiplier: 4.0,          // 冲刺倍数
-    sprintFovBoost: 15,             // 冲刺 FOV 增加量
+    accel: 200,                     // 线性加速度 (单位/s²)
+    decelDamping: 0.94,             // 松键阻尼（≈3秒衰减到1%）
+    maxSpeed: 80,                   // 普通模式最大速度
+    sprintMultiplier: 3.0,          // 冲刺倍数 (maxSpeed × 3 = 240)
+    sprintFovBoost: 25,             // 冲刺 FOV 增量 (75+25=100)
     mouseSensitivity: 0.002,        // 鼠标灵敏度
-    damping: 0.05                   // 移动阻尼
+    proximitySlowdown: true,        // 接近行星自动限速
+    cameraShake: true,              // 镜头抖动
   },
   stars: {
     count: 8000,                    // 总星星数
@@ -305,45 +320,74 @@ main.js
     timeScale: 0.5,                 // 时间缩放（每秒≈0.5天）
   },
   nebula: {
-    count: 4,                       // 星云数
-    scale: 1200,                    // 大小（v6.3 翻倍）
-    opacity: 1.0,
-    colors: [ /* 深紫/深蓝/暗红/青绿 */ ],
-    respawnDistance: 5000, respawnMin: 2000, respawnMax: 4000
+    count: 3,                          // 星云数（emission/reflection/dark）
+    scale: 2000,                       // 粒子云团范围
+    respawnDistance: 10000,            // 超出重生
+    respawnMin: 2500, respawnMax: 7000,
+    typeColors: {                      // 三类星云配色
+      emission:    { r:0.42, g:0.10, b:0.55 },
+      reflection:  { r:0.10, g:0.20, b:0.60 },
+      dark:        { r:0.04, g:0.03, b:0.07 },
+    },
+    fogDensity: 0.5, fogDistance: 400,  // 进入星云雾效
   },
   postprocessing: {
     bloom: {
-      strength: 0.5,                // 辉光强度
-      radius: 0.3,                  // 辉光半径
-      threshold: 0.8                // 辉光阈值
-    }
+      strength: 0.9,                   // 辉光强度（v14 增强）
+      radius: 0.5,                     // 辉光扩散
+      threshold: 0.4,                  // 辉光阈值（v14 降低）
+    },
+    vignette: { offset:0.5, darkness:0.15 },
+    lensFlare: { enabled:true, brightness:0.6 },
+    dof: { enabled:true, focusDistance:100 },
   },
   speedLines: {
-    count: 300,                     // 线段数
-    minRadius: 1.5, maxRadius: 13.5,// 分布半径
-    minLength: 10, maxLength: 50,   // 线段长度
-    speedThreshold: 2,              // 显示速度阈值
-    opacityTarget: 0.7              // 最大透明度
+    count: 400,                        // 线段数
+    minRadius: 15, maxRadius: 70,      // 屏幕边缘分布
+    minLength: 4, maxLength: 16,       // 短线段
+    speedThreshold: 999,               // 仅冲刺可见
+    opacityTarget: 0.22,               // 低透明度
   },
-  blackhole: {                      // v6.0 新增，v6.3 加大
-    eventHorizonRadius: 25,         // 事件视界半径（v6.3 加大）
-    accretionInnerRadius: 40,       // 吸积盘内半径（v6.3 加大）
-    accretionOuterRadius: 200,      // 吸积盘外半径（v6.3 加大）
+  particleFlow: {
+    count: 3000, spread: 200,          // 全方向粒子流
+    streakLength: 2.5,
+  },
+  cosmicDust: {
+    count: 2500, spread: 6000,         // 3 层结构
+    recenterDistance: 3000,
+  },
+  blackhole: {                         // v14 持续增强
+    eventHorizonRadius: 25,            // 事件视界半径
+    accretionInnerRadius: 40,          // 吸积盘内半径
+    accretionOuterRadius: 200,         // 吸积盘外半径
     position: { x:800, y:50, z:-600 },
-    dangerRadius: 600,              // 危险区域半径（v6.3 加大）
-    pullRadius: 300,                // 引力影响半径（v6.3 加大）
-    pullStrength: 80,               // 引力强度
-    jetLength: 400,                 // 喷流长度（v6.3 加长）
-    absorbRadius: 80,               // 行星吸收半径
-    respawnDistance: 3000,           // 重生距离（v6.2 新增）
+    dangerRadius: 600,                 // 危险区域半径
+    pullRadius: 300,                   // 引力影响半径
+    pullStrength: 80,                  // 引力强度
+    jetLength: 400,                    // 喷流长度（实际 ×1.5 渲染）
+    absorbRadius: 80,                  // 行星吸收半径
+    respawnDistance: 3000, respawnMin: 800, respawnMax: 2000,
+    selfRotationSpeed: 1.5,            // 黑洞自转速度 (rad/s)
+    gravityEnabled: true,              // 引力效果开关
+    lensingStrength: 0.35,             // 引力透镜强度
+    distorionRadius: 600,              // 屏幕扭曲生效半径
+    infallParticleCount: 2000,         // 环境坠落粒子数
+    infallRange: 400,                  // 坠落粒子分布半径
+    infallGravity: 2500,               // 坠落粒子引力常数
+    accretionInfallSpeed: 3.0,         // 吸积盘内落速度
+    photonSphereRadius: 37.5,          // 光子球半径 (ehR×1.5)
+    matterStreamCount: 6,              // 物质流线数
+    matterStreamParticles: 80,         // 每条流线粒子数
+    tidalStretchFactor: 3.0,           // 潮汐拉伸倍数
+    debrisCount: 40,                   // 碎片喷射数量
   },
-  pulsar: {                         // v6.0 新增，v6.3 加大
-    radius: 5,                      // 半径（v6.3 加大）
-    beamLength: 300,                // 光束长度（v6.3 翻倍）
-    rotationSpeed: 5,               // 旋转速度（弧度/秒）
+  pulsar: {
+    radius: 5,                         // 中子星半径
+    beamLength: 300,                   // 光束长度
+    rotationSpeed: 5,                  // 旋转速度（弧度/秒）
     position: { x:-500, y:100, z:400 },
     color: { r:0.5, g:0.8, b:1.0 },
-    respawnDistance: 3000,           // 重生距离（v6.2 新增）
+    respawnDistance: 3000,
   }
 }
 ```
@@ -352,7 +396,7 @@ main.js
 
 ## 8. 已知问题与限制
 
-### 已修复（v5.2）
+### 已修复（早期版本）
 
 | 问题 | 修复 |
 |------|------|
@@ -367,12 +411,14 @@ main.js
 
 | 限制 | 说明 |
 |------|------|
-| 脉冲星光束 | 使用锥形几何模拟，非真实体积光 |
-| 星云体积渲染 | 光线步进 24 步，低端设备可能有性能压力 |
+| 脉冲星光束 | 使用锥形几何 + Shader 模拟，非真实体积光 |
+| 星云渲染 | 多层 Points 粒子系统，非体积 Raymarching；约 28500 粒子/团，3 团共 ~85k 粒子 |
 | 行星吸收 | 仅黑洞附近触发，不支持远程引力影响 |
 | 太阳系比例 | 行星大小和轨道距离为艺术化缩放，非真实天文比例 |
 | 行星纹理 | Canvas 2D 程序化生成，精度有限（1024×512） |
 | 卫星数量 | 仅展示主要卫星（7 颗），未包含全部已知卫星 |
+| 多渲染目标 | 后处理使用 EffectComposer，约 5-6 个纹理采样/帧 |
+| Shader 兼容性 | 使用 GLSL ES 1.0（Three.js ShaderMaterial），移动端可能不支持某些特性 |
 
 ---
 
@@ -405,37 +451,35 @@ main.js
 | 决策 | 原因 |
 |------|------|
 | 下降用 C 而非 Ctrl | 浏览器 Ctrl+W/Ctrl+方向键无法完全拦截 |
-| 冲刺倍数 4.0 + FOV +15° | 高倍速配合视角扩展，营造星际穿越加速感 |
-| Bloom 强度 0.8 / 阈值 0.6 | 过高导致闪烁，过低无效果 |
-| 行星 LOD 三级（0/500/1200） | 配合更大行星半径，平衡视觉质量与性能 |
-| Nebula 体积 Raymarching | 24 步 FBM 噪声，替代旧版球体堆叠，真实星云形态 |
-| 黑洞行星吸收 | 距离 < 80 时触发，缩小+偏色+粒子流+移除，增强沉浸感 |
-| 速度线用 LineSegments | Points 效果差，线段更有速度感 |
-
-### 可扩展方向
-
-- [x] 黑洞天体（v6.0 已实现：事件视界/吸积盘/喷流/引力效果）
-- [x] 脉冲星（v6.0 已实现：中子星/双锥光束/快速旋转）
-- [ ] 行星交互（靠近着陆）
-- [ ] 音效 / 背景音乐
-- [ ] 位置保存 / 进度系统
-- [ ] 虫洞 / 传送系统
-- [ ] 小行星带（InstancedMesh）
-- [ ] 任务系统 / 发现记录
-- [ ] 恒星系统（多星相互绕转）
-- [ ] 彗星 / 流星雨
-
----
+| 冲刺倍数 3.0 + FOV +25° | 高倍速配合视角扩展，营造星际穿越加速感 |
+| Bloom 强度 0.9 / 阈值 0.4 | 增强辉光让更多物体发光，画面更明亮 |
+| 行星 LOD 三级（64/32/16） | 距离 0/800/2000 切换，平衡视觉质量与性能 |
+| Nebula 多层粒子系统 | CPU FBM 过滤 + MultiplyBlending 暗尘 + ShaderMaterial 虚拟光源，替代旧版 Raymarching |
+| 黑洞橙黄吸积盘 | 内白→中金→外暗红温度梯度，Torus 光子环，螺旋坠落粒子，符合物理直觉 |
+| 速度线冲刺专用 | sqrt 边缘分布，冷蓝色调，仅冲刺可见，低成本速度感 |
+| 全方向粒子流 | scene-attached Group 跟随相机同步，速度驱动色温+拖尾长度 |
 
 ## 10. 版本历史
 
-详细的版本变更记录请通过 Git 查看，不再在本文档中维护：
+本项目采用 Git 进行版本控制，所有变更均以提交记录为准。当前主要子系统版本：
+
+| 子系统 | 版本 | 关键特性 |
+|--------|------|----------|
+| **Nebula** | v23 | 5 层粒子系统，CPU FBM 过滤，MultiplyBlending 暗尘，虚拟光源，各向异性纤维噪声，LOD 平滑淡出 |
+| **BlackHole** | v14 | 橙黄吸积盘，Torus 光子环，引力弯折，亮度扰动，喷流准直+节点亮斑，透镜平方反比衰减 |
+| **ParticleFlow** | v19 | 全方向粒子流，速度驱动色温+拖尾 |
+| **SpeedLines** | v19 | 400 线段冲刺专用，屏幕边缘冷蓝 |
+| **Stars** | v14 | 银河系 GPU 差速自转，OBAFGKM 光谱 |
+| **Planets** | v19.7 | 随机轨道+公转，防重叠，标签面板 |
+| **SolarSystem** | v19.6 | 标签暗底+文字描边，接近信息面板 |
+| **Engine** | v19.5 | 惯性飞行，FPS 自适应降质，世界速度混合 |
+| **PostProcessing** | v19.5 | 动态模糊，引力透镜，色差，暗角，Bloom |
+
+详细变更请通过 Git 查看：
 
 ```bash
 git log --oneline              # 简明提交历史
 git log --stat                 # 含文件变更统计
 git log -p -- <文件路径>        # 查看某文件的具体改动
 ```
-
-> 主要里程碑版本（v1.0 ~ v10.0-fix）均以 Git 提交记录为准。
 
