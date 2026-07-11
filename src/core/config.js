@@ -42,16 +42,26 @@ export const config = {
       { count: 2500, depth: 0.5, size: [0.15, 0.3] },
       { count: 1500, depth: 1.0, size: [0.2, 0.5] },
     ],
-    // v8.2: 银河系包围太阳系 — 太阳系在旋臂~2/3处
+    // v25: 银河系 — 对数螺旋四层结构
     galaxy: {
-      count: 30000,           // v14: 增加粒子数让银河更壮观
-      armCount: 5,            // 旋臂数
-      spin: 3.0,              // v14: 增加螺旋紧密度
-      armSpread: 0.2,          // v14: 收紧旋臂让结构更清晰
-      position: { x: -15000, y: 500, z: -30000 }, // 银河中心偏移，太阳系在旋臂中
-      tilt: 50,               // 银道面倾角
-      scale: 22.0,            // v8.2: 超大尺度，太阳系在旋臂中
-      hazeCount: 5000,        // v15: 增加雾气粒子数让银河更壮观
+      count: 40000,           // v25: 增加到40000支撑四层
+      armCount: 4,            // v25: 4条主旋臂（标准棒旋星系）
+      spin: 4.5,              // v25: 对数螺旋紧密度
+      armSpread: 0.12,        // v25: 收紧旋臂让结构更清晰
+      position: { x: -15000, y: 500, z: -30000 },
+      tilt: 50,
+      scale: 22.0,
+      hazeCount: 5000,
+      // v25: 四层配比
+      coreBulgeRatio: 0.12,   // 核球12%
+      armRatio: 0.55,         // 旋臂主星55%
+      dustRatio: 0.15,        // 尘埃暗带15%
+      haloRatio: 0.18,        // 银晕18%
+      // v25: 核球参数
+      bulgeRadius: 0.08,      // 核球占旋臂长度比例
+      bulgeBrightness: 2.0,   // 核球亮度倍率
+      // v25: 旋臂渐宽
+      armWidenFactor: 0.08,   // 旋臂随半径增宽系数
     },
     // v13: 深场背景星星
     deepField: {
