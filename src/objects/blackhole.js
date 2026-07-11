@@ -1,14 +1,16 @@
 /**
- * 黑洞系统 v14 — 真实物理黑洞渲染
- * 橙黄温度梯度吸积盘 + 引力透镜 + 纯黑事件视界 + 螺旋坠落粒子
- * + 引力效果 + 行星潮汐瓦解吸收 + 引力透镜后处理
+ * 黑洞系统 v15 — 真实物理黑洞渲染
+ * 多普勒效应 + 螺旋坠落 + 内缘消失 + LOD + 喷流进动
  *
- * v14 核心改进：
- * - 轴向统一：光子环+吸积盘+喷流挂载同一盘容器，喷流⊥盘面
- * - 吸积盘弯折：远侧半盘沿Y抬升，越近视界幅度越大，模拟环绕视觉
- * - 亮度扰动：片元着色器叠加旋转2D噪声，±20%湍流热斑
- * - 喷流优化：高准直度（底细远扩）+ 轴向周期亮斑节点 + 流速×2.5
- * - 引力透镜平方反比衰减：中心强、外围快速减弱
+ * v15 核心改进：
+ * - 多普勒效应：接近侧增亮偏蓝，远离侧变暗偏红
+ * - Infall 粒子打破臂感：per-particle 随机轨道相位+倾角+速度
+ * - 内缘粒子消失重生：近内缘 alpha→0，外缘淡入，强化吞噬感
+ * - 黑洞 LOD：距离分级 drawRange，远距离减少粒子
+ * - 喷流进动：缓慢正弦摆动，模拟 Kerr 黑洞参考系拖曳
+ * - 近心蓝白偏色：最内圈温度 >10000K，偏蓝白
+ * - 光子环更细锐：rim^10
+ * - 远侧弯折幅度微调
  */
 
 import * as THREE from 'three';
@@ -82,7 +84,7 @@ export class BlackHole {
     this.createDebrisParticles(cfg);
 
     scene.add(this.group);
-    console.log('[BlackHole] v14 真实黑洞渲染初始化完成');
+    console.log('[BlackHole] v15 真实黑洞渲染初始化完成');
   }
 
   // ==================== v14: 光子球 → 极细亮环（挂载盘容器，与盘面共面） ====================
@@ -112,7 +114,7 @@ export class BlackHole {
         void main() {
           vec3 viewDir = normalize(cameraPosition - vWorldPos);
           float rim = 1.0 - abs(dot(normalize(vNormal), viewDir));
-          float ring = pow(rim, 8.0);
+          float ring = pow(rim, 10.0);
           float pulse = 0.8 + sin(uTime * 4.0) * 0.2;
           float a = ring * 0.7 * pulse;
           if (a < 0.02) discard;
@@ -154,12 +156,15 @@ export class BlackHole {
       positions[i3 + 2] = Math.sin(angle) * r;
       radii[i] = r;
 
-      // v13: 温度梯度：内白→中金→外暗红（严格物理色调）
+      // v15: 温度梯度：内蓝白→中金→外暗红
       const t = rNorm;
       let cr, cg, cb;
-      if (t < 0.15) {
-        // 内圈：亮白（~10000K）
-        cr = 0.95 + Math.random() * 0.05; cg = 0.9 + Math.random() * 0.1; cb = 0.7 + Math.random() * 0.2;
+      if (t < 0.12) {
+        // v15: 最内圈蓝白（>10000K）
+        cr = 0.85 + Math.random() * 0.15; cg = 0.88 + Math.random() * 0.12; cb = 0.95 + Math.random() * 0.05;
+      } else if (t < 0.30) {
+        // 内圈：亮白（~8000K）
+        cr = 0.92 + Math.random() * 0.08; cg = 0.85 + Math.random() * 0.15; cb = 0.65 + Math.random() * 0.25;
       } else if (t < 0.4) {
         // 中内圈：金黄（~5000K）
         cr = 1.0; cg = 0.6 + Math.random() * 0.3; cb = 0.1 + Math.random() * 0.15;
@@ -179,6 +184,7 @@ export class BlackHole {
     geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
     geometry.setAttribute('aRandom', new THREE.BufferAttribute(randoms, 1));
     geometry.setAttribute('aRadius', new THREE.BufferAttribute(radii, 1));
+    geometry.userData = { totalCount: particleCount }; // v15: LOD
 
     this.diskMaterial = new THREE.ShaderMaterial({
       uniforms: {
@@ -204,12 +210,13 @@ export class BlackHole {
         varying float vAlpha;
         varying float vDistNorm;
         varying vec3 vWPos;
+        varying float vDoppler;
 
         void main() {
           vColor = color;
           vec3 pos = position;
 
-          // v13: 差速旋转 — 内圈5-8倍速（Kepler ω∝r^(-1.5)）
+          // Kepler差速旋转
           float rNorm = (aRadius - uInnerRadius) / max(uOuterRadius - uInnerRadius, 1.0);
           float orbitalSpeed = 0.15 / pow(rNorm + 0.06, 1.5);
           float rotAngle = uTime * orbitalSpeed;
@@ -218,7 +225,10 @@ export class BlackHole {
           float rz = pos.x * sa + pos.z * ca;
           pos.x = rx; pos.z = rz;
 
-          // v13: 螺旋内落
+          // v15: 轨道切线方向（用于多普勒计算）
+          vec3 orbitTangent = normalize(vec3(-pos.z, 0.0, pos.x));
+
+          // 螺旋内落
           float infallT = mod(uTime * uInfallSpeed * 0.08 + aRandom * 3.0, 1.0);
           float currentR = uOuterRadius - (uOuterRadius - uInnerRadius) * infallT;
           float accelFactor = 1.0 + 3.0 * pow(1.0 - infallT, 2.0);
@@ -231,23 +241,33 @@ export class BlackHole {
           // 高度微扰
           pos.y += sin(uTime * 3.0 + aRandom * 10.0) * 0.3 * (1.0 - rNorm);
 
-          // v14: 引力弯折 — 远侧半盘向上抬升（模拟环绕视觉）
+          // v15: 引力弯折（幅度微调）
           vec4 bhWorld = modelMatrix * vec4(0.0, 0.0, 0.0, 1.0);
           vec3 dirToCamera = normalize(cameraPosition - bhWorld.xyz);
           vec4 particleWorld = modelMatrix * vec4(pos, 1.0);
           vec3 dirToParticle = normalize(particleWorld.xyz - bhWorld.xyz);
           float alignment = dot(dirToParticle, dirToCamera);
           float farSide = 1.0 - smoothstep(-0.35, 0.35, alignment);
-          float warpAmount = exp(-rNorm * 3.5) * uEventHorizonR * 2.5;
+          float warpAmount = exp(-rNorm * 3.0) * uEventHorizonR * 1.8;
           pos.y += farSide * warpAmount;
 
-          // v13: 亮度指数衰减
+          // v15: 多普勒计算
+          vec3 toCamera = normalize(cameraPosition - particleWorld.xyz);
+          vDoppler = dot(orbitTangent, toCamera);
+
+          // 亮度指数衰减 + v15: 近心蓝白偏色
           float distFactor = clamp((currentR - uInnerRadius) / (uOuterRadius - uInnerRadius), 0.0, 1.0);
           vDistNorm = distFactor;
           float brightness = exp(-distFactor * 2.5) * 1.2;
           brightness += exp(-distFactor * 8.0) * 0.8;
           brightness += uBrightnessPulse * exp(-distFactor * 3.0);
-          vAlpha = clamp(brightness * (0.6 + 0.4 * (1.0 - distFactor)), 0.0, 1.0);
+
+          // v15: 内缘消失 + 外缘淡入（吞噬感）
+          float fadeNearInner = 1.0 - smoothstep(0.88, 1.0, infallT);
+          float fadeFromOuter = smoothstep(0.0, 0.06, infallT);
+          float fadeAlpha = fadeNearInner * max(fadeFromOuter, 0.15);
+
+          vAlpha = clamp(brightness * (0.6 + 0.4 * (1.0 - distFactor)) * fadeAlpha, 0.0, 1.0);
           vColor *= brightness;
 
           vec4 wp = modelMatrix * vec4(pos, 1.0); vWPos = wp.xyz;
@@ -265,10 +285,10 @@ export class BlackHole {
         varying float vAlpha;
         varying float vDistNorm;
         varying vec3 vWPos;
+        varying float vDoppler;
         uniform float uTime;
         uniform float uOuterRadius;
 
-        // v14: 2D噪声（湍流热斑扰动）
         float hash2(vec2 p) { return fract(sin(dot(p, vec2(127.1,311.7)))*43758.5453); }
         float noise2D(vec2 p) {
           vec2 i = floor(p), f = fract(p);
@@ -282,15 +302,23 @@ export class BlackHole {
           float alpha = 1.0 - smoothstep(0.0, 1.0, d);
           alpha = pow(alpha, 0.6);
 
-          // v14: 旋转噪声扰动亮度 ±20%，模拟湍流热斑
+          // 旋转噪声扰动亮度 ±20%
           float angle = atan(vWPos.z, vWPos.x) + uTime * 0.35;
           float r2 = length(vWPos.xz) / max(uOuterRadius, 1.0);
           float n = noise2D(vec2(cos(angle)*3.5, r2*6.0 + uTime*0.15));
           float brightnessMod = 0.8 + n * 0.4;
 
-          alpha *= vAlpha * brightnessMod;
+          // v15: 多普勒亮度调制 — 接近侧增亮 +30%，远离侧变暗
+          float dopplerBright = 1.0 + vDoppler * 1.3;
+
+          alpha *= vAlpha * brightnessMod * dopplerBright;
           if (alpha < 0.008) discard;
-          gl_FragColor = vec4(vColor * brightnessMod, alpha);
+
+          // v15: 多普勒色偏 — 接近侧偏蓝白，远离侧偏红
+          vec3 finalColor = vColor * brightnessMod * dopplerBright;
+          finalColor += vec3(-0.04, -0.01, 0.06) * vDoppler;
+
+          gl_FragColor = vec4(finalColor, alpha);
         }
       `,
       transparent: true, depthWrite: false,
@@ -459,10 +487,10 @@ export class BlackHole {
       positions[i3 + 1] = r * Math.sin(phi) * Math.sin(theta) * 0.4;
       positions[i3 + 2] = r * Math.cos(phi);
 
-      // v13: 存储 [径向速度, 切向速度, 当前角位置]
-      velocities[i3] = 0;     // 径向速度（每帧更新）
-      velocities[i3 + 1] = 0; // 切向速度
-      velocities[i3 + 2] = Math.atan2(positions[i3 + 2], positions[i3]); // 轨道角
+      // v15: 存储 [随机轨道相位, 速度倍率, 倾角偏移]
+      velocities[i3] = Math.random() * Math.PI * 2;
+      velocities[i3 + 1] = 0.7 + Math.random() * 0.6;
+      velocities[i3 + 2] = (Math.random() - 0.5) * 0.6;
 
       alphas[i] = 0.5 + Math.random() * 0.5;
       sizes[i] = 1.0 + Math.random() * 2.0;
@@ -640,11 +668,30 @@ export class BlackHole {
     // 光子球
     if (this._photonSphere?.material?.uniforms) this._photonSphere.material.uniforms.uTime.value = elapsed;
 
-    // 光晕
+    // v15: 光晕
     if (this.glowMaterial) this.glowMaterial.uniforms.uTime.value = elapsed;
 
-    // v13: 黑洞自转 × delta（帧率解耦）
+    // v15: 黑洞自转 × delta（帧率解耦）
     this.group.rotation.y += (cfg.selfRotationSpeed || 1.5) * dt * motionScale;
+
+    // v15: 喷流进动 — 缓慢正弦摆动（模拟 Kerr 参考系拖曳）
+    if (this._diskContainer) {
+      this._diskContainer.rotation.z += Math.sin(elapsed * 0.15) * 0.004 * dt * motionScale;
+    }
+
+    // v15: 黑洞 LOD — 距离分级调整吸积盘粒子数
+    if (this.camera && this.accretionDisk) {
+      const dist = this.group.position.distanceTo(this.camera.position);
+      const totalCount = this.accretionDisk.geometry.userData?.totalCount || 10000;
+      let targetFraction;
+      if (dist < 2000) targetFraction = 1.0;
+      else if (dist < 5000) targetFraction = 0.6;
+      else targetFraction = 0.3;
+      const target = Math.max(Math.floor(totalCount * targetFraction), 300);
+      if (this.accretionDisk.geometry.drawRange.count !== target) {
+        this.accretionDisk.geometry.setDrawRange(0, target);
+      }
+    }
 
     // v13: 螺旋坠落粒子
     this.updateInfallParticles(cfg, dt, elapsed, motionScale);
@@ -684,11 +731,11 @@ export class BlackHole {
     this.updatePlanetAbsorption(cfg, dt, elapsed);
   }
 
-  // ==================== v13: 螺旋坠落粒子更新 ====================
+  // ==================== v15: 螺旋坠落粒子更新（打破臂感） ====================
   updateInfallParticles(cfg, dt, elapsed, motionScale) {
     if (!this._infallParticles) return;
     const pos = this._infallParticles.geometry.attributes.position.array;
-    const vel = this._infallVelocities; // [径向速度, 切向速度, 轨道角]
+    const vel = this._infallVelocities; // [randomPhase, speedMult, inclOffset]
     const count = pos.length / 3;
     const ehR = cfg.eventHorizonRadius;
     const range = cfg.infallRange || cfg.accretionOuterRadius * 2;
@@ -702,14 +749,18 @@ export class BlackHole {
         continue;
       }
 
-      // v13: 螺旋轨道 — 径向内落 + 切向旋转
       const nx = -x / dist, ny = -y / dist, nz = -z / dist;
-      // 径向速度：越近越快（自由落体 ∝ 1/sqrt(r)）
-      const radialSpeed = 15 + 200 * Math.sqrt(ehR / dist);
-      // 切向速度：越近越快（角动量守恒 ∝ 1/r），但到达一定半径后消失
+      // v15: per-particle 速度倍率（打破同步）
+      const speedMult = vel[i3 + 1];
+      const radialSpeed = (15 + 200 * Math.sqrt(ehR / dist)) * speedMult;
       const tangentialSpeed = radialSpeed * 0.35 * Math.min(1.0, dist / (ehR * 3));
-      // 切向方向（在 XZ 平面内垂直于径向）
-      const tx = -nz, tz = nx;
+
+      // v15: 切向方向加随机倾角偏移
+      const inclOff = vel[i3 + 2];
+      const tx = -nz + nx * inclOff;
+      const tz = nx + nz * inclOff;
+      const tLen = Math.sqrt(tx * tx + tz * tz) + 0.001;
+      const tnx = tx / tLen, tnz = tz / tLen;
 
       // 确定性抖动
       const seed = i * 0.123 + elapsed * 0.5;
@@ -718,15 +769,9 @@ export class BlackHole {
       const jy = (Math.sin(seed * 74.7 + 50) + Math.sin(seed * 183.3 + 50)) * 0.5 * jitter * radialSpeed * 0.4;
       const jz = (Math.sin(seed * 269.5 + 100) + Math.sin(seed * 437.5 + 100)) * 0.5 * jitter * radialSpeed;
 
-      // 合成速度
-      vel[i3]     = nx * radialSpeed + tx * tangentialSpeed + jx;
-      vel[i3 + 1] = ny * radialSpeed * 0.25 + jy;
-      vel[i3 + 2] = nz * radialSpeed + tz * tangentialSpeed + jz;
-
-      // 更新位置（×dt 帧率解耦）
-      pos[i3]     += vel[i3] * dt * motionScale;
-      pos[i3 + 1] += vel[i3 + 1] * dt * motionScale;
-      pos[i3 + 2] += vel[i3 + 2] * dt * motionScale;
+      pos[i3]     += (nx * radialSpeed + tnx * tangentialSpeed + jx) * dt * motionScale;
+      pos[i3 + 1] += (ny * radialSpeed * 0.25 + jy) * dt * motionScale;
+      pos[i3 + 2] += (nz * radialSpeed + tnz * tangentialSpeed + jz) * dt * motionScale;
     }
     this._infallParticles.geometry.attributes.position.needsUpdate = true;
   }
@@ -735,12 +780,16 @@ export class BlackHole {
     const i3 = i * 3;
     const range = cfg.infallRange || cfg.accretionOuterRadius * 2;
     const r = range * (0.5 + Math.random() * 0.5);
+    // v15: 随机轨道倾角（打破共面臂感）
     const theta = Math.random() * Math.PI * 2;
-    const phi = Math.acos(2 * Math.random() - 1);
-    pos[i3] = r * Math.sin(phi) * Math.cos(theta);
-    pos[i3 + 1] = r * Math.sin(phi) * Math.sin(theta) * 0.4;
-    pos[i3 + 2] = r * Math.cos(phi);
-    vel[i3] = 0; vel[i3 + 1] = 0; vel[i3 + 2] = 0;
+    const phi = Math.acos(2 * Math.random() - 1) * 0.35; // 限制在±20°倾角
+    pos[i3] = r * Math.sin(phi + 1.57) * Math.cos(theta);
+    pos[i3 + 1] = r * Math.cos(phi + 1.57) * 0.5;
+    pos[i3 + 2] = r * Math.sin(phi + 1.57) * Math.sin(theta);
+    // v15: 存储随机相位偏移（打破同步臂感）
+    vel[i3] = Math.random() * Math.PI * 2;     // 随机轨道相位
+    vel[i3 + 1] = 0.7 + Math.random() * 0.6;   // 随机速度倍率
+    vel[i3 + 2] = (Math.random() - 0.5) * 0.6; // 随机倾角偏移
   }
 
   // ==================== 物质流线更新（v13: delta解耦） ====================
