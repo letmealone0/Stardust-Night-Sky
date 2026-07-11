@@ -46,33 +46,45 @@ const starGlowFragmentShader = `
   uniform float uTime;
   uniform float uIntensity;
 
+  float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+
   void main() {
     vec2 center = vUv - 0.5;
     float dist = length(center);
 
-    // 内核 (亮白)
-    float core = exp(-dist * dist * 120.0) * 1.5;
+    // 1. 极亮核心（白热）
+    float core = exp(-dist * dist * 180.0) * 2.2;
 
-    // 内冕 (恒星颜色)
-    float innerCorona = exp(-dist * dist * 18.0) * 0.6;
+    // 2. 内冕（暖色，带微扰）
+    float inner = exp(-dist * dist * 22.0) * 0.85;
+    float innerNoise = hash(center * 12.0 + uTime * 0.8) * 0.15;
 
-    // 外冕 (带脉动)
-    float pulse = 0.85 + sin(uTime * 0.8) * 0.15;
-    float outerCorona = exp(-dist * dist * 4.0) * 0.35 * pulse;
+    // 3. 外冕（冷色，扩散）
+    float outer = exp(-dist * dist * 5.5) * 0.35;
+    float outerPulse = 0.8 + sin(uTime * 1.2) * 0.2;
 
-    // 射线 (spikes)
+    // 4. 动态射线（6条主射线 + hash随机小射线）
     float angle = atan(center.y, center.x);
-    float rays = pow(abs(sin(angle * 5.0 + uTime * 0.3)), 12.0) * exp(-dist * 6.0) * 0.25;
-    rays += pow(abs(sin(angle * 3.0 - uTime * 0.2)), 16.0) * exp(-dist * 8.0) * 0.15;
+    float rays = 0.0;
+    for (int i = 0; i < 6; i++) {
+      float a = angle * 6.0 + float(i) * 1.047 + uTime * 0.4;
+      rays += pow(abs(sin(a)), 18.0) * exp(-dist * 9.0) * 0.18;
+    }
+    rays += hash(vec2(angle * 12.0, dist * 8.0)) * exp(-dist * 6.0) * 0.12;
 
-    // 外层柔和光晕
-    float outerGlow = exp(-dist * dist * 1.5) * 0.12;
+    // 合成颜色：白热核心 → 暖色内冕 → 冷蓝外晕
+    vec3 coreColor = vec3(1.0, 0.98, 0.92);
+    vec3 innerColor = uStarColor * 1.2;
+    vec3 outerColor = mix(uStarColor, vec3(0.6, 0.8, 1.0), 0.6);
 
-    vec3 coreColor = mix(vec3(1.0), uStarColor, 0.3);
-    vec3 color = coreColor * core + uStarColor * (innerCorona + outerCorona + rays + outerGlow);
-    float alpha = core + innerCorona + outerCorona + rays + outerGlow;
+    vec3 color = coreColor * core
+               + innerColor * (inner + innerNoise)
+               + outerColor * outer * outerPulse
+               + vec3(0.8, 0.9, 1.0) * rays;
 
-    gl_FragColor = vec4(color * uIntensity, alpha * uIntensity);
+    float alpha = core + inner * 1.1 + outer * 0.8 + rays * 0.6;
+
+    gl_FragColor = vec4(color * uIntensity, alpha * uIntensity * 0.95);
   }
 `;
 

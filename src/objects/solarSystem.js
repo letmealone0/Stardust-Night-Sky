@@ -90,7 +90,7 @@ export class SolarSystem {
     const sunTex = tex?.map || null;
     this.sunMaterial = new THREE.MeshBasicMaterial({
       map: sunTex,
-      color: sunTex ? 0xffffff : 0xffdd88, // 有纹理=纯白, 无纹理=备用色
+      color: sunTex ? 0xffffff : 0xfff8e8, // v22: 有纹理=纯白, 无纹理=偏白
     });
 
     this.sun = new THREE.Mesh(sunGeo, this.sunMaterial);
@@ -580,7 +580,7 @@ export class SolarSystem {
 
     const mat = new THREE.PointsMaterial({
       size: 2.0,
-      color: 0xffdd88,
+      color: 0xfff8e8,
       transparent: true,
       opacity: 0.5,
       sizeAttenuation: true,

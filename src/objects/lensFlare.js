@@ -159,7 +159,7 @@ export class LensFlareSystem {
 
     // 亮度随到屏幕中心距离衰减 (中心最亮)
     const centerFade = 1.0 - Math.min(1.0, screenDist / 1.2);
-    const targetOpacity = centerFade * brightness;
+    const targetOpacity = centerFade * brightness * 0.8; // v22: -20%
 
     if (targetOpacity < 0.05) {
       this._fade(delta);
