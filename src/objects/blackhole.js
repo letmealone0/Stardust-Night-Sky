@@ -225,22 +225,26 @@ export class BlackHole {
           // v15: 轨道切线方向（用于多普勒计算）
           vec3 orbitTangent = normalize(vec3(-pos.z, 0.0, pos.x));
 
-          // v17: 螺旋内落 — 每粒子独立速度倍率(0.6~1.8)打破同步
-          float infallSpeedVar = 0.6 + aRandom * 1.2;
-          float infallT = mod(uTime * uInfallSpeed * 0.08 * infallSpeedVar + aRandom * 3.0, 1.0);
-          // v17: 湍流扰动幅度×3 — 径向+角度双混沌
+          // v22: 增强随机性 + 全向内落
+          float infallSpeedVar = 0.5 + aRandom * 1.5;  // 4:1速度差异
+          float baseInfallT = mod(uTime * uInfallSpeed * 0.08 * infallSpeedVar + aRandom * 4.0, 1.0);
+
+          // 三层噪声叠加 — 全向混沌
           float noisePhase = sin(aRandom * 12.3 + uTime * 0.2) * 0.45;
-          float noisePhase2 = cos(aRandom * 7.9 + uTime * 0.35) * 0.3;
-          // v20: 内落视角偏置 — 朝向相机侧粒子更快内落
+          float noisePhase2 = cos(aRandom * 7.9 + uTime * 0.35) * 0.35;
+          float noisePhase3 = sin(aRandom * 18.7 + uTime * 0.55) * 0.25;
+
+          // 视角偏置（降低权重，全向更自然）
           vec3 dirBias = normalize(cameraPosition - (modelMatrix * vec4(pos, 1.0)).xyz);
           float viewDirDot = dot(orbitTangent, dirBias);
-          float directionBias = 0.35 * viewDirDot;
-          float currentT = clamp(infallT + noisePhase + noisePhase2 * 0.5 + directionBias, 0.0, 1.0);
+          float directionBias = 0.25 * viewDirDot;
+
+          float currentT = clamp(baseInfallT + noisePhase + noisePhase2 * 0.5 + noisePhase3 * 0.3 + directionBias, 0.0, 1.0);
           float accelFactor = 1.0 + 3.0 * pow(1.0 - currentT, 2.0);
           float currentR = uOuterRadius - (uOuterRadius - uInnerRadius) * min(currentT * accelFactor, 1.0);
           currentR = max(currentR, uInnerRadius * 1.02);
-          // v17: 角度扰动×3
-          float angle2 = atan(pos.z, pos.x) + (noisePhase + noisePhase2) * 3.0;
+          // 角度扰动
+          float angle2 = atan(pos.z, pos.x) + (noisePhase + noisePhase2 + noisePhase3) * 3.0;
           pos.x = cos(angle2) * currentR;
           pos.z = sin(angle2) * currentR;
 
@@ -275,8 +279,8 @@ export class BlackHole {
           float ehClip = smoothstep(1.0, 1.15, distFromEH);
 
           // 内缘消失 + 外缘淡入
-          float fadeNearInner = 1.0 - smoothstep(0.88, 1.0, infallT);
-          float fadeFromOuter = smoothstep(0.0, 0.06, infallT);
+          float fadeNearInner = 1.0 - smoothstep(0.88, 1.0, baseInfallT);
+          float fadeFromOuter = smoothstep(0.0, 0.06, baseInfallT);
           float fadeAlpha = fadeNearInner * max(fadeFromOuter, 0.15);
 
           vAlpha = clamp(brightness * (0.6 + 0.4 * (1.0 - distFactor)) * fadeAlpha * ehClip, 0.0, 1.0);
@@ -795,10 +799,10 @@ export class BlackHole {
       }
 
       const nx = -x / dist, ny = -y / dist, nz = -z / dist;
-      // v16: per-particle 速度倍率 + 湍流微扰
+      // v22: 三阶湍流 — 更多per-particle独立性
       const speedMult = vel[i3 + 1];
       const seed2 = i * 8.4 + elapsed * 0.3;
-      const turbulence = Math.sin(seed2) * 0.25 + Math.cos(i * 4.7) * 0.15;
+      const turbulence = Math.sin(seed2) * 0.35 + Math.cos(i * 4.7) * 0.25 + Math.sin(i * 13.8) * 0.15;
       const radialSpeed = (15 + 200 * Math.sqrt(ehR / dist)) * speedMult * (1.0 + turbulence);
       const tangentialSpeed = radialSpeed * 0.35 * Math.min(1.0, dist / (ehR * 3));
 
