@@ -27,7 +27,6 @@ export class BlackHole {
     this._absorbParticles = null;
     this._infoShown = false;
     this._infallParticles = null;
-    this._infallVelocities = null;
     this._photonSphere = null;
     this._matterStreams = null;
     this._debrisParticles = null;
@@ -519,14 +518,14 @@ export class BlackHole {
     this.group.add(new THREE.Mesh(glowGeo, this.glowMaterial));
   }
 
-  // ==================== v19: 环境螺旋坠落粒子 ====================
+  // ==================== v24: 环境螺旋坠落粒子（GPU驱动，零CPU遍历） ====================
   createInfallParticles(cfg) {
     const count = cfg.infallParticleCount || 2000;
     const range = cfg.infallRange || cfg.accretionOuterRadius * 2;
     const positions = new Float32Array(count * 3);
-    const velocities = new Float32Array(count * 3); // v13: [径向速度, 切向速度, 轨道角]
     const alphas = new Float32Array(count);
     const sizes = new Float32Array(count);
+    const randoms = new Float32Array(count);
 
     for (let i = 0; i < count; i++) {
       const i3 = i * 3;
@@ -537,41 +536,80 @@ export class BlackHole {
       positions[i3 + 1] = r * Math.sin(phi) * Math.sin(theta) * 0.4;
       positions[i3 + 2] = r * Math.cos(phi);
 
-      // v15: 存储 [随机轨道相位, 速度倍率, 倾角偏移]
-      velocities[i3] = Math.random() * Math.PI * 2;
-      velocities[i3 + 1] = 0.7 + Math.random() * 0.6;
-      velocities[i3 + 2] = (Math.random() - 0.5) * 0.6;
-
       alphas[i] = 0.5 + Math.random() * 0.5;
       sizes[i] = 1.0 + Math.random() * 2.0;
+      randoms[i] = Math.random();
     }
 
     const geo = new THREE.BufferGeometry();
     geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
     geo.setAttribute('aAlpha', new THREE.BufferAttribute(alphas, 1));
     geo.setAttribute('aSize', new THREE.BufferAttribute(sizes, 1));
+    geo.setAttribute('aRandom', new THREE.BufferAttribute(randoms, 1));
 
+    // v24: GPU驱动 — 所有运动逻辑在顶点着色器完成，CPU仅设uTime
     const mat = new THREE.ShaderMaterial({
       uniforms: {
+        uTime: { value: 0 },
         uEHRadius: { value: cfg.eventHorizonRadius },
+        uRange: { value: range },
         uPixelRatio: { value: Math.min(window.devicePixelRatio, 2) },
       },
       vertexShader: `
         attribute float aAlpha;
         attribute float aSize;
+        attribute float aRandom;
+        uniform float uTime;
         uniform float uEHRadius;
+        uniform float uRange;
         uniform float uPixelRatio;
         varying float vAlpha;
         varying float vDist;
 
+        float hash(float n) { return fract(sin(n) * 43758.5453); }
+
         void main() {
-          float dist = length(position);
-          vDist = dist;
-          float distNorm = clamp(dist / (uEHRadius * 10.0), 0.0, 1.0);
-          // v19: 压暗坠落粒子 + 盘面附近稍亮
-          vAlpha = aAlpha * (0.08 + (1.0 - distNorm) * 0.7);
+          // v24: 循环生命周期 — 每粒子独立周期，到视界后重生
+          float speedMult = 0.7 + aRandom * 0.6;
+          float spawnR = length(position);
+          float avgSpeed = 15.0 + 120.0 * sqrt(uEHRadius / max(spawnR, 1.0));
+          float cycleDuration = (spawnR - uEHRadius * 1.3) / max(avgSpeed * speedMult, 1.0);
+          cycleDuration = max(cycleDuration, 2.0);
+
+          // 循环相位 0→1（到达视界后重置）
+          float phase = mod(uTime / cycleDuration + aRandom * 97.0, 1.0);
+
+          // 当前半径：从spawn位置螺旋下降到事件视界边缘
+          float currentR = mix(spawnR, uEHRadius * 1.25, phase * phase); // 平方加速内落
+
+          // 螺旋角度：越靠近中心转越快（Kepler-like）
+          float spinSpeed = 2.0 + 6.0 * pow(1.0 - phase, 1.5);
+          float baseAngle = atan(position.z, position.x);
+          float angle = baseAngle + phase * spinSpeed * (1.0 + aRandom * 2.0);
+
+          // 随机倾角偏移
+          float inclOff = (aRandom - 0.5) * 0.6;
+          float inclAngle = (aRandom - 0.5) * 0.7;
+
+          vec3 pos;
+          pos.x = cos(angle) * currentR;
+          pos.z = sin(angle) * currentR;
+          pos.y = position.y * (1.0 - phase * 0.6) + sin(phase * 3.14) * inclOff * currentR * 0.15;
+
+          // 湍流扰动（随距离增大）
+          float turb = sin(uTime * 0.5 + aRandom * 10.0) * currentR * 0.015;
+          pos.x += turb * cos(aRandom * 6.28);
+          pos.z += turb * sin(aRandom * 6.28);
+          pos.y += sin(uTime * 0.35 + aRandom * 7.0) * currentR * 0.008;
+
+          vDist = currentR;
+          float distNorm = clamp(currentR / (uEHRadius * 10.0), 0.0, 1.0);
+          // 近视界更亮更小，重生时淡入
+          float fade = smoothstep(0.0, 0.05, phase); // 重生淡入
+          vAlpha = aAlpha * (0.08 + (1.0 - distNorm) * 0.7) * fade;
           float sizeScale = 0.25 + distNorm * 0.75;
-          vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
+
+          vec4 mvPosition = modelViewMatrix * vec4(pos, 1.0);
           gl_PointSize = aSize * sizeScale * uPixelRatio * (600.0 / max(-mvPosition.z, 1.0));
           gl_PointSize = clamp(gl_PointSize, 0.8, 15.0);
           gl_Position = projectionMatrix * mvPosition;
@@ -587,11 +625,10 @@ export class BlackHole {
           alpha = pow(alpha, 0.6);
           alpha *= vAlpha;
           if (alpha < 0.008) discard;
-          // v13: 颜色：近白→中金→远暗红
           float t = clamp(vDist / 300.0, 0.0, 1.0);
-          vec3 nearColor = vec3(1.0, 1.0, 0.9);     // 近白
-          vec3 midColor  = vec3(1.0, 0.65, 0.15);    // 金黄
-          vec3 farColor  = vec3(0.5, 0.08, 0.02);    // 暗红
+          vec3 nearColor = vec3(1.0, 1.0, 0.9);
+          vec3 midColor  = vec3(1.0, 0.65, 0.15);
+          vec3 farColor  = vec3(0.5, 0.08, 0.02);
           vec3 color = mix(nearColor, midColor, smoothstep(0.0, 0.35, t));
           color = mix(color, farColor, smoothstep(0.35, 1.0, t));
           color *= (1.0 + (1.0 - t) * 2.0);
@@ -603,7 +640,6 @@ export class BlackHole {
     });
 
     this._infallParticles = new THREE.Points(geo, mat);
-    this._infallVelocities = velocities;
     this.group.add(this._infallParticles);
   }
 
@@ -742,8 +778,10 @@ export class BlackHole {
       }
     }
 
-    // v13: 螺旋坠落粒子
-    this.updateInfallParticles(cfg, dt, elapsed, motionScale);
+    // v24: 坠落粒子 — GPU驱动，仅更新uTime（零CPU遍历）
+    if (this._infallParticles?.material?.uniforms) {
+      this._infallParticles.material.uniforms.uTime.value = elapsed;
+    }
 
     // 物质流线
     this.updateMatterStreams(cfg, dt, elapsed, motionScale);
@@ -778,69 +816,6 @@ export class BlackHole {
 
     // 行星吸收
     this.updatePlanetAbsorption(cfg, dt, elapsed);
-  }
-
-  // ==================== v15: 螺旋坠落粒子更新（打破臂感） ====================
-  updateInfallParticles(cfg, dt, elapsed, motionScale) {
-    if (!this._infallParticles) return;
-    const pos = this._infallParticles.geometry.attributes.position.array;
-    const vel = this._infallVelocities; // [randomPhase, speedMult, inclOffset]
-    const count = pos.length / 3;
-    const ehR = cfg.eventHorizonRadius;
-    const range = cfg.infallRange || cfg.accretionOuterRadius * 2;
-
-    for (let i = 0; i < count; i++) {
-      const i3 = i * 3;
-      const x = pos[i3], y = pos[i3 + 1], z = pos[i3 + 2];
-      const dist = Math.sqrt(x * x + y * y + z * z);
-      if (dist < ehR * 1.2 || dist > range * 2 || dist < 0.3) {
-        this._respawnInfallParticle(i, cfg, pos, vel);
-        continue;
-      }
-
-      const nx = -x / dist, ny = -y / dist, nz = -z / dist;
-      // v22: 三阶湍流 — 更多per-particle独立性
-      const speedMult = vel[i3 + 1];
-      const seed2 = i * 8.4 + elapsed * 0.3;
-      const turbulence = Math.sin(seed2) * 0.35 + Math.cos(i * 4.7) * 0.25 + Math.sin(i * 13.8) * 0.15;
-      const radialSpeed = (15 + 200 * Math.sqrt(ehR / dist)) * speedMult * (1.0 + turbulence);
-      const tangentialSpeed = radialSpeed * 0.35 * Math.min(1.0, dist / (ehR * 3));
-
-      // v15: 切向方向加随机倾角偏移
-      const inclOff = vel[i3 + 2];
-      const tx = -nz + nx * inclOff;
-      const tz = nx + nz * inclOff;
-      const tLen = Math.sqrt(tx * tx + tz * tz) + 0.001;
-      const tnx = tx / tLen, tnz = tz / tLen;
-
-      // 确定性抖动
-      const seed = i * 0.123 + elapsed * 0.5;
-      const jitter = 0.12;
-      const jx = (Math.sin(seed * 127.1) + Math.sin(seed * 311.7)) * 0.5 * jitter * radialSpeed;
-      const jy = (Math.sin(seed * 74.7 + 50) + Math.sin(seed * 183.3 + 50)) * 0.5 * jitter * radialSpeed * 0.4;
-      const jz = (Math.sin(seed * 269.5 + 100) + Math.sin(seed * 437.5 + 100)) * 0.5 * jitter * radialSpeed;
-
-      pos[i3]     += (nx * radialSpeed + tnx * tangentialSpeed + jx) * dt * motionScale;
-      pos[i3 + 1] += (ny * radialSpeed * 0.25 + jy) * dt * motionScale;
-      pos[i3 + 2] += (nz * radialSpeed + tnz * tangentialSpeed + jz) * dt * motionScale;
-    }
-    this._infallParticles.geometry.attributes.position.needsUpdate = true;
-  }
-
-  _respawnInfallParticle(i, cfg, pos, vel) {
-    const i3 = i * 3;
-    const range = cfg.infallRange || cfg.accretionOuterRadius * 2;
-    const r = range * (0.5 + Math.random() * 0.5);
-    // v15: 随机轨道倾角（打破共面臂感）
-    const theta = Math.random() * Math.PI * 2;
-    const phi = Math.acos(2 * Math.random() - 1) * 0.35; // 限制在±20°倾角
-    pos[i3] = r * Math.sin(phi + 1.57) * Math.cos(theta);
-    pos[i3 + 1] = r * Math.cos(phi + 1.57) * 0.5;
-    pos[i3 + 2] = r * Math.sin(phi + 1.57) * Math.sin(theta);
-    // v15: 存储随机相位偏移（打破同步臂感）
-    vel[i3] = Math.random() * Math.PI * 2;     // 随机轨道相位
-    vel[i3 + 1] = 0.7 + Math.random() * 0.6;   // 随机速度倍率
-    vel[i3 + 2] = (Math.random() - 0.5) * 0.6; // 随机倾角偏移
   }
 
   // ==================== 物质流线更新（v13: delta解耦） ====================
