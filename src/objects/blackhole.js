@@ -1,12 +1,13 @@
 /**
- * 黑洞系统 v16 — 真实物理黑洞渲染
- * 螺旋噪声扰动 + 蓝白主导配色 + 湍流增强
+ * 黑洞系统 v17 — 湍流弥散吸积盘
+ * 内落速度去同步 + 湍流3×增强 + Y轴垂直扰动 + 亮度±35%斑驳
  *
- * v16 核心改进：
- * - 螺旋内落噪声扰动：径向+角度双扰动，彻底打破规则摆线臂感
- * - 配色比例优化：内蓝白主导→中金黄过渡→外暗红背景，外圈-25%亮度
- * - Infall 湍流增强：per-particle 正弦/余弦湍流速度调制
- * - 喷流进动微扰：叠加第二频率随机摆动
+ * v17 核心改进：
+ * - 内落速度去同步：每粒子独立infallSpeed倍率(0.6~1.8×)，打破同步亮线
+ * - 湍流3×增强：径向+角度双噪声幅度×3，轨迹彻底弥散混沌
+ * - 物质流线弱化：粒子数-60%+透明度-70%，消除臂感
+ * - Y轴垂直湍流：双频sin+cos叠加，弱化纯平面线条
+ * - 亮度扰动±20→±35%：更强斑驳明暗，打破连续线条
  */
 
 import * as THREE from 'three';
@@ -80,7 +81,7 @@ export class BlackHole {
     this.createDebrisParticles(cfg);
 
     scene.add(this.group);
-    console.log('[BlackHole] v16 真实黑洞渲染初始化完成');
+    console.log('[BlackHole] v17 湍流弥散吸积盘初始化完成');
   }
 
   // ==================== v14: 光子球 → 极细亮环（挂载盘容器，与盘面共面） ====================
@@ -224,20 +225,25 @@ export class BlackHole {
           // v15: 轨道切线方向（用于多普勒计算）
           vec3 orbitTangent = normalize(vec3(-pos.z, 0.0, pos.x));
 
-          // v16: 螺旋内落 + 噪声扰动打破规则摆线
-          float infallT = mod(uTime * uInfallSpeed * 0.08 + aRandom * 3.0, 1.0);
-          // 噪声相位扰动 — 径向+角度双扰动，消除机械螺旋臂
-          float noisePhase = sin(aRandom * 12.3 + uTime * 0.2) * 0.15;
-          float currentT = clamp(infallT + noisePhase, 0.0, 1.0);
+          // v17: 螺旋内落 — 每粒子独立速度倍率(0.6~1.8)打破同步
+          float infallSpeedVar = 0.6 + aRandom * 1.2;
+          float infallT = mod(uTime * uInfallSpeed * 0.08 * infallSpeedVar + aRandom * 3.0, 1.0);
+          // v17: 湍流扰动幅度×3 — 径向+角度双混沌
+          float noisePhase = sin(aRandom * 12.3 + uTime * 0.2) * 0.45;
+          float noisePhase2 = cos(aRandom * 7.9 + uTime * 0.35) * 0.3;
+          float currentT = clamp(infallT + noisePhase + noisePhase2 * 0.5, 0.0, 1.0);
           float accelFactor = 1.0 + 3.0 * pow(1.0 - currentT, 2.0);
           float currentR = uOuterRadius - (uOuterRadius - uInnerRadius) * min(currentT * accelFactor, 1.0);
           currentR = max(currentR, uInnerRadius * 1.02);
-          float angle2 = atan(pos.z, pos.x) + noisePhase * 1.5;
+          // v17: 角度扰动×3
+          float angle2 = atan(pos.z, pos.x) + (noisePhase + noisePhase2) * 3.0;
           pos.x = cos(angle2) * currentR;
           pos.z = sin(angle2) * currentR;
 
-          // 高度微扰
-          pos.y += sin(uTime * 3.0 + aRandom * 10.0) * 0.3 * (1.0 - rNorm);
+          // v17: Y轴垂直湍流（弱化纯平面线条感）
+          float yTurb = sin(uTime * 2.5 + aRandom * 10.0) * 0.7 * (1.0 - rNorm)
+                      + cos(uTime * 1.8 + aRandom * 7.3) * 0.4 * rNorm;
+          pos.y += yTurb;
 
           // v15: 引力弯折（幅度微调）
           vec4 bhWorld = modelMatrix * vec4(0.0, 0.0, 0.0, 1.0);
@@ -300,11 +306,11 @@ export class BlackHole {
           float alpha = 1.0 - smoothstep(0.0, 1.0, d);
           alpha = pow(alpha, 0.6);
 
-          // 旋转噪声扰动亮度 ±20%
+          // v17: 旋转噪声扰动亮度 ±35%（斑驳明暗打破连续线条）
           float angle = atan(vWPos.z, vWPos.x) + uTime * 0.35;
           float r2 = length(vWPos.xz) / max(uOuterRadius, 1.0);
           float n = noise2D(vec2(cos(angle)*3.5, r2*6.0 + uTime*0.15));
-          float brightnessMod = 0.8 + n * 0.4;
+          float brightnessMod = 0.65 + n * 0.7;
 
           // v15: 多普勒亮度调制 — 接近侧增亮 +30%，远离侧变暗
           float dopplerBright = 1.0 + vDoppler * 1.3;
@@ -555,10 +561,10 @@ export class BlackHole {
     this.group.add(this._infallParticles);
   }
 
-  // ==================== 物质流线（保持不变） ====================
+  // ==================== v17: 物质流线（大幅弱化：粒子减半+透明度-70%，消除臂感） ====================
   createMatterStreams(cfg) {
     const streamCount = cfg.matterStreamCount || 6;
-    const particlesPerStream = cfg.matterStreamParticles || 80;
+    const particlesPerStream = Math.floor((cfg.matterStreamParticles || 80) * 0.4); // v17: 60%减少
     const total = streamCount * particlesPerStream;
     const positions = new Float32Array(total * 3);
     const colors = new Float32Array(total * 3);
@@ -579,10 +585,8 @@ export class BlackHole {
         positions[i3] = Math.cos(angle) * r;
         positions[i3 + 1] = Math.sin(tiltAngle) * r * 0.2;
         positions[i3 + 2] = Math.sin(angle) * r;
-        const brightness = 0.2 + t * 0.8;
-        // v13: 暖色流线
-        colors[i3] = brightness * 1.0; colors[i3 + 1] = brightness * 0.55; colors[i3 + 2] = brightness * 0.15;
-        alphas[idx] = 0.1 + t * 0.5;
+        colors[i3] = 0.3; colors[i3 + 1] = 0.15; colors[i3 + 2] = 0.04;
+        alphas[idx] = 0.03 + t * 0.15; // v17: 透明度-70%
       }
     }
 
@@ -592,7 +596,7 @@ export class BlackHole {
     geo.setAttribute('aAlpha', new THREE.BufferAttribute(alphas, 1));
 
     const mat = new THREE.PointsMaterial({
-      size: 1.5, vertexColors: true, transparent: true, opacity: 0.5,
+      size: 1.0, vertexColors: true, transparent: true, opacity: 0.15, // v17: 0.5→0.15
       blending: THREE.AdditiveBlending, depthWrite: false, sizeAttenuation: true,
     });
 
