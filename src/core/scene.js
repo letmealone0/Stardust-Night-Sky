@@ -138,6 +138,7 @@ export class SceneManager {
       try {
         this.objects.comets = new CometSystem();
         this.objects.comets.init(this.objects.solarSystem.group);
+        this.objects.comets.setCamera(camera);
       } catch (e) { console.warn('[Scene] 彗星系统初始化失败:', e); }
     } catch (e) { console.warn('[Scene] 太阳系初始化失败:', e); }
 
