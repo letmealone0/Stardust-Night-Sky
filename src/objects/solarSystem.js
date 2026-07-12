@@ -106,8 +106,8 @@ export class SolarSystem {
     sunLight.position.set(0, 0, 0);
     this.group.add(sunLight);
 
-    // v15: 太阳光晕 — 多层柔和辐射 (Space Engine 风格)
-    const glowGeo = new THREE.SphereGeometry(cfg.sunRadius * 4, 32, 32);
+    // v26.2: 太阳光晕缩小至3倍半径（原4倍），平滑指数衰减
+    const glowGeo = new THREE.SphereGeometry(cfg.sunRadius * 3, 32, 32);
     const glowMat = new THREE.ShaderMaterial({
       uniforms: { uTime: { value: 0 } },
       vertexShader: `varying vec3 vNormal; varying vec3 vWorldPos; void main() { vNormal = normalize(normalMatrix * normal); vWorldPos = (modelMatrix * vec4(position,1.0)).xyz; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
@@ -120,14 +120,13 @@ export class SolarSystem {
                      mix(mix(hash(i+vec3(0,0,1)),hash(i+vec3(1,0,1)),f.x),mix(hash(i+vec3(0,1,1)),hash(i+vec3(1,1,1)),f.x),f.y),f.z); }
         void main() {
           float rim = 1.0 - max(0.0, dot(vNormal, vec3(0,0,1)));
-          float inner = exp(-rim * rim * 6.0) * 1.2;
-          float mid = exp(-rim * 2.5) * 0.5;
-          float outer = exp(-rim * 1.2) * 0.15;
-          float n = noise(vWorldPos * 0.015 + uTime * 0.05) * 0.3;
-          float total = (inner + mid + outer) * (1.0 + n);
-          vec3 c = mix(vec3(1.0, 0.95, 0.7), vec3(1.0, 0.6, 0.15), smoothstep(0.2, 0.8, rim));
-          c = mix(c, vec3(0.8, 0.2, 0.05), smoothstep(0.7, 1.0, rim));
-          gl_FragColor = vec4(c * total, total * 0.85);
+          // v26.2: 平滑指数衰减，消除硬边界；亮白→浅黄→淡橙自然过渡
+          float alpha = exp(-rim * 3.5) * 0.9;  // 中心不透明，外层自然淡出
+          float n = noise(vWorldPos * 0.015 + uTime * 0.05) * 0.2;
+          float total = alpha * (1.0 + n);
+          vec3 c = mix(vec3(1.0, 1.0, 0.85), vec3(1.0, 0.85, 0.4), smoothstep(0.3, 0.7, rim));
+          c = mix(c, vec3(0.9, 0.5, 0.15), smoothstep(0.6, 1.0, rim));
+          gl_FragColor = vec4(c * total, total * 0.8);
         }
       `,
       blending: THREE.AdditiveBlending, side: THREE.BackSide, transparent: true, depthWrite: false,
@@ -135,8 +134,8 @@ export class SolarSystem {
     this.glowMaterial = glowMat;
     this.group.add(new THREE.Mesh(glowGeo, glowMat));
 
-    // v15: 日冕 — 大范围动态湍流 (6x 半径)
-    const coronaGeo = new THREE.SphereGeometry(cfg.sunRadius * 6, 32, 32);
+    // v26.2: 日冕缩小至3倍半径（原6倍），平滑自然弥散
+    const coronaGeo = new THREE.SphereGeometry(cfg.sunRadius * 3, 32, 32);
     this.coronaMaterial = new THREE.ShaderMaterial({
       uniforms: { uTime: { value: 0 } },
       vertexShader: `
@@ -495,7 +494,7 @@ export class SolarSystem {
     const material = new THREE.LineBasicMaterial({
       color: 0x446688,
       transparent: true,
-      opacity: 0.35,
+      opacity: 0.2,  // v26.2: 降低轨道线存在感
     });
     return new THREE.Line(geometry, material);
   }

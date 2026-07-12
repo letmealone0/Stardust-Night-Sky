@@ -185,14 +185,14 @@ export class PlanetSystem {
   _createHostStar() {
     const r = config.planets.hostStarRadius || 8;
     const starGroup = new THREE.Group();
-    starGroup.add(new THREE.Mesh(new THREE.SphereGeometry(r,16,16), new THREE.MeshBasicMaterial({color:0xffeedd})));
+    starGroup.add(new THREE.Mesh(new THREE.SphereGeometry(r,16,16), new THREE.MeshBasicMaterial({color:0xffccaa})));
     const glowMat = new THREE.ShaderMaterial({
       uniforms: {},
       vertexShader: `varying vec3 vNormal; void main() { vNormal = normalize(normalMatrix * normal); gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
-      fragmentShader: `varying vec3 vNormal; void main() { float i = pow(0.6 - dot(vNormal, vec3(0,0,1)), 2.0); gl_FragColor = vec4(1.0, 0.85, 0.6, i * 0.4); }`,
+      fragmentShader: `varying vec3 vNormal; void main() { float i = pow(0.6 - dot(vNormal, vec3(0,0,1)), 2.0); gl_FragColor = vec4(1.0, 0.85, 0.6, i * 0.2); }`, // v26.2: 降低亮度
       blending: THREE.AdditiveBlending, side: THREE.BackSide, transparent: true, depthWrite: false,
     });
-    starGroup.add(new THREE.Mesh(new THREE.SphereGeometry(r*2.5,16,16), glowMat));
+    starGroup.add(new THREE.Mesh(new THREE.SphereGeometry(r*1.8,16,16), glowMat)); // v26.2: 缩小光晕
     starGroup.userData.isHostStar = true;
     return starGroup;
   }

@@ -325,13 +325,19 @@ export class Engine {
       );
       this.hud.updateSpeed(0);
 
-      // 更新太阳 HUD 标记位置
+      // 更新太阳 HUD 标记位置（橙色）
       const sunWorldPos = new THREE.Vector3();
       this.scene.objects.solarSystem?.sun?.getWorldPosition(sunWorldPos);
       const sunScreenPos = sunWorldPos.clone().project(this.camera.camera);
       const screenX = (sunScreenPos.x + 1) * 0.5 * window.innerWidth;
       const screenY = (-sunScreenPos.y + 1) * 0.5 * window.innerHeight;
       this.hud.updateMapSunMarker(screenX, screenY);
+
+      // 更新玩家当前位置标记（蓝色）
+      const playerScreenPos = this._mapSavedPos.clone().project(this.camera.camera);
+      const px = (playerScreenPos.x + 1) * 0.5 * window.innerWidth;
+      const py = (-playerScreenPos.y + 1) * 0.5 * window.innerHeight;
+      this.hud.updateMapPlayerMarker(px, py);
 
       this.postprocessing.render();
       return;
@@ -424,7 +430,8 @@ export class Engine {
     // v10.0: 银河宏观运动 — 太阳系公转 + 较差自转
     const gm = config.galaxyMotion;
     if (gm && gm.enabled !== false && !this.isMotionFrozen) {
-      const ts = gm.timeScale || 1;
+      // v26.2: 地图模式下加速银河自转（10×），动态反馈更明显
+      const ts = this._isMapMode ? 10.0 : (gm.timeScale || 1);
       // 太阳系绕银心公转
       if (this.scene.solarOrbitNode) {
         this.scene.solarOrbitNode.rotation.y += (gm.solarOrbitSpeed || 0.0015) * delta * ts;
@@ -471,6 +478,18 @@ export class Engine {
       if (cPass) {
         if (q < 0.6) cPass.uniforms.uMotionBlurIntensity.value = 0;
         if (q < 0.5) cPass.uniforms.uChromaticAberration.value = 0;
+      }
+      // v26: 低画质削减银河银晕/雾气粒子数
+      if (q < 0.7 && this.scene.objects.stars?.hazePoints) {
+        const total = this.scene.objects.stars.hazePoints.geometry.attributes.position.count;
+        this.scene.objects.stars.hazePoints.geometry.setDrawRange(0, Math.floor(total * 0.5));
+      } else if (this.scene.objects.stars?.hazePoints) {
+        const total = this.scene.objects.stars.hazePoints.geometry.attributes.position.count;
+        this.scene.objects.stars.hazePoints.geometry.setDrawRange(0, total);
+      }
+      if (q < 0.5 && this.scene.objects.stars?.hazePoints) {
+        const total = this.scene.objects.stars.hazePoints.geometry.attributes.position.count;
+        this.scene.objects.stars.hazePoints.geometry.setDrawRange(0, Math.floor(total * 0.2));
       }
     }
   }

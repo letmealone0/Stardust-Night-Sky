@@ -17,35 +17,52 @@ export class StarField {
     this.geometries = [];
     this.brightStars = [];
     this.galaxyMaterial = null; // 银河 Shader 材质（用于更新时间）
+    this.hazePoints = null;     // v26: 雾气 Points 引用（自适应画质用）
   }
 
-  init(scene) {
+  init(scene, galaxyCenterGroup) {
     const { spread } = config.stars;
 
     // v25-fix5: 精简星空层次，
     // 由「银河系（核球+旋臂+尘埃+银晕）+ 高亮星」承担
-    this.createBrightStars(scene, spread);
-    this.createMilkyWay(scene, spread);
+    // v26: 太阳系周围排除区（10000单位内不生成亮星）
+    const galPos = config.stars.galaxy?.position || { x: -15000, y: 500, z: -30000 };
+    const solarR = config.galaxyMotion?.solarOrbitRadius || 22000;
+    const solarCenter = new THREE.Vector3(galPos.x + solarR, galPos.y, galPos.z);
+    this.createBrightStars(scene, spread, solarCenter, 10000);
+    // v26: 银河粒子挂到 galaxyCenterGroup 下，与太阳系共面
+    const targetGroup = galaxyCenterGroup || scene;
+    this.createMilkyWay(scene, targetGroup, spread);
 
     console.log('[StarField] 星空初始化完成（仅银河系+高亮星）');
   }
 
 
 
-  createBrightStars(scene, spread) {
+  createBrightStars(scene, spread, exclusionCenter, exclusionRadius) {
     const count = 50;
     const geometry = new THREE.BufferGeometry();
     const positions = new Float32Array(count * 3);
     const colors = new Float32Array(count * 3);
     const phases = new Float32Array(count);
     const frequencies = new Float32Array(count);
+    const exR2 = exclusionRadius ? exclusionRadius * exclusionRadius : 0;
 
     for (let i = 0; i < count; i++) {
       const i3 = i * 3;
+      let px, py, pz;
+      let attempts = 0;
+      do {
+        px = randomRange(-spread, spread);
+        py = randomRange(-spread, spread);
+        pz = randomRange(-spread, spread);
+        attempts++;
+      } while (exclusionCenter && exR2 > 0 && attempts < 50 &&
+        (px - exclusionCenter.x) ** 2 + (py - exclusionCenter.y) ** 2 + (pz - exclusionCenter.z) ** 2 < exR2);
 
-      positions[i3] = randomRange(-spread, spread);
-      positions[i3 + 1] = randomRange(-spread, spread);
-      positions[i3 + 2] = randomRange(-spread, spread);
+      positions[i3] = px;
+      positions[i3 + 1] = py;
+      positions[i3 + 2] = pz;
 
       const isBlue = Math.random() > 0.7;
       colors[i3] = isBlue ? 0.7 : 1.0;
@@ -129,7 +146,8 @@ export class StarField {
   }
 
   // v25: 银河系 — 对数螺旋四层结构（核球+旋臂+尘埃+银晕）
-  createMilkyWay(scene, spread) {
+  // v26: targetGroup 为挂载父节点（galaxyCenterGroup），与太阳系共享倾斜基准
+  createMilkyWay(scene, targetGroup, spread) {
     const galaxyCfg = config.stars.galaxy || {};
     const count = galaxyCfg.count || 40000;
     const armCount = galaxyCfg.armCount || 4;
@@ -221,7 +239,7 @@ export class StarField {
           light = 0.60 - blend * 0.25;
         }
         const c = new THREE.Color().setHSL(hue + Math.random() * 0.03, sat, light + Math.random() * 0.15);
-        colors[i3] = c.r; colors[i3 + 1] = c.g; colors[i3 + 2] = c.b;
+        colors[i3] = c.r * 1.1; colors[i3 + 1] = c.g * 1.1; colors[i3 + 2] = c.b * 1.1; // v26: 旋臂亮度+10%
         sizes[i] = 0.12 + t * 0.25;
 
       } else if (i < coreBulgeCount + armCount_ + dustCount) {
@@ -241,9 +259,9 @@ export class StarField {
         z = Math.sin(angle) * (r + scatterR);
         y = gaussianRandom(0, thickness * 0.2);
 
-        // 暗红褐色（消光尘埃）
+        // 暗红褐色（消光尘埃），v26.2: 压暗15%强化旋臂间对比
         const c = new THREE.Color().setHSL(0.05 + Math.random() * 0.08, 0.3 + Math.random() * 0.2, 0.06 + Math.random() * 0.06);
-        colors[i3] = c.r; colors[i3 + 1] = c.g; colors[i3 + 2] = c.b;
+        colors[i3] = c.r * 0.85; colors[i3 + 1] = c.g * 0.85; colors[i3 + 2] = c.b * 0.85;
         sizes[i] = 0.06 + Math.random() * 0.12;
 
       } else {
@@ -257,9 +275,9 @@ export class StarField {
         // v25-fix: Y轴极度压缩（从0.4降到0.08），形成薄盘
         y = gaussianRandom(0, thickness * 0.08);
 
-        // 冷蓝白色（古老恒星），透明度降低
+        // 冷蓝白色（古老恒星），降低亮度突出旋臂
         const c = new THREE.Color().setHSL(0.58 + Math.random() * 0.06, 0.08 + Math.random() * 0.12, 0.35 + Math.random() * 0.25);
-        colors[i3] = c.r * 0.7; colors[i3 + 1] = c.g * 0.7; colors[i3 + 2] = c.b * 0.7; // v25-fix: 颜色压暗30%
+        colors[i3] = c.r * 0.55; colors[i3 + 1] = c.g * 0.55; colors[i3 + 2] = c.b * 0.55; // v26: 银晕压暗
         sizes[i] = 0.05 + Math.random() * 0.12; // v25-fix: 粒子更小
       }
 
@@ -335,11 +353,9 @@ export class StarField {
     points.userData.isGalaxy = true;
 
     const galaxyGroup = new THREE.Group();
-    const posCfg = galaxyCfg.position || { x: 0, y: -3000, z: -8000 };
-    galaxyGroup.position.set(posCfg.x, posCfg.y, posCfg.z);
-    galaxyGroup.rotation.x = (tiltDeg * Math.PI) / 180;
+    // v26: 位置由 galaxyCenterGroup 统一管理，倾斜上移到 scene.js 的 galaxyCenterGroup.rotation.x
     galaxyGroup.add(points);
-    scene.add(galaxyGroup);
+    targetGroup.add(galaxyGroup);
 
     this.meshes.push(galaxyGroup);
     this.materials.push(material);
@@ -415,7 +431,7 @@ export class StarField {
           pos.z = position.x * sinA + position.z * cosA;
           // v25-fix: 径向衰减——内亮外暗，避免球形均匀感
           float radialFade = 1.0 - smoothstep(0.0, 0.8, r / (length(vec3(1.0, 0.0, 1.0)) * 5000.0));
-          vAlpha = 0.08 * radialFade;
+          vAlpha = 0.13 * radialFade; // v26: 增强雾气可见性
           vec4 mvPosition = modelViewMatrix * vec4(pos, 1.0);
           // v25-fix: 粒子大小随距离衰减（近大远小）
           gl_PointSize = (2.5 + radialFade * 2.5) * uPixelRatio * (300.0 / -mvPosition.z);
@@ -443,6 +459,7 @@ export class StarField {
 
     const hazePoints = new THREE.Points(geo, hazeMat);
     hazePoints.userData.isGalaxyHaze = true;
+    this.hazePoints = hazePoints; // v26: 保存引用供自适应画质
     galaxyGroup.add(hazePoints);
     this.meshes.push(hazePoints);
     this.materials.push(hazeMat);

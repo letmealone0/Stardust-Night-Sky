@@ -9,7 +9,7 @@ export const config = {
     fov: 75,
     near: 1,
     far: 200000,
-    startPosition: { x: 37500, y: 1200, z: -28500 }, // v16: 远离太阳，能看到地球的位置
+    startPosition: { x: 11000, y: 1500, z: -28000 }, // v26: 出生在太阳系内，太阳附近
   },
 
   // ---- 玩家控制 (v9.0: 惯性飞行系统) ----
@@ -51,7 +51,7 @@ export const config = {
       position: { x: -15000, y: 500, z: -30000 },
       tilt: 50,
       scale: 8.0,             // v25-fix4: 缩小到8（从22降），银河半径=40000，玩家在外部
-      hazeCount: 3000,        // v25-fix: 减少雾气粒子数
+      hazeCount: 7000,        // v26: 增强雾气，模拟电离氢区发光
       // v25-fix: 四层配比 — 减少核球和银晕，突出旋臂
       coreBulgeRatio: 0.06,   // v25-fix: 核球6%（从12%减半）
       armRatio: 0.62,         // v25-fix: 旋臂62%（从55%增加）
@@ -61,7 +61,7 @@ export const config = {
       bulgeRadius: 0.06,      // v25-fix: 核球6%（从8%缩小）
       bulgeBrightness: 1.0,   // v25-fix: 核球不额外增亮（从2.0降到1.0）
       // v25: 旋臂渐宽
-      armWidenFactor: 0.08,   // 旋臂随半径增宽系数
+      armWidenFactor: 0.05,   // v26: 降低增宽，旋臂更收敛清晰
     },
     // v25-fix: 深场背景星星 — 极稀疏壳层，避免形成实心球
     deepField: {
@@ -77,7 +77,7 @@ export const config = {
   planets: {
     count: 4,                // 额外随机行星数量
     distFromCenterMin: 5000,  // 距银河中心最小距离
-    distFromCenterMax: 40000, // 距银河中心最大距离
+    distFromCenterMax: 32000, // v26: 约束在旋臂半径1.1倍内
     minRadius: 40,           // 最小半径
     maxRadius: 200,          // 最大半径
     spread: 5000,            // 分布范围（fallback）
@@ -108,7 +108,7 @@ export const config = {
     timeScale: 1.0,            // 全局速度倍率
     coreRotSpeed: 0.015,      // v14: 加速差速自转让银河更有动感
     radiusFalloff: 0.00004,    // 较差自转衰减系数
-    solarOrbitRadius: 50000,   // 太阳系绕银心半径 (~2/3旋臂)
+    solarOrbitRadius: 22000,   // v26.2: 嵌入旋臂中段外侧，太阳系落在猎户座旋臂内
     solarOrbitSpeed: 0.0015,   // 太阳系公转角速度 (rad/s, ~70s一圈)
   },
 
@@ -116,7 +116,7 @@ export const config = {
   nebula: {
     count: 3,
     distFromCenterMin: 15000,  // 距银河中心最小距离
-    distFromCenterMax: 50000,  // 距银河中心最大距离
+    distFromCenterMax: 36000,  // v26: 约束在旋臂半径1.1倍内
     scale: 2000,              // v20: 粒子云团范围
     colors: [ /* 由 typeColors 覆盖 */ ],
     // v20: 三类星云
@@ -207,7 +207,7 @@ export const config = {
   blackhole: {
     count: 1,                   // 数量
     distFromCenterMin: 20000,   // 距银河中心最小距离
-    distFromCenterMax: 80000,   // 距银河中心最大距离
+    distFromCenterMax: 40000,   // v26: 约束在旋臂半径1.1倍内
     eventHorizonRadius: 25,    // 事件视界半径
     accretionInnerRadius: 40,  // 吸积盘内半径
     accretionOuterRadius: 200, // 吸积盘外半径
@@ -240,7 +240,7 @@ export const config = {
   pulsar: {
     count: 3,                  // 数量（分散在银河盘）
     distFromCenterMin: 10000,  // 距银河中心最小距离
-    distFromCenterMax: 60000,  // 距银河中心最大距离
+    distFromCenterMax: 36000,  // v26: 约束在旋臂半径1.1倍内
     radius: 5,                 // 半径
     beamLength: 300,           // 光束长度
     rotationSpeed: 5,          // 旋转速度（弧度/秒）

@@ -52,6 +52,8 @@ export class SceneManager {
     this.galaxyGroup = new THREE.Group();        // 银河整体自转
     this.galaxyCenterGroup = new THREE.Group();  // 银心位置
     this.galaxyCenterGroup.position.set(-15000, 500, -30000);
+    // v26: 银河与太阳系共面 — 倾斜统一由 galaxyCenterGroup 控制
+    this.galaxyCenterGroup.rotation.x = THREE.MathUtils.degToRad(50);
     this.solarOrbitNode = new THREE.Group();     // 太阳系绕银心公转
     this.solarOrbitNode.position.x = config.galaxyMotion?.solarOrbitRadius || 50000;
     this.galaxyCenterGroup.add(this.solarOrbitNode);
@@ -68,7 +70,7 @@ export class SceneManager {
     // ======== 逐个初始化，失败不阻断整体流程 ========
     try {
       this.objects.stars = new StarField();
-      this.objects.stars.init(this.galaxyGroup);
+      this.objects.stars.init(this.galaxyGroup, this.galaxyCenterGroup);
     } catch (e) { console.warn('[Scene] 星空初始化失败:', e); }
 
     try {

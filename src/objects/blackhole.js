@@ -113,7 +113,7 @@ export class BlackHole {
           float rim = 1.0 - abs(dot(normalize(vNormal), viewDir));
           float ring = pow(rim, 10.0);
           float pulse = 0.8 + sin(uTime * 4.0) * 0.2;
-          float a = ring * 0.22 * pulse; // v21: 0.28→0.22 微调
+          float a = ring * 0.05 * pulse; // v26.3: 0.22→0.05 极淡光子环
           if (a < 0.02) discard;
           gl_FragColor = vec4(uColor * ring * pulse * 1.0, a);
         }
@@ -267,12 +267,12 @@ export class BlackHole {
           vec3 toCamera = normalize(cameraPosition - particleWorld.xyz);
           vDoppler = dot(orbitTangent, toCamera);
 
-          // v20: 亮度大幅压暗 — "黑暗中扭曲火焰"而非发光球
+          // v26.3: "暗"黑洞 — 吸积盘应黯淡微弱，仅近距离可见
           float distFactor = clamp((currentR - uInnerRadius) / (uOuterRadius - uInnerRadius), 0.0, 1.0);
           vDistNorm = distFactor;
-          float brightness = exp(-distFactor * 4.8) * 0.62;
-          brightness += exp(-distFactor * 13.0) * 0.48;
-          brightness += uBrightnessPulse * exp(-distFactor * 5.5) * 0.8;
+          float brightness = exp(-distFactor * 4.8) * 0.12;  // v20: 0.62→0.12
+          brightness += exp(-distFactor * 13.0) * 0.08;       // v20: 0.48→0.08
+          brightness += uBrightnessPulse * exp(-distFactor * 5.5) * 0.15; // v20: 0.8→0.15
 
           // v19: 内缘裁剪 — <1.1×事件视界直接透明，保证黑核纯黑
           float distFromEH = currentR / uEventHorizonR;
@@ -432,8 +432,8 @@ export class BlackHole {
           float axialFade = exp(-t * 3.5);
           // 周期节点亮斑（减弱）
           float nodePulse = 1.0 + sin(t * 18.0 + uTime * 2.0) * 0.2;
-          // v18: 整体透明度-30%
-          vAlpha = axialFade * 0.63 * nodePulse;
+          // v26.3: 喷流进一步压暗
+          vAlpha = axialFade * 0.12 * nodePulse;
 
           vec4 wp = modelMatrix * vec4(pos, 1.0); vWorldPos = wp.xyz;
           vec4 mvPosition = modelViewMatrix * vec4(pos, 1.0);
@@ -473,13 +473,13 @@ export class BlackHole {
     this._diskContainer.add(this.jetParticles);
   }
 
-  // ==================== v19: 外层光晕（盘状分布 + 透明度-50%，取消球形弥散） ====================
+  // ==================== v26.3: 外层光晕 — 大幅压暗，黑洞应为「暗」天体 ====================
   createGlow(cfg) {
-    const glowGeo = new THREE.SphereGeometry(cfg.eventHorizonRadius * 3.5, 32, 32);
+    const glowGeo = new THREE.SphereGeometry(cfg.eventHorizonRadius * 1.8, 32, 32);
     this.glowMaterial = new THREE.ShaderMaterial({
       uniforms: {
         uTime: { value: 0 },
-        uColor: { value: new THREE.Color(0.6, 0.25, 0.12) },
+        uColor: { value: new THREE.Color(0.3, 0.12, 0.05) },
       },
       vertexShader: `
         varying vec3 vNormal;
@@ -502,15 +502,13 @@ export class BlackHole {
         void main() {
           vec3 viewDir = normalize(cameraPosition - vWorldPos);
           float rim = 1.0 - max(0.0, abs(dot(vNormal, viewDir)));
-          // v19: 盘状分布 — 垂直方向快速衰减（Y分量越大越暗）
           float r = length(vLocalPos.xz);
           float h = abs(vLocalPos.y);
           float diskShape = exp(-h * h / (r * r * 0.08 + 1.0));
           float intensity = pow(rim, 5.0) * diskShape;
-          float pulse = 0.85 + sin(uTime * 0.5) * 0.15;
-          float alpha = intensity * 0.06 * pulse; // v19: 0.12→0.06 (-50%)
-          if (alpha < 0.003) discard;
-          gl_FragColor = vec4(uColor * intensity * pulse * 0.5, alpha);
+          float alpha = intensity * 0.008; // v26.3: 0.06→0.008 (大幅压暗)
+          if (alpha < 0.001) discard;
+          gl_FragColor = vec4(uColor * intensity * 0.3, alpha);
         }
       `,
       blending: THREE.AdditiveBlending,
@@ -607,7 +605,7 @@ export class BlackHole {
           float distNorm = clamp(currentR / (uEHRadius * 10.0), 0.0, 1.0);
           // 近视界更亮更小，重生时淡入
           float fade = smoothstep(0.0, 0.05, phase); // 重生淡入
-          vAlpha = aAlpha * (0.08 + (1.0 - distNorm) * 0.7) * fade;
+          vAlpha = aAlpha * (0.02 + (1.0 - distNorm) * 0.15) * fade; // v26.3: 坠落粒子大幅压暗
           float sizeScale = 0.25 + distNorm * 0.75;
 
           vec4 mvPosition = modelViewMatrix * vec4(pos, 1.0);
@@ -765,18 +763,37 @@ export class BlackHole {
       this._diskContainer.rotation.z += wobble * dt * motionScale;
     }
 
-    // v15: 黑洞 LOD — 距离分级调整吸积盘粒子数
-    if (this.camera && this.accretionDisk) {
+    // v26.3: 黑洞 LOD — 远处几乎不可见，尤其俯视图（>30000）
+    if (this.camera) {
       const dist = this.group.position.distanceTo(this.camera.position);
-      const totalCount = this.accretionDisk.geometry.userData?.totalCount || 10000;
-      let targetFraction;
-      if (dist < 2000) targetFraction = 1.0;
-      else if (dist < 5000) targetFraction = 0.6;
-      else targetFraction = 0.3;
-      const target = Math.max(Math.floor(totalCount * targetFraction), 300);
-      if (this.accretionDisk.geometry.drawRange.count !== target) {
-        this.accretionDisk.geometry.setDrawRange(0, target);
+      let lodOpacity;
+      if (dist < 2000) { lodOpacity = 1.0; }
+      else if (dist < 5000) { lodOpacity = 0.4; }
+      else if (dist < 10000) { lodOpacity = 0.12; }
+      else if (dist < 30000) { lodOpacity = 0.03; }
+      else { lodOpacity = 0.005; } // 俯视图距离几乎不可见
+
+      // 吸积盘粒子数
+      if (this.accretionDisk) {
+        const totalCount = this.accretionDisk.geometry.userData?.totalCount || 10000;
+        let targetFraction;
+        if (dist < 2000) targetFraction = 1.0;
+        else if (dist < 5000) targetFraction = 0.3;
+        else if (dist < 10000) targetFraction = 0.1;
+        else targetFraction = 0.03; // 远处仅保留极少数粒子
+        const target = Math.max(Math.floor(totalCount * targetFraction), 80);
+        if (this.accretionDisk.geometry.drawRange.count !== target) {
+          this.accretionDisk.geometry.setDrawRange(0, target);
+        }
       }
+
+      // 所有发光组件的全局透明度衰减
+      if (this.diskMaterial) this.diskMaterial.opacity = lodOpacity;
+      if (this.glowMaterial) this.glowMaterial.opacity = lodOpacity;
+      if (this._jetMaterial) this._jetMaterial.opacity = lodOpacity;
+      if (this._infallParticles?.material) this._infallParticles.material.opacity = lodOpacity;
+      if (this._matterStreams?.material) this._matterStreams.material.opacity = lodOpacity;
+      if (this._photonSphere?.material) this._photonSphere.material.opacity = lodOpacity;
     }
 
     // v24: 坠落粒子 — GPU驱动，仅更新uTime（零CPU遍历）

@@ -23,6 +23,7 @@ export class HUD {
     this.createDangerOverlay();
     this.createCelestialInfo();
     this.createMapSunMarker();
+    this.createMapPlayerMarker();
     this.createMapHeightSlider();
 
     // 缓存常用 DOM 引用
@@ -291,9 +292,31 @@ export class HUD {
     }, { passive: false });
   }
 
+  createMapPlayerMarker() {
+    const marker = document.createElement('div');
+    marker.id = 'map-player-marker';
+    marker.style.cssText = `
+      position: fixed;
+      width: 16px;
+      height: 16px;
+      border: 2px solid #44ccff;
+      border-radius: 50%;
+      background: rgba(68, 204, 255, 0.3);
+      z-index: 1000;
+      pointer-events: none;
+      display: none;
+      box-shadow: 0 0 8px rgba(68, 204, 255, 0.5);
+    `;
+    document.body.appendChild(marker);
+    this.elements.mapPlayerMarker = marker;
+  }
+
   showMapUI(visible) {
     if (this.elements.mapSunMarker) {
       this.elements.mapSunMarker.style.display = visible ? 'block' : 'none';
+    }
+    if (this.elements.mapPlayerMarker) {
+      this.elements.mapPlayerMarker.style.display = visible ? 'block' : 'none';
     }
     if (this.elements.mapHeightSlider) {
       this.elements.mapHeightSlider.style.display = visible ? 'flex' : 'none';
@@ -310,6 +333,15 @@ export class HUD {
       const cy = Math.max(10, Math.min(window.innerHeight - 10, screenY));
       this.elements.mapSunMarker.style.left = `${cx - 10}px`;
       this.elements.mapSunMarker.style.top = `${cy - 10}px`;
+    }
+  }
+
+  updateMapPlayerMarker(screenX, screenY) {
+    if (this.elements.mapPlayerMarker) {
+      const cx = Math.max(8, Math.min(window.innerWidth - 8, screenX));
+      const cy = Math.max(8, Math.min(window.innerHeight - 8, screenY));
+      this.elements.mapPlayerMarker.style.left = `${cx - 8}px`;
+      this.elements.mapPlayerMarker.style.top = `${cy - 8}px`;
     }
   }
 
