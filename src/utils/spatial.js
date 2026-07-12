@@ -80,14 +80,18 @@ export function collectAllPositions(sceneObjects) {
     positions.push(new THREE.Vector3(0, 0, 0));
   }
 
-  // 黑洞
-  if (sceneObjects.blackhole && sceneObjects.blackhole.group) {
-    positions.push(sceneObjects.blackhole.group.position.clone());
+  // 黑洞（v25: 支持多个）
+  if (sceneObjects.blackholes) {
+    sceneObjects.blackholes.forEach(bh => {
+      if (bh.group) positions.push(bh.group.position.clone());
+    });
   }
 
-  // 脉冲星
-  if (sceneObjects.pulsar && sceneObjects.pulsar.group) {
-    positions.push(sceneObjects.pulsar.group.position.clone());
+  // 脉冲星（v25: 支持多个）
+  if (sceneObjects.pulsars) {
+    sceneObjects.pulsars.forEach(psr => {
+      if (psr.group) positions.push(psr.group.position.clone());
+    });
   }
 
   // 随机行星

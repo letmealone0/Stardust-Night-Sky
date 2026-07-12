@@ -11,7 +11,6 @@
 
 import * as THREE from 'three';
 import { config } from '../core/config.js';
-import { hashCoords, seededRandom } from '../utils/seededRandom.js';
 
 export class BlackHole {
   constructor() {
@@ -43,7 +42,7 @@ export class BlackHole {
     this.camera = camera;
     this.planetSystem = planetSystem;
     const cfg = config.blackhole;
-    this.group.position.set(cfg.position.x, cfg.position.y, cfg.position.z);
+    // v25: 位置由 setLayoutPosition() 设置，不再从 config.position 读取
 
     // 1. 事件视界：绝对纯黑球体（最深沉的黑色）
     const horizonGeo = new THREE.SphereGeometry(cfg.eventHorizonRadius, 64, 64);
@@ -794,10 +793,7 @@ export class BlackHole {
     // 引力 + 重生 + 信息
     if (this.camera) {
       const dist = this.group.position.distanceTo(this.camera.position);
-      if (dist > cfg.respawnDistance) {
-        this.respawn(cfg);
-        this.dangerLevel = 0;
-      } else if (dist < cfg.dangerRadius) {
+      if (dist < cfg.dangerRadius) {
         this.dangerLevel = Math.max(0, Math.min(1, 1.0 - (dist - cfg.pullRadius) / (cfg.dangerRadius - cfg.pullRadius)));
         if (cfg.gravityEnabled !== false && dist < cfg.pullRadius && dist > cfg.eventHorizonRadius * 2) {
           const pullForce = (1 - dist / cfg.pullRadius) * cfg.pullStrength * dt;
@@ -998,15 +994,10 @@ export class BlackHole {
     this._absorbParticles.material.opacity = Math.max(0, 1 - data.progress * 0.5);
   }
 
-  respawn(cfg) {
-    const camPos = this.camera.position;
-    const chunkX = Math.round(camPos.x / 2000), chunkY = Math.round(camPos.y / 2000), chunkZ = Math.round(camPos.z / 2000);
-    const seed = hashCoords(chunkX * 31 + 17, chunkY * 37 + 23, chunkZ * 41 + 29);
-    const rng = seededRandom(seed);
-    const theta = rng() * Math.PI * 2, phi = Math.acos(2 * rng() - 1);
-    const r = cfg.respawnMin + rng() * (cfg.respawnMax - cfg.respawnMin);
-    this.group.position.set(camPos.x + r * Math.sin(phi) * Math.cos(theta), camPos.y + r * Math.sin(phi) * Math.sin(theta) * 0.3, camPos.z + r * Math.cos(phi));
-    this.dangerLevel = 0;
+
+  /** v25: 设置布局位置（不再使用 respawn） */
+  setLayoutPosition(pos) {
+    this.group.position.copy(pos);
   }
 
   _showInfo(cfg, dist) {

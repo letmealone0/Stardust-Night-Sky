@@ -104,34 +104,25 @@ export class PlanetSystem {
   setCamera(camera) { this.camera = camera; }
   setHUD(hud) { this._hud = hud; }
 
-  // v11: init — 5类行星+恒星系统型/流浪双轨道+卫星+小行星带
-  init(scene) {
+  // v25: init — 使用布局位置（固定布局，无重生）
+  init(scene, parentGroup) {
     const cfg = config.planets;
-    const existingPositions = [new THREE.Vector3(0, 0, 0)];
-    if (this.sceneObjects?.solarSystem?.planets) {
-      this.sceneObjects.solarSystem.planets.forEach((p) => {
-        const r = p.data.orbitRadius;
-        existingPositions.push(new THREE.Vector3(r,0,0), new THREE.Vector3(-r,0,0),
-          new THREE.Vector3(0,0,r), new THREE.Vector3(0,0,-r));
-      });
-    }
+    // v25: 位置后续由 setLayoutPositions() 设置
+    // 先挂到 parent group
+    if (parentGroup) parentGroup.add(this.group);
+    else scene.add(this.group);
+    console.log('[PlanetSystem] v25 行星系统初始化完成（固定布局）');
+  }
+
+  /** v25: 设置布局位置 */
+  setLayoutPositions(layoutArr) {
+    const cfg = config.planets;
     const types = cfg.types || ['rocky','gas','lava','ice','rogue'];
-    for (let i = 0; i < cfg.count; i++) {
+    for (let i = 0; i < layoutArr.length; i++) {
       const radius = randomRange(cfg.minRadius, cfg.maxRadius);
       const type = types[i % types.length];
-      const minDist = radius * 3 + 100;
-      let position = findValidPosition(existingPositions, minDist,
-        new THREE.Vector3(0,0,0), cfg.respawnMin, cfg.respawnMax, 50, 0.3);
-      if (!position) {
-        const theta = Math.random()*Math.PI*2, phi = Math.acos(2*Math.random()-1);
-        const r = cfg.respawnMin + Math.random()*(cfg.respawnMax-cfg.respawnMin);
-        position = new THREE.Vector3(r*Math.sin(phi)*Math.cos(theta), r*Math.sin(phi)*Math.sin(theta)*0.3, r*Math.cos(phi));
-      }
-      existingPositions.push(position);
-      this.group.add(this._createPlanet(radius, position, i, type));
+      this.group.add(this._createPlanet(radius, layoutArr[i].position, i, type));
     }
-    scene.add(this.group);
-    console.log('[PlanetSystem] v11 行星系统初始化完成');
   }
 
   _createPlanet(radius, position, index, type) {
@@ -332,7 +323,7 @@ export class PlanetSystem {
     this.planets.forEach((planet) => {
       const data = planet.userData;
       const dist = planet.position.distanceTo(this.camera.position);
-      if (dist > cfg.respawnDistance) { this._respawnPlanet(planet, cfg); return; }
+      // v25: 无重生，固定位置
       if (data.lod) data.lod.update(this.camera);
       if (data.atmLod) data.atmLod.update(this.camera);
 
@@ -419,51 +410,6 @@ export class PlanetSystem {
       data.asteroidBelt ? '含小行星带' : '',
     ].filter(Boolean).join('<br>');
     this._hud.showCelestialInfo(data.name, data.type, details);
-  }
-
-  _respawnPlanet(planet, cfg) {
-    const camPos = this.camera.position, data = planet.userData;
-    const cx = Math.round(camPos.x/1000), cy = Math.round(camPos.y/1000), cz = Math.round(camPos.z/1000);
-    const seed = hashCoords(cx + data.index * 7919, cy, cz), rng = _srng(seed);
-    const existingPositions = [];
-    if (this.sceneObjects) collectAllPositions(this.sceneObjects).forEach(p => existingPositions.push(p));
-    const selfIdx = existingPositions.findIndex(p => p.distanceToSquared(planet.position) < 1);
-    if (selfIdx >= 0) existingPositions.splice(selfIdx, 1);
-    const minDist = data.radius * 3 + 100;
-
-    // v19.6: 获取相机前方方向
-    let camForward = new THREE.Vector3(0, 0, -1);
-    if (this.camera) {
-      camForward.set(0, 0, -1).applyQuaternion(this.camera.quaternion);
-    }
-
-    const newPos = findValidPosition(existingPositions, minDist, camPos,
-      cfg.respawnMin, cfg.respawnMax, 30, 0.3);
-
-    // v19.6: 如果生成位置在相机前方锥形内（30°），重试
-    let attempts = 0;
-    while (newPos && attempts < 10) {
-      const toPlanet = newPos.clone().sub(camPos).normalize();
-      const dot = toPlanet.dot(camForward);
-      if (dot > 0.85) { // cos(30°) ≈ 0.866，前方锥形
-        const theta = rng()*Math.PI*2, phi = Math.acos(2*rng()-1);
-        const r = cfg.respawnMin+rng()*(cfg.respawnMax-cfg.respawnMin);
-        newPos.set(camPos.x+r*Math.sin(phi)*Math.cos(theta),
-                   camPos.y+r*Math.sin(phi)*Math.sin(theta)*0.3,
-                   camPos.z+r*Math.cos(phi));
-        attempts++;
-      } else break;
-    }
-
-    if (newPos) { planet.position.copy(newPos); } else {
-      const theta = rng()*Math.PI*2, phi = Math.acos(2*rng()-1), r = cfg.respawnMin+rng()*(cfg.respawnMax-cfg.respawnMin);
-      planet.position.set(camPos.x+r*Math.sin(phi)*Math.cos(theta), camPos.y+r*Math.sin(phi)*Math.sin(theta)*0.3, camPos.z+r*Math.cos(phi));
-    }
-    data.originalPosition.copy(planet.position);
-    data.orbitRadius = data.isRogue ? 0 : (60+rng()*140);
-    data.orbitSpeed = data.isRogue ? 0 : (0.002+rng()*0.01);
-    data.orbitAngle = rng()*Math.PI*2;
-    if (data.isRogue && data.driftDirection) data.driftDirection.set(rng()-0.5,(rng()-0.5)*0.2,rng()-0.5).normalize();
   }
 
   getPlanets() { return this.planets; }

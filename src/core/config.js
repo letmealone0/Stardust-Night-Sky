@@ -75,14 +75,13 @@ export const config = {
 
   // ---- 行星系统（随机生成的额外星体）----
   planets: {
-    count: 4,                // 额外随机行星数量（减少，太阳系已有 8 颗）
+    count: 4,                // 额外随机行星数量
+    distFromCenterMin: 5000,  // 距银河中心最小距离
+    distFromCenterMax: 40000, // 距银河中心最大距离
     minRadius: 40,           // 最小半径
     maxRadius: 200,          // 最大半径
-    spread: 5000,            // 分布范围
-    atmosphereScale: 1.25,   // v13: 更厚大气层（Space Engine 风格）
-    respawnDistance: 8000,   // v8.0: 超出此距离重生行星
-    respawnMin: 7000,        // v8.0: 严格远离太阳系
-    respawnMax: 9000,        // v8.0
+    spread: 5000,            // 分布范围（fallback）
+    atmosphereScale: 1.25,   // v13: 更厚大气层
     // v11: 5 类行星
     types: ['rocky', 'gas', 'lava', 'ice', 'rogue'],
     rogueRatio: 0.3,         // 流浪行星占比 (其余为恒星系统型)
@@ -116,11 +115,10 @@ export const config = {
   // ---- 星云效果（v20: 多层粒子系统）----
   nebula: {
     count: 3,
+    distFromCenterMin: 15000,  // 距银河中心最小距离
+    distFromCenterMax: 50000,  // 距银河中心最大距离
     scale: 2000,              // v20: 粒子云团范围
     colors: [ /* 由 typeColors 覆盖 */ ],
-    respawnDistance: 10000,
-    respawnMin: 2500,
-    respawnMax: 7000,
     // v20: 三类星云
     types: ['emission', 'reflection', 'dark'],
     typeColors: {
@@ -196,20 +194,28 @@ export const config = {
     sprintExtraCount: 150,
   },
 
+  // ---- 全局天体布局 ----
+  celestialLayout: {
+    masterSeedFn: () => Date.now(), // 基于时间的随机种子，每次刷新位置不同
+    solarExclusion: 8000,           // 太阳系周围禁止生成区域
+    bulgeExclusion: 5000,           // 银河核球周围禁止生成区域
+    minBodyDistance: 3000,          // 各天体间最小间距
+    maxRenderDistance: 150000,      // 超过此距离暂停更新（不重生）
+  },
+
   // ---- 黑洞系统 ----
   blackhole: {
-    eventHorizonRadius: 25,    // 事件视界半径（加大）
-    accretionInnerRadius: 40,  // 吸积盘内半径（加大）
-    accretionOuterRadius: 200, // 吸积盘外半径（加大，更壮观）
-    position: { x: 800, y: 50, z: -600 }, // 位置
-    dangerRadius: 600,         // 危险区域半径（加大）
-    pullRadius: 300,           // 引力影响半径（加大）
+    count: 1,                   // 数量
+    distFromCenterMin: 20000,   // 距银河中心最小距离
+    distFromCenterMax: 80000,   // 距银河中心最大距离
+    eventHorizonRadius: 25,    // 事件视界半径
+    accretionInnerRadius: 40,  // 吸积盘内半径
+    accretionOuterRadius: 200, // 吸积盘外半径
+    dangerRadius: 600,         // 危险区域半径
+    pullRadius: 300,           // 引力影响半径
     pullStrength: 80,          // 引力强度
-    jetLength: 400,            // 喷流长度（加长，更远可见）
+    jetLength: 400,            // 喷流长度
     absorbRadius: 80,          // 行星吸收半径
-    respawnDistance: 3000,     // 超出此距离重生黑洞
-    respawnMin: 800,           // 重生最小距离
-    respawnMax: 2000,          // 重生最大距离
     // v11: 新增
     selfRotationSpeed: 1.5,    // 黑洞自转速度 (rad/s)
     gravityEnabled: true,      // 引力效果开关
@@ -232,14 +238,13 @@ export const config = {
 
   // ---- 脉冲星系统 ----
   pulsar: {
-    radius: 5,                 // 半径（加大）
-    beamLength: 300,           // 光束长度（翻倍，更远可见）
+    count: 3,                  // 数量（分散在银河盘）
+    distFromCenterMin: 10000,  // 距银河中心最小距离
+    distFromCenterMax: 60000,  // 距银河中心最大距离
+    radius: 5,                 // 半径
+    beamLength: 300,           // 光束长度
     rotationSpeed: 5,          // 旋转速度（弧度/秒）
-    position: { x: -500, y: 100, z: 400 }, // 位置
     color: { r: 0.5, g: 0.8, b: 1.0 },    // 颜色
-    respawnDistance: 3000,     // 超出此距离重生脉冲星
-    respawnMin: 800,           // 重生最小距离
-    respawnMax: 2000,          // 重生最大距离
     // v11: 新增
     beamSweepAngle: 0.25,      // 射束扫过触发角度 (cos阈值, ~15°)
     flashIntensity: 0.8,       // 屏幕闪光最大强度

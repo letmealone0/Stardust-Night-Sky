@@ -41,6 +41,16 @@ export class Engine {
     this._sunPos = new THREE.Vector3();
     this._tmpFwdVel = new THREE.Vector3();
     this._tmpLatVel = new THREE.Vector3();
+    // 银河系俯瞰地图模式
+    this._isMapMode = false;
+    this._mapBlend = 1.0;
+    this._mapSavedPos = new THREE.Vector3();
+    this._mapSavedQuat = new THREE.Quaternion();
+    this._mapFromPos = new THREE.Vector3();
+    this._mapFromQuat = new THREE.Quaternion();
+    this._mapToPos = new THREE.Vector3();
+    this._mapToQuat = new THREE.Quaternion();
+    this._mapTempM4 = new THREE.Matrix4();
   }
 
   /**
@@ -138,8 +148,9 @@ export class Engine {
     };
     window.addEventListener('resize', this.onResizeBound);
 
-    // 锁定/解锁鼠标
+    // 锁定/解锁鼠标（地图模式下不锁定，保持鼠标指针可见）
     this.onDocumentClickBound = () => {
+      if (this._isMapMode) return;
       if (this.player && this.player.controls && !this.player.controls.isLocked) {
         this.player.controls.lock();
       }
@@ -158,11 +169,29 @@ export class Engine {
     };
     this.player.controls.addEventListener('unlock', this.onUnlockBound);
 
+    // 地图模式下全局滚轮调整高度
+    this.onWheelBound = (e) => {
+      if (!this._isMapMode) return;
+      e.preventDefault();
+      const step = 20000;
+      const input = document.getElementById('map-height-input');
+      if (!input) return;
+      const val = parseInt(input.value, 10);
+      const min = parseInt(input.min, 10);
+      const max = parseInt(input.max, 10);
+      input.value = Math.min(max, Math.max(min, val + (e.deltaY > 0 ? step : -step)));
+      input.dispatchEvent(new Event('input'));
+    };
+    window.addEventListener('wheel', this.onWheelBound, { passive: false });
+
     // v9.5: P键暂停/恢复所有天体运动
     this.onKeyDownBound = (e) => {
       if (e.code === 'KeyP') {
         this.isMotionFrozen = !this.isMotionFrozen;
         this.hud.showMessage(this.isMotionFrozen ? '⏸ 天体运动已暂停' : '▶ 天体运动已恢复');
+      }
+      if (e.code === 'KeyM') {
+        this._startMapTransition(!this._isMapMode);
       }
     };
     window.addEventListener('keydown', this.onKeyDownBound);
@@ -244,8 +273,66 @@ export class Engine {
     }
 
     // 暂停时只更新 camera uniform（避免恢复时位置跳变），跳过重计算
-    if (this.isPaused) {
+    if (this.isPaused && !this._isMapMode && this._mapBlend >= 1.0) {
       if (this.scene.objects.nebula) this.scene.objects.nebula.update(0, elapsed, this.camera.camera);
+      this.postprocessing.render();
+      return;
+    }
+
+    // 地图模式过渡动画：平滑飞向/飞回俯瞰视角
+    if (this._mapBlend < 1.0) {
+      this._mapBlend = Math.min(1.0, this._mapBlend + delta * 2.5);
+      const t = this._mapBlend;
+      // easeInOutCubic
+      const ease = t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+      this.camera.camera.position.lerpVectors(this._mapFromPos, this._mapToPos, ease);
+      this.camera.camera.quaternion.slerpQuaternions(this._mapFromQuat, this._mapToQuat, ease);
+      // 过渡完成后恢复鼠标锁定（从地图返回时）
+      if (this._mapBlend >= 1.0 && !this._isMapMode) {
+        this.isPaused = false;
+        setTimeout(() => {
+          if (this.player?.controls && !this.player.controls.isLocked) {
+            this.player.controls.lock();
+          }
+        }, 150);
+      }
+      // 过渡期间仍更新场景，维持星空动画
+      const zeroVel = this._worldVel ? this._worldVel.set(0, 0, 0) : new THREE.Vector3();
+      this.scene.update(this.isMotionFrozen ? 0 : delta, elapsed, 0, zeroVel);
+      this.hud.update(delta);
+      this.postprocessing.render();
+      return;
+    }
+
+    // 地图模式渲染（过渡完成后）：场景持续更新，不更新玩家
+    if (this._isMapMode) {
+      // 更新相机高度（根据滚动条）
+      const height = this.hud.getMapHeight();
+      this._sunPos.set(0, 0, 0);
+      this.scene.galaxyCenterGroup.getWorldPosition(this._sunPos);
+      this.camera.camera.position.set(this._sunPos.x, this._sunPos.y + height, this._sunPos.z);
+      this._mapTempM4.lookAt(this.camera.camera.position, this._sunPos, new THREE.Vector3(0, 0, -1));
+      this.camera.camera.quaternion.setFromRotationMatrix(this._mapTempM4);
+
+      const zeroVel = this._worldVel ? this._worldVel.set(0, 0, 0) : new THREE.Vector3();
+      this.scene.update(this.isMotionFrozen ? 0 : delta, elapsed, 0, zeroVel);
+      this.hud.update(delta);
+      // 地图模式下也要更新 HUD 位置
+      this.hud.updatePosition(
+        this.camera.camera.position.x,
+        this.camera.camera.position.y,
+        this.camera.camera.position.z
+      );
+      this.hud.updateSpeed(0);
+
+      // 更新太阳 HUD 标记位置
+      const sunWorldPos = new THREE.Vector3();
+      this.scene.objects.solarSystem?.sun?.getWorldPosition(sunWorldPos);
+      const sunScreenPos = sunWorldPos.clone().project(this.camera.camera);
+      const screenX = (sunScreenPos.x + 1) * 0.5 * window.innerWidth;
+      const screenY = (-sunScreenPos.y + 1) * 0.5 * window.innerHeight;
+      this.hud.updateMapSunMarker(screenX, screenY);
+
       this.postprocessing.render();
       return;
     }
@@ -294,9 +381,13 @@ export class Engine {
       this.camera.camera.position.z
     );
 
-    // 更新黑洞危险等级
-    if (this.scene.objects.blackhole) {
-      this.hud.updateDanger(this.scene.objects.blackhole.getDangerLevel());
+    // 更新黑洞危险等级（v25: 取最近黑洞的危险等级）
+    if (this.scene.objects.blackholes.length > 0) {
+      let maxDanger = 0;
+      for (const bh of this.scene.objects.blackholes) {
+        maxDanger = Math.max(maxDanger, bh.getDangerLevel());
+      }
+      this.hud.updateDanger(maxDanger);
     }
 
     // 更新跃迁特效（冲刺时触发，阈值 = maxSpeed，从配置派生）
@@ -307,13 +398,13 @@ export class Engine {
     const cPass = this.postprocessing.getCelestialPass();
     if (cPass) {
       const u = cPass.uniforms;
-      // 黑洞引力透镜
-      if (this.scene.objects.blackhole) {
-        this.scene.objects.blackhole.updatePostEffects(u, this.camera.camera);
+      // 黑洞引力透镜（v25: 取最近黑洞的透镜效果）
+      if (this.scene.objects.blackholes.length > 0) {
+        this.scene.objects.blackholes[0].updatePostEffects(u, this.camera.camera);
       }
-      // 脉冲星闪光+噪点
-      if (this.scene.objects.pulsar) {
-        this.scene.objects.pulsar.updatePostEffects(u, this.camera.camera, delta);
+      // 脉冲星闪光+噪点（v25: 取第一个脉冲星的效果）
+      if (this.scene.objects.pulsars.length > 0) {
+        this.scene.objects.pulsars[0].updatePostEffects(u, this.camera.camera, delta);
       }
       // 星云雾化
       if (this.scene.objects.nebula) {
@@ -385,6 +476,54 @@ export class Engine {
   }
 
   /**
+   * 切换银河系俯瞰地图模式
+   * @param {boolean} toMap - true=进入地图, false=返回探索
+   */
+  _startMapTransition(toMap) {
+    // 记录当前相机位置作为动画起点
+    this._mapFromPos.copy(this.camera.camera.position);
+    this._mapFromQuat.copy(this.camera.camera.quaternion);
+
+    if (toMap) {
+      // 保存探索视角，以便后续返回
+      this._mapSavedPos.copy(this.camera.camera.position);
+      this._mapSavedQuat.copy(this.camera.camera.quaternion);
+
+      // 获取银河中心世界坐标
+      this._sunPos.set(0, 0, 0);
+      this.scene.galaxyCenterGroup.getWorldPosition(this._sunPos);
+
+      // 获取当前滚动条高度
+      this._mapHeight = this.hud.getMapHeight();
+
+      // 相机在银河盘上方，看向银河盘中心（up=(0,0,-1) 让银河盘 X 轴在屏幕左右）
+      this._mapToPos.set(this._sunPos.x, this._sunPos.y + this._mapHeight, this._sunPos.z);
+      this._mapTempM4.lookAt(this._mapToPos, this._sunPos, new THREE.Vector3(0, 0, -1));
+      this._mapToQuat.setFromRotationMatrix(this._mapTempM4);
+
+      // 解锁鼠标（地图模式下不需要飞行控制）
+      if (this.player.controls.isLocked) {
+        this.player.controls.unlock();
+      }
+      this.isPaused = true;
+      this._isMapMode = true;
+      this.hud.showMessage('🗺 银河系俯瞰 · 按 M 返回探索 · 拖动右侧滑块调整高度', 0);
+      this.hud.showMapUI(true);
+    } else {
+      // 隐藏地图 UI
+      this.hud.showMapUI(false);
+
+      // 返回保存的探索位置
+      this._mapToPos.copy(this._mapSavedPos);
+      this._mapToQuat.copy(this._mapSavedQuat);
+      this._isMapMode = false;
+      this.hud.showMessage('已返回探索视角', 2000);
+    }
+
+    this._mapBlend = 0; // 启动过渡动画
+  }
+
+  /**
    * 销毁引擎
    */
   dispose() {
@@ -394,6 +533,7 @@ export class Engine {
     window.removeEventListener('resize', this.onResizeBound);
     document.removeEventListener('click', this.onDocumentClickBound);
     window.removeEventListener('keydown', this.onKeyDownBound);
+    window.removeEventListener('wheel', this.onWheelBound);
     if (this.player && this.player.controls) {
       this.player.controls.removeEventListener('lock', this.onLockBound);
       this.player.controls.removeEventListener('unlock', this.onUnlockBound);

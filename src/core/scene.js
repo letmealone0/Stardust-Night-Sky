@@ -16,6 +16,7 @@ import { SolarSystem } from '../objects/solarSystem.js';
 import { ParticleFlow } from '../objects/particleFlow.js';
 import { disposeAllPlanetTextures } from '../objects/planetTextures.js';
 import { LensFlareSystem } from '../objects/lensFlare.js';
+import { generateCelestialLayout } from '../utils/celestialLayout.js';
 
 export class SceneManager {
   constructor() {
@@ -27,12 +28,14 @@ export class SceneManager {
       nebula: null,
       speedLines: null,
       cosmicDust: null,
-      blackhole: null,
-      pulsar: null,
+      blackholes: [],      // v25: 支持多个黑洞
+      pulsars: [],         // v25: 支持多个脉冲星
       solarSystem: null,
       particleFlow: null,
       lensFlare: null,
     };
+    // 兼容旧代码的 blackhole/pulsar 引用（指向第一个实例）
+    this._layout = null;
     this._sunWorldPos = new THREE.Vector3();
   }
 
@@ -55,27 +58,33 @@ export class SceneManager {
     this.galaxyGroup.add(this.galaxyCenterGroup);
     this.scene.add(this.galaxyGroup);
 
-    // 逐个初始化，失败不阻断整体流程
+    // ======== v25: 生成全局天体布局（基于时间种子，每次刷新不同） ========
+    const solarWorldPos = new THREE.Vector3();
+    this.solarOrbitNode.getWorldPosition(solarWorldPos);
+    const galCenterWorldPos = new THREE.Vector3();
+    this.galaxyCenterGroup.getWorldPosition(galCenterWorldPos);
+    this._layout = generateCelestialLayout(galCenterWorldPos, solarWorldPos);
+
+    // ======== 逐个初始化，失败不阻断整体流程 ========
     try {
       this.objects.stars = new StarField();
-      this.objects.stars.init(this.galaxyGroup);  // v10.0: 挂到galaxyGroup
+      this.objects.stars.init(this.galaxyGroup);
     } catch (e) { console.warn('[Scene] 星空初始化失败:', e); }
 
     try {
       this.objects.planets = new PlanetSystem();
-      this.objects.planets.init(this.scene);
+      this.objects.planets.init(this.scene, this.galaxyCenterGroup);
       this.objects.planets.setCamera(camera);
       this.objects.planets.setSceneObjects(this.objects);
-      // v11: 挂到 galaxyGroup 随银河较差自转
-      if (this.objects.planets.group) {
-        this.scene.remove(this.objects.planets.group);
-        this.galaxyGroup.add(this.objects.planets.group);
+      // v25: 传入布局位置
+      if (this._layout.planet.length) {
+        this.objects.planets.setLayoutPositions(this._layout.planet);
       }
     } catch (e) { console.warn('[Scene] 行星初始化失败:', e); }
 
     try {
       this.objects.nebula = new NebulaSystem();
-      this.objects.nebula.init(this.galaxyGroup);  // v10.0: 星云挂到galaxyGroup
+      this.objects.nebula.init(this.galaxyCenterGroup, this._layout.nebula);
     } catch (e) { console.warn('[Scene] 星云初始化失败:', e); }
 
     try {
@@ -85,28 +94,32 @@ export class SceneManager {
 
     try {
       this.objects.cosmicDust = new CosmicDust();
-      this.objects.cosmicDust.init(this.galaxyGroup);  // v10.0: 尘埃挂到galaxyGroup
+      this.objects.cosmicDust.init(this.galaxyGroup);
       this.objects.cosmicDust.setCamera(camera);
     } catch (e) { console.warn('[Scene] 宇宙尘埃初始化失败:', e); }
 
+    // ======== 黑洞（v25: 支持多个，固定布局位置） ========
     try {
-      this.objects.blackhole = new BlackHole();
-      this.objects.blackhole.init(this.scene, camera, this.objects.planets);
-      // v11: 挂到 galaxyGroup 随银河较差自转
-      if (this.objects.blackhole.group) {
-        this.scene.remove(this.objects.blackhole.group);
-        this.galaxyGroup.add(this.objects.blackhole.group);
+      for (const bhLayout of this._layout.blackhole) {
+        const bh = new BlackHole();
+        bh.init(this.scene, camera, this.objects.planets);
+        bh.setLayoutPosition(bhLayout.position);
+        bh._orbitPhase = bhLayout.orbitPhase;
+        this.galaxyCenterGroup.add(bh.group);
+        this.objects.blackholes.push(bh);
       }
     } catch (e) { console.warn('[Scene] 黑洞初始化失败:', e); }
 
+    // ======== 脉冲星（v25: 支持多个，固定布局位置） ========
     try {
-      this.objects.pulsar = new Pulsar();
-      this.objects.pulsar.init(this.scene);
-      this.objects.pulsar.setCamera(camera);
-      // v11: 挂到 galaxyGroup 随银河较差自转
-      if (this.objects.pulsar.group) {
-        this.scene.remove(this.objects.pulsar.group);
-        this.galaxyGroup.add(this.objects.pulsar.group);
+      for (const psrLayout of this._layout.pulsar) {
+        const psr = new Pulsar();
+        psr.init(this.scene);
+        psr.setCamera(camera);
+        psr.setLayoutPosition(psrLayout.position);
+        psr._orbitPhase = psrLayout.orbitPhase;
+        this.galaxyCenterGroup.add(psr.group);
+        this.objects.pulsars.push(psr);
       }
     } catch (e) { console.warn('[Scene] 脉冲星初始化失败:', e); }
 
@@ -145,8 +158,9 @@ export class SceneManager {
     if (this.objects.nebula) this.objects.nebula.update(delta, elapsed, this.camera);
     if (this.objects.speedLines) this.objects.speedLines.update(delta, speed, velocity);
     if (this.objects.cosmicDust) this.objects.cosmicDust.update(delta, elapsed, velocity);
-    if (this.objects.blackhole) this.objects.blackhole.update(delta, elapsed);
-    if (this.objects.pulsar) this.objects.pulsar.update(delta, elapsed);
+    // v25: 多黑洞和多脉冲星
+    for (const bh of this.objects.blackholes) bh.update(delta, elapsed);
+    for (const psr of this.objects.pulsars) psr.update(delta, elapsed);
     if (this.objects.solarSystem) this.objects.solarSystem.update(delta, elapsed);
     if (this.objects.particleFlow) this.objects.particleFlow.update(delta, elapsed, speed, velocity);
 
@@ -168,8 +182,10 @@ export class SceneManager {
     if (this.objects.nebula) this.objects.nebula.dispose(this.scene);
     if (this.objects.speedLines) this.objects.speedLines.dispose();
     if (this.objects.cosmicDust) this.objects.cosmicDust.dispose(this.scene);
-    if (this.objects.blackhole) this.objects.blackhole.dispose(this.scene);
-    if (this.objects.pulsar) this.objects.pulsar.dispose(this.scene);
+    for (const bh of this.objects.blackholes) bh.dispose(this.scene);
+    for (const psr of this.objects.pulsars) psr.dispose(this.scene);
+    this.objects.blackholes = [];
+    this.objects.pulsars = [];
     if (this.objects.solarSystem) this.objects.solarSystem.dispose(this.scene);
     if (this.objects.particleFlow) this.objects.particleFlow.dispose();
 

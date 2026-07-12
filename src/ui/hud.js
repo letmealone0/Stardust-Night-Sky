@@ -22,6 +22,8 @@ export class HUD {
     this.createControlsHint();
     this.createDangerOverlay();
     this.createCelestialInfo();
+    this.createMapSunMarker();
+    this.createMapHeightSlider();
 
     // 缓存常用 DOM 引用
     this._fpsEl = document.getElementById('fps');
@@ -148,7 +150,7 @@ export class HUD {
       border: '1px solid rgba(100, 150, 255, 0.08)',
       borderRadius: '2px',
     });
-    hint.innerHTML = 'WASD 移动 · 鼠标 视角 · 空格 上升 · C 下降 · Shift 冲刺 · P 暂停';
+    hint.innerHTML = 'WASD 移动 · 鼠标 视角 · 空格 上升 · C 下降 · Shift 冲刺 · M 地图 · P 暂停';
     document.body.appendChild(hint);
     this.elements.hint = hint;
   }
@@ -227,6 +229,88 @@ export class HUD {
     document.body.appendChild(panel);
     this.elements.celestialInfo = panel;
     this._celestialInfoVisible = false;
+  }
+
+  // ==================== 地图模式：太阳标记 + 高度滚动条 ====================
+  createMapSunMarker() {
+    const marker = document.createElement('div');
+    marker.id = 'map-sun-marker';
+    marker.style.cssText = `
+      position: fixed;
+      width: 20px;
+      height: 20px;
+      border: 2px solid #ff4400;
+      border-radius: 50%;
+      background: rgba(255, 68, 0, 0.3);
+      z-index: 1000;
+      pointer-events: none;
+      display: none;
+      box-shadow: 0 0 10px rgba(255, 68, 0, 0.5);
+    `;
+    document.body.appendChild(marker);
+    this.elements.mapSunMarker = marker;
+  }
+
+  createMapHeightSlider() {
+    const container = document.createElement('div');
+    container.id = 'map-height-slider';
+    container.style.cssText = `
+      position: fixed;
+      right: 30px;
+      top: 50%;
+      transform: translateY(-50%);
+      z-index: 1000;
+      pointer-events: auto;
+      display: none;
+      background: rgba(10, 20, 40, 0.6);
+      border: 1px solid rgba(100, 150, 255, 0.2);
+      border-radius: 4px;
+      padding: 10px 6px;
+      flex-direction: column;
+      align-items: center;
+    `;
+    container.innerHTML = `
+      <div style="text-align: center; color: rgba(150, 200, 255, 0.7); font-size: 10px; letter-spacing: 2px; margin-bottom: 6px; white-space: nowrap;">高度</div>
+      <input type="range" id="map-height-input" min="100000" max="1000000" value="500000" step="10000" style="writing-mode: vertical-rl; height: 250px; width: 20px; accent-color: rgba(100, 150, 255, 0.8);">
+      <div style="text-align: center; color: rgba(150, 200, 255, 0.7); font-size: 10px; letter-spacing: 2px; margin-top: 6px; white-space: nowrap;">视角</div>
+    `;
+    document.body.appendChild(container);
+    this.elements.mapHeightSlider = container;
+    this._mapHeightInput = document.getElementById('map-height-input');
+
+    // 滚轮控制高度
+    this._mapHeightInput.addEventListener('wheel', (e) => {
+      e.preventDefault();
+      const step = 20000;
+      const val = parseInt(this._mapHeightInput.value, 10);
+      const min = parseInt(this._mapHeightInput.min, 10);
+      const max = parseInt(this._mapHeightInput.max, 10);
+      this._mapHeightInput.value = Math.min(max, Math.max(min, val + (e.deltaY > 0 ? step : -step)));
+      // 触发 input 事件让 engine 响应
+      this._mapHeightInput.dispatchEvent(new Event('input'));
+    }, { passive: false });
+  }
+
+  showMapUI(visible) {
+    if (this.elements.mapSunMarker) {
+      this.elements.mapSunMarker.style.display = visible ? 'block' : 'none';
+    }
+    if (this.elements.mapHeightSlider) {
+      this.elements.mapHeightSlider.style.display = visible ? 'flex' : 'none';
+    }
+  }
+
+  getMapHeight() {
+    return this._mapHeightInput ? parseInt(this._mapHeightInput.value, 10) : 500000;
+  }
+
+  updateMapSunMarker(screenX, screenY) {
+    if (this.elements.mapSunMarker) {
+      const cx = Math.max(10, Math.min(window.innerWidth - 10, screenX));
+      const cy = Math.max(10, Math.min(window.innerHeight - 10, screenY));
+      this.elements.mapSunMarker.style.left = `${cx - 10}px`;
+      this.elements.mapSunMarker.style.top = `${cy - 10}px`;
+    }
   }
 
   showCelestialInfo(name, type, details) {

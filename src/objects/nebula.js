@@ -14,7 +14,6 @@
 
 import * as THREE from 'three';
 import { config } from '../core/config.js';
-import { hashCoords, seededRandom } from '../utils/seededRandom.js';
 
 // ---- GLSL 噪声（v23: 5-octave FBM + 各向异性纤维噪声）----
 const NOISE_GLSL = `
@@ -85,9 +84,9 @@ export class NebulaSystem {
     this._hud = null;
   }
 
-  init(scene) {
+  init(scene, layoutPositions = []) {
     const cfg = config.nebula || {};
-    const count = cfg.count || 3;
+    const count = layoutPositions.length || cfg.count || 3;
     const types = cfg.types || ['emission', 'reflection', 'dark'];
 
     for (let i = 0; i < count; i++) {
@@ -106,10 +105,15 @@ export class NebulaSystem {
       const layers = this._createLayers(cfg, baseColor, nebType, i, { stretchAxis, stretchAmount });
       layers.forEach(l => nebGroup.add(l.points));
 
-      const spread = (config.stars?.spread || 10000) * 0.4;
-      const theta = Math.random()*Math.PI*2, phi = Math.acos(2*Math.random()-1);
-      const r = spread * (0.1+Math.random()*0.8);
-      nebGroup.position.set(r*Math.sin(phi)*Math.cos(theta), r*Math.sin(phi)*Math.sin(theta)*0.3, r*Math.cos(phi));
+      // v25: 使用布局位置（如果提供），否则回退到随机位置
+      if (layoutPositions[i]) {
+        nebGroup.position.copy(layoutPositions[i].position);
+      } else {
+        const spread = (config.stars?.spread || 10000) * 0.4;
+        const theta = Math.random()*Math.PI*2, phi = Math.acos(2*Math.random()-1);
+        const r = spread * (0.1+Math.random()*0.8);
+        nebGroup.position.set(r*Math.sin(phi)*Math.cos(theta), r*Math.sin(phi)*Math.sin(theta)*0.3, r*Math.cos(phi));
+      }
 
       // v23: 虚拟光源位置（星云内部新恒星照亮气体）
       const scale = cfg.scale || 2000;
@@ -137,7 +141,7 @@ export class NebulaSystem {
       this.nebulae.push(nebGroup);
     }
     scene.add(this.group);
-    console.log('[NebulaSystem] v23 深空摄影星云初始化完成，共', count, '团');
+    console.log('[NebulaSystem] v25 深空摄影星云初始化完成，共', count, '团（固定布局）');
   }
 
   // ==================== 创建多层粒子（v23: 统一 stretchAxis，新增 dustMid） ====================
@@ -466,7 +470,7 @@ export class NebulaSystem {
       const d = neb.userData;
       const dist = neb.position.distanceTo(camera.position);
       const ns = d.scale || cfg.scale || 2000;
-      if (dist > (cfg.respawnDistance || 10000)) { this._respawn(neb, idx, camera, cfg); return; }
+      // v25: 无重生，固定位置
       if (dist < ns * 0.5 && dist < closestD) { closestD = dist; closest = neb; }
       if (d.driftDir) neb.position.addScaledVector(d.driftDir, 0.4 * delta * ms);
 
@@ -521,27 +525,6 @@ export class NebulaSystem {
     if (t === 'emission') uniforms.uFogColor.value.set(0.25, 0.08, 0.05);
     else if (t === 'reflection') uniforms.uFogColor.value.set(0.04, 0.08, 0.25);
     else uniforms.uFogColor.value.set(0.02, 0.02, 0.04);
-  }
-
-  // ==================== 重生（v23: 重置 LOD） ====================
-  _respawn(nebula, index, camera, cfg) {
-    const cp = camera.position;
-    const cx = Math.round(cp.x / 2000), cy = Math.round(cp.y / 2000), cz = Math.round(cp.z / 2000);
-    const rng = seededRandom(hashCoords(cx + index * 7919, cy, cz));
-    const th = rng() * Math.PI * 2, ph = Math.acos(2 * rng() - 1);
-    const r = (cfg.respawnMin || 2500) + rng() * ((cfg.respawnMax || 7000) - (cfg.respawnMin || 2500));
-    const wp = new THREE.Vector3(cp.x + r * Math.sin(ph) * Math.cos(th), cp.y + r * Math.sin(ph) * Math.sin(th) * 0.3, cp.z + r * Math.cos(ph));
-    if (nebula.parent) { const im = new THREE.Matrix4().copy(nebula.parent.matrixWorld).invert(); wp.applyMatrix4(im); }
-    nebula.position.copy(wp);
-    // v23: 重生时重置 LOD 到全量 + 淡出归 1
-    nebula.userData.layers.forEach(l => {
-      if (l.geometry && l.geometry.userData?.totalCount) {
-        l.geometry.setDrawRange(0, l.geometry.userData.totalCount);
-      }
-      if (l.material?.uniforms?.uLodFade) {
-        l.material.uniforms.uLodFade.value = 1.0;
-      }
-    });
   }
 
   dispose(scene) {

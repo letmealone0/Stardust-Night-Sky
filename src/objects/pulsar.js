@@ -5,7 +5,6 @@
 
 import * as THREE from 'three';
 import { config } from '../core/config.js';
-import { hashCoords, seededRandom } from '../utils/seededRandom.js';
 
 export class Pulsar {
   constructor() {
@@ -28,7 +27,7 @@ export class Pulsar {
 
   init(scene) {
     const cfg = config.pulsar;
-    this.group.position.set(cfg.position.x, cfg.position.y, cfg.position.z);
+    // v25: 位置由 setLayoutPosition() 设置
     this.rotationSpeed = cfg.rotationSpeed;
 
     // 中子星本体：高亮球体
@@ -144,14 +143,6 @@ export class Pulsar {
     const cm = config.celestialMotion;
     const motionScale = (cm?.enabled !== false) ? (cm?.speedMultiplier || 1.0) : 0;
 
-    // 脉冲星重生：离相机太远时在新位置重生
-    if (this.camera) {
-      const dist = this.group.position.distanceTo(this.camera.position);
-      if (dist > cfg.respawnDistance) {
-        this.respawn(cfg);
-      }
-    }
-
     // 自转 (v11: 受全局运动控制)
     this.group.rotation.y += this.rotationSpeed * delta * motionScale;
 
@@ -231,27 +222,9 @@ export class Pulsar {
     this._hud.showCelestialInfo('脉冲星', 'Neutron Star — Pulsar', details);
   }
 
-  /**
-   * 重生脉冲星到相机附近的新位置
-   */
-  respawn(cfg) {
-    const camPos = this.camera.position;
-
-    const chunkX = Math.round(camPos.x / 2000);
-    const chunkY = Math.round(camPos.y / 2000);
-    const chunkZ = Math.round(camPos.z / 2000);
-    const seed = hashCoords(chunkX * 53 + 43, chunkY * 59 + 47, chunkZ * 61 + 53);
-    const rng = seededRandom(seed);
-
-    const theta = rng() * Math.PI * 2;
-    const phi = Math.acos(2 * rng() - 1);
-    const r = cfg.respawnMin + rng() * (cfg.respawnMax - cfg.respawnMin);
-
-    this.group.position.set(
-      camPos.x + r * Math.sin(phi) * Math.cos(theta),
-      camPos.y + r * Math.sin(phi) * Math.sin(theta) * 0.3,
-      camPos.z + r * Math.cos(phi)
-    );
+  /** v25: 设置布局位置（不再使用 respawn） */
+  setLayoutPosition(pos) {
+    this.group.position.copy(pos);
   }
 
   dispose(scene) {
