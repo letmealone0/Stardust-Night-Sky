@@ -138,10 +138,26 @@ export function generateCelestialLayout(galaxyCenter, solarSystemPos) {
     exclusionRegions.push({ pos, radius: bhCfg.eventHorizonRadius * 10 || 250, label: 'bh' + i });
   }
 
-  // ======== 脉冲星 ========
+  // ======== 脉冲星（v26.2: 第1个放太阳系附近，其余随机分布） ========
   const psrCount = psrCfg.count || 3;
   for (let i = 0; i < psrCount; i++) {
-    const pos = tryPlace(rng, psrCfg.distFromCenterMin || 10000, psrCfg.distFromCenterMax || 60000, 0.25, 150);
+    let pos;
+    if (i === 0) {
+      // 第1个脉冲星放在太阳系附近 8000~18000
+      const dist = 8000 + rng() * 10000;
+      const angle = rng() * Math.PI * 2;
+      pos = new THREE.Vector3(
+        sunLocal.x + Math.cos(angle) * dist,
+        sunLocal.y + (rng() - 0.5) * dist * 0.2,
+        sunLocal.z + Math.sin(angle) * dist
+      );
+      if (pos.distanceTo(sunLocal) < (layout.solarExclusion || 8000) * 0.8) {
+        const rescale = (layout.solarExclusion || 8000) * 0.8 / Math.max(pos.distanceTo(sunLocal), 1);
+        pos.sub(sunLocal).multiplyScalar(rescale).add(sunLocal);
+      }
+    } else {
+      pos = tryPlace(rng, psrCfg.distFromCenterMin || 10000, psrCfg.distFromCenterMax || 36000, 0.25, 150);
+    }
     const seed = rng() * 0.5 + 0.25;
     result.pulsar.push({ position: pos, orbitPhase: seed });
     grid.insert(pos, { pos, type: 'pulsar' });

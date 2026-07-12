@@ -3,6 +3,7 @@
  * 初始化 Three.js 引擎并启动渲染循环
  */
 
+import * as THREE from 'three';
 import { Engine } from './core/engine.js';
 
 // 引擎实例

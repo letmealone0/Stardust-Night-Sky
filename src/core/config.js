@@ -9,7 +9,7 @@ export const config = {
     fov: 75,
     near: 1,
     far: 200000,
-    startPosition: { x: 11000, y: 1500, z: -28000 }, // v26: 出生在太阳系内，太阳附近
+    startPosition: { x: 21000, y: 1500, z: -28000 },
   },
 
   // ---- 玩家控制 (v9.0: 惯性飞行系统) ----
@@ -136,7 +136,7 @@ export const config = {
     bloom: {
       strength: 0.9,         // v14: 增强辉光让画面更明亮
       radius: 0.5,           // v14: 更柔和的辉光扩散
-      threshold: 0.4,        // v14: 降低阈值让更多物体发光
+      threshold: 0.32,       // v27.1: 进一步降低，让脉冲星触发泛光
     },
     vignette: {
       offset: 0.5,
@@ -244,6 +244,7 @@ export const config = {
     radius: 5,                 // 半径
     beamLength: 300,           // 光束长度
     rotationSpeed: 5,          // 旋转速度（弧度/秒）
+    magneticTilt: 25,          // v27.5: 磁偏角（度），磁轴与自转轴夹角，实现灯塔效应
     color: { r: 0.5, g: 0.8, b: 1.0 },    // 颜色
     // v11: 新增
     beamSweepAngle: 0.25,      // 射束扫过触发角度 (cos阈值, ~15°)
