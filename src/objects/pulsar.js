@@ -13,6 +13,7 @@ export class Pulsar {
     this.beams = [];
     this.rotationSpeed = 0;
     this.camera = null;
+    this._hud = null;
     this._infoShown = false;
     this._flashDecay = 0;
     this._tmpCamDir = new THREE.Vector3();
@@ -23,6 +24,7 @@ export class Pulsar {
   setCamera(camera) {
     this.camera = camera;
   }
+  setHUD(hud) { this._hud = hud; }
 
   init(scene) {
     const cfg = config.pulsar;
@@ -167,8 +169,7 @@ export class Pulsar {
       if (dist < infoDist) {
         this._showInfo(cfg, dist);
       } else if (this._infoShown) {
-        const hud = window.engine?.hud;
-        if (hud) hud.hideCelestialInfo();
+        if (this._hud) this._hud.hideCelestialInfo();
         this._infoShown = false;
       }
     }
@@ -218,8 +219,7 @@ export class Pulsar {
   }
 
   _showInfo(cfg, dist) {
-    const hud = window.engine?.hud;
-    if (!hud) return;
+    if (!this._hud) return;
     this._infoShown = true;
     const period = (2 * Math.PI / cfg.rotationSpeed).toFixed(2);
     const details = [
@@ -228,7 +228,7 @@ export class Pulsar {
       `自转周期: ${period}s`,
       `距离: ${dist.toFixed(0)} AU`,
     ].join('<br>');
-    hud.showCelestialInfo('脉冲星', 'Neutron Star — Pulsar', details);
+    this._hud.showCelestialInfo('脉冲星', 'Neutron Star — Pulsar', details);
   }
 
   /**

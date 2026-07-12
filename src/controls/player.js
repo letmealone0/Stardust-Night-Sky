@@ -38,6 +38,9 @@ export class PlayerController {
     this._tmpVec = new THREE.Vector3();
     // v9.0-fix: 镜头抖动偏移量跟踪，防止累加导致位置漂移
     this._shakeOffset = new THREE.Vector3();
+    // 依赖注入：天文对象引用（替代 window.engine 全局耦合）
+    this._solarSystem = null;
+    this._tempPlanetPos = new THREE.Vector3();
   }
 
   /**
@@ -239,17 +242,14 @@ export class PlayerController {
 
   /** v9.0: 接近行星表面自动限速 */
   applyProximitySlowdown(delta, currentMaxSpeed) {
-    // 从引擎获取行星位置（通过domElement上的引用）
-    const engine = window.engine;
-    if (!engine || !engine.scene || !engine.scene.objects.solarSystem) return;
-    const planets = engine.scene.objects.solarSystem.planets;
+    if (!this._solarSystem) return;
+    const planets = this._solarSystem.planets;
     if (!planets) return;
 
     let minDistToSurface = Infinity;
     planets.forEach(p => {
-      const planetWorldPos = new THREE.Vector3();
-      p.group.getWorldPosition(planetWorldPos);
-      const dist = this.camera.position.distanceTo(planetWorldPos);
+      p.group.getWorldPosition(this._tempPlanetPos);
+      const dist = this.camera.position.distanceTo(this._tempPlanetPos);
       const surfDist = dist - p.data.radius;
       if (surfDist < minDistToSurface) minDistToSurface = surfDist;
     });
@@ -262,6 +262,13 @@ export class PlayerController {
         this.velocity.multiplyScalar(speedLimit / vLen);
       }
     }
+  }
+
+  /**
+   * 设置太阳系引用（用于接近限速检测，替代 window.engine 全局耦合）
+   */
+  setSolarSystem(solarSystem) {
+    this._solarSystem = solarSystem;
   }
 
   /**

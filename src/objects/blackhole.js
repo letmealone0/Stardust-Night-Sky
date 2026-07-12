@@ -35,6 +35,8 @@ export class BlackHole {
     this._debrisProgress = 0;
     this._diskBrightnessPulse = 0;
     this._diskContainer = null;  // v14: 盘容器（光子环+盘+喷流统一倾斜）
+    this._absorbColor = new THREE.Color(1.0, 0.4, 0.05);
+    this._hud = null;
   }
 
   init(scene, camera, planetSystem) {
@@ -799,8 +801,10 @@ export class BlackHole {
         this.dangerLevel = Math.max(0, Math.min(1, 1.0 - (dist - cfg.pullRadius) / (cfg.dangerRadius - cfg.pullRadius)));
         if (cfg.gravityEnabled !== false && dist < cfg.pullRadius && dist > cfg.eventHorizonRadius * 2) {
           const pullForce = (1 - dist / cfg.pullRadius) * cfg.pullStrength * dt;
-          this._tempVec.subVectors(this.group.position, this.camera.position).normalize();
-          this.camera.position.addScaledVector(this._tempVec, pullForce);
+          if (this._tempVec.subVectors(this.group.position, this.camera.position).lengthSq() > 1e-8) {
+            this._tempVec.normalize();
+            this.camera.position.addScaledVector(this._tempVec, pullForce);
+          }
         }
       } else {
         this.dangerLevel = 0;
@@ -808,8 +812,7 @@ export class BlackHole {
       if (dist < (cfg.infoDistance || 800)) {
         this._showInfo(cfg, dist);
       } else if (this._infoShown) {
-        const hud = window.engine?.hud;
-        if (hud) hud.hideCelestialInfo();
+        if (this._hud) this._hud.hideCelestialInfo();
         this._infoShown = false;
       }
     }
@@ -929,10 +932,9 @@ export class BlackHole {
         const shrink = Math.max(0, 1 - data.absorbProgress);
         const stretch = 1 + data.absorbProgress * stretchFactor;
         planet.scale.set(data.originalScale * shrink, data.originalScale * shrink * stretch, data.originalScale * shrink);
-        const dir = new THREE.Vector3().subVectors(bhPos, planet.position).normalize();
         planet.lookAt(bhPos);
         planet.traverse((child) => {
-          if (child.material?.emissive) child.material.emissive.lerp(new THREE.Color(1.0, 0.4, 0.05), dt * 2);
+          if (child.material?.emissive) child.material.emissive.lerp(this._absorbColor, dt * 2);
         });
         if (this._absorbParticles && !this._absorbParticles.userData.active) {
           this._absorbParticles.userData.active = true;
@@ -1008,20 +1010,20 @@ export class BlackHole {
   }
 
   _showInfo(cfg, dist) {
-    const hud = window.engine?.hud;
-    if (!hud) return;
+    if (!this._hud) return;
     this._infoShown = true;
-    hud.showCelestialInfo('黑洞', 'Stellar Black Hole', [
+    this._hud.showCelestialInfo('黑洞', 'Stellar Black Hole', [
       `事件视界: ${cfg.eventHorizonRadius} AU`, `吸积盘: ${cfg.accretionInnerRadius}~${cfg.accretionOuterRadius} AU`,
       `引力范围: ${cfg.pullRadius} AU`, `距离: ${dist.toFixed(0)} AU`,
     ].join('<br>'));
   }
 
+  setHUD(hud) { this._hud = hud; }
   getDangerLevel() { return this.dangerLevel; }
 
   dispose(scene) {
     scene.remove(this.group);
-    this.group.children.forEach((child) => {
+    this.group.traverse((child) => {
       if (child.geometry) child.geometry.dispose();
       if (child.material) child.material.dispose();
     });

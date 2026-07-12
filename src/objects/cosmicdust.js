@@ -10,7 +10,6 @@ export class CosmicDust {
     this.layers = [];      // v11: [{ points, geometry, material, positions, initialPositions, phaseOffsets, layerCfg }]
     this.camera = null;
     this._centerPos = new THREE.Vector3();
-    this._dustColor = new THREE.Color();
   }
 
   setCamera(camera) {
@@ -210,9 +209,6 @@ export class CosmicDust {
       if (velocity && speed > 0.01) {
         layer.material.uniforms.uVelDir.value.copy(velocity).normalize();
       }
-      const blueTint = 0.7 + speedFactor * 0.3;
-      this._dustColor.setRGB(blueTint * 0.9, blueTint, 1.0);
-      layer.material.color = this._dustColor;
     });
   }
 

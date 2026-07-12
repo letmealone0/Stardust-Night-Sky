@@ -49,6 +49,7 @@ export class SolarSystem {
     this.planets = [];     // { group, data, orbitPivot, moons[] }
     this.sunMaterial = null;
     this.camera = null;
+    this._hud = null;
     this._tempVec = new THREE.Vector3();
     this._textures = null; // v9.0: 纹理缓存
     this._ownTextures = []; // v9.0-fix: 本实例创建的纹理（环/标签），dispose 时释放；行星共享纹理由 planetTextures 缓存管理
@@ -79,6 +80,7 @@ export class SolarSystem {
   setCamera(camera) {
     this.camera = camera;
   }
+  setHUD(hud) { this._hud = hud; }
 
   // ==================== 太阳 ====================
 
@@ -714,8 +716,7 @@ export class SolarSystem {
   /** v19.5: 检测玩家是否靠近行星，显示描述信息 */
   _updateProximityInfo() {
     if (!this.camera) return;
-    const hud = window.engine?.hud;
-    if (!hud) return;
+    if (!this._hud) return;
 
     let closest = null;
     let closestDist = Infinity;
@@ -743,12 +744,12 @@ export class SolarSystem {
         'Uranus': 'Ice Giant — 侧躺的行星',
         'Neptune': 'Ice Giant — 太阳系最外层',
       };
-      hud.showCelestialInfo(d.name, planetTypes[d.name] || 'Planet', [
+      this._hud.showCelestialInfo(d.name, planetTypes[d.name] || 'Planet', [
         `半径: ${d.radius}`, `距离: ${closestDist.toFixed(0)}`,
         `公转周期: ${d.orbitPeriod} 天`,
       ].join('<br>'));
     } else {
-      hud.hideCelestialInfo();
+      this._hud.hideCelestialInfo();
     }
   }
 

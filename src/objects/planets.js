@@ -102,6 +102,7 @@ export class PlanetSystem {
 
   setSceneObjects(sceneObjects) { this.sceneObjects = sceneObjects; }
   setCamera(camera) { this.camera = camera; }
+  setHUD(hud) { this._hud = hud; }
 
   // v11: init — 5类行星+恒星系统型/流浪双轨道+卫星+小行星带
   init(scene) {
@@ -130,7 +131,6 @@ export class PlanetSystem {
       this.group.add(this._createPlanet(radius, position, i, type));
     }
     scene.add(this.group);
-    this._hud = window.engine?.hud || null;
     console.log('[PlanetSystem] v11 行星系统初始化完成');
   }
 
@@ -410,7 +410,6 @@ export class PlanetSystem {
   }
 
   _showInfo(data) {
-    if (!this._hud) this._hud = window.engine?.hud || null;
     if (!this._hud) return;
     this._infoShown = true;
     const details = [

@@ -37,6 +37,10 @@ export class Engine {
     this.warmupStartElapsed = 0;
     // v9.5: 暂停所有天体运动
     this.isMotionFrozen = false;
+    // 复用临时向量避免每帧 GC（animate 热路径）
+    this._sunPos = new THREE.Vector3();
+    this._tmpFwdVel = new THREE.Vector3();
+    this._tmpLatVel = new THREE.Vector3();
   }
 
   /**
@@ -72,6 +76,8 @@ export class Engine {
       this.renderer.renderer.domElement
     );
     this.player.init();
+    // 注入太阳系引用（替代 window.engine 全局耦合）
+    this.player.setSolarSystem(this.scene.objects.solarSystem);
 
     // 创建后处理
     this.postprocessing = new PostProcessingManager(
@@ -84,6 +90,13 @@ export class Engine {
     // 创建 HUD
     this.hud = new HUD();
     this.hud.init();
+    // 注入 HUD 引用到各对象（替代 window.engine 全局耦合）
+    const objs = this.scene.objects;
+    if (objs.blackhole) objs.blackhole.setHUD(this.hud);
+    if (objs.pulsar) objs.pulsar.setHUD(this.hud);
+    if (objs.solarSystem) objs.solarSystem.setHUD(this.hud);
+    if (objs.nebula) objs.nebula.setHUD(this.hud);
+    if (objs.planets) objs.planets.setHUD(this.hud);
 
     // 绑定事件
     this.bindEvents();
@@ -254,8 +267,8 @@ export class Engine {
 
     // 将位置差速度分解为：沿相机朝向分量 + 侧向分量
     const fwdComponent = deltaVel.dot(this._camFwd);
-    const fwdVel = this._camFwd.clone().multiplyScalar(Math.max(fwdComponent, 0));
-    const lateralVel = deltaVel.clone().sub(fwdVel);
+    const fwdVel = this._tmpFwdVel.copy(this._camFwd).multiplyScalar(Math.max(fwdComponent, 0));
+    const lateralVel = this._tmpLatVel.copy(deltaVel).sub(fwdVel);
 
     // 混合：前进方向用相机即时朝向（100%响应鼠标），侧向用位置差（30%平滑）
     this._worldVel.copy(this._camFwd).multiplyScalar(speed > 0.5 ? speed : fwdComponent);
@@ -286,8 +299,8 @@ export class Engine {
       this.hud.updateDanger(this.scene.objects.blackhole.getDangerLevel());
     }
 
-    // 更新跃迁特效（冲刺时触发）
-    this.hud.updateWarpEffect(this.player.getSpeed(), 100);
+    // 更新跃迁特效（冲刺时触发，阈值 = maxSpeed，从配置派生）
+    this.hud.updateWarpEffect(this.player.getSpeed(), config.player.maxSpeed);
     this.hud.updateSprint(this.player.isSprinting());
 
     // v11: 更新天体后处理特效（每帧重置，由各天体自行设置强度）
@@ -306,15 +319,14 @@ export class Engine {
       if (this.scene.objects.nebula) {
         this.scene.objects.nebula.updatePostEffects(u, this.camera.camera);
       }
-      // v13: 更新星云太阳方向
-      if (this.scene.objects.nebula) {
-        const sunPos = this.scene.objects.solarSystem?.sun?.getWorldPosition(new THREE.Vector3());
-        if (sunPos) {
-          this.scene.objects.nebula.nebulae?.forEach(neb => {
-            const sunDir = sunPos.clone().sub(neb.position).normalize();
-            neb.userData?.material?.uniforms?.uSunDir?.value?.copy(sunDir);
-          });
-        }
+      // v13: 更新星云太阳方向（复用临时向量避免GC）
+      if (this.scene.objects.nebula && this.scene.objects.solarSystem?.sun) {
+        this._sunPos.set(0, 0, 0);
+        this.scene.objects.solarSystem.sun.getWorldPosition(this._sunPos);
+        this.scene.objects.nebula.nebulae?.forEach(neb => {
+          this._sunPos.sub(neb.position).normalize();
+          neb.userData?.material?.uniforms?.uSunDir?.value?.copy(this._sunPos);
+        });
       }
     }
 

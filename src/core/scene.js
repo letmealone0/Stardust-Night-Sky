@@ -33,6 +33,7 @@ export class SceneManager {
       particleFlow: null,
       lensFlare: null,
     };
+    this._sunWorldPos = new THREE.Vector3();
   }
 
   /**
@@ -149,10 +150,11 @@ export class SceneManager {
     if (this.objects.solarSystem) this.objects.solarSystem.update(delta, elapsed);
     if (this.objects.particleFlow) this.objects.particleFlow.update(delta, elapsed, speed, velocity);
 
-    // v13: 更新镜头光晕 (跟随太阳)
+    // v13: 更新镜头光晕 (跟随太阳，复用临时向量避免GC)
     if (this.objects.lensFlare && this.objects.solarSystem?.sun) {
-      const sunWorldPos = this.objects.solarSystem.sun.getWorldPosition(new THREE.Vector3());
-      this.objects.lensFlare.update(this.camera, sunWorldPos, 0.7, delta);
+      this._sunWorldPos.set(0, 0, 0);
+      this.objects.solarSystem.sun.getWorldPosition(this._sunWorldPos);
+      this.objects.lensFlare.update(this.camera, this._sunWorldPos, 0.7, delta);
     }
   }
 

@@ -159,7 +159,6 @@ export class PostProcessingManager {
     this.celestialPass = null;
     this.dofPass = null;
     this._prevCamPos = new THREE.Vector3();
-    this._prevCamQuat = new THREE.Vector3();
     this._tempVel = new THREE.Vector3();
     this._tempViewDir = new THREE.Vector3();
     this._tempRight = new THREE.Vector3();
@@ -246,7 +245,6 @@ export class PostProcessingManager {
     }
 
     this._prevCamPos.copy(camera.position);
-    this._prevCamQuat.copy(camera.quaternion);
   }
 
   render() {

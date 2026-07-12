@@ -85,6 +85,7 @@ export class LensFlareSystem {
     this.flares = [];
     this.active = false;
     this._textures = {};
+    this._tempVec = new THREE.Vector3();
   }
 
   init(scene) {
@@ -143,8 +144,8 @@ export class LensFlareSystem {
   update(camera, starWorldPos, brightness, delta) {
     if (!camera || !starWorldPos) return;
 
-    // 将恒星位置投影到屏幕
-    const pos = starWorldPos.clone().project(camera);
+    // 将恒星位置投影到屏幕（复用临时向量避免GC）
+    const pos = this._tempVec.copy(starWorldPos).project(camera);
     const screenX = pos.x;
     const screenY = pos.y;
     const screenDist = Math.sqrt(screenX * screenX + screenY * screenY);

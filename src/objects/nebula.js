@@ -137,7 +137,6 @@ export class NebulaSystem {
       this.nebulae.push(nebGroup);
     }
     scene.add(this.group);
-    this._hud = window.engine?.hud || null;
     console.log('[NebulaSystem] v23 深空摄影星云初始化完成，共', count, '团');
   }
 
@@ -450,6 +449,8 @@ export class NebulaSystem {
       blending: THREE.AdditiveBlending,
     });
   }
+
+  setHUD(hud) { this._hud = hud; }
 
   // ==================== 更新（v23: LOD 平滑淡出 + 动态光源） ====================
   update(delta, elapsed, camera) {

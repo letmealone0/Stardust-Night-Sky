@@ -56,5 +56,6 @@ export class RendererManager {
    */
   dispose() {
     this.renderer.dispose();
+    this.renderer.forceContextLoss();
   }
 }
