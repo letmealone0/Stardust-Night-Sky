@@ -236,6 +236,13 @@ export const config = {
     debrisCount: 40,           // 碎片喷射数量
   },
 
+  // ---- 彗星系统（v27.6）----
+  comets: {
+    count: 4,                  // 标志性周期彗星数量
+    showOrbitLines: false,     // 是否显示轨道线
+    orbitLineOpacity: 0.15,    // 轨道线透明度
+  },
+
   // ---- 脉冲星系统 ----
   pulsar: {
     count: 3,                  // 数量（分散在银河盘）

@@ -16,6 +16,7 @@ import { SolarSystem } from '../objects/solarSystem.js';
 import { ParticleFlow } from '../objects/particleFlow.js';
 import { disposeAllPlanetTextures } from '../objects/planetTextures.js';
 import { LensFlareSystem } from '../objects/lensFlare.js';
+import { CometSystem } from '../objects/comets.js';
 import { generateCelestialLayout } from '../utils/celestialLayout.js';
 
 export class SceneManager {
@@ -33,6 +34,7 @@ export class SceneManager {
       solarSystem: null,
       particleFlow: null,
       lensFlare: null,
+      comets: null,          // v27.6: 彗星系统
     };
     // 兼容旧代码的 blackhole/pulsar 引用（指向第一个实例）
     this._layout = null;
@@ -131,6 +133,12 @@ export class SceneManager {
       this.objects.solarSystem.setCamera(camera);
       // v10.0: 太阳系挂到solarOrbitNode下, 绕银心公转
       this.solarOrbitNode.add(this.objects.solarSystem.group);
+
+      // v27.6: 彗星系统 — 挂在太阳系 group 下
+      try {
+        this.objects.comets = new CometSystem();
+        this.objects.comets.init(this.objects.solarSystem.group);
+      } catch (e) { console.warn('[Scene] 彗星系统初始化失败:', e); }
     } catch (e) { console.warn('[Scene] 太阳系初始化失败:', e); }
 
     try {
@@ -164,6 +172,7 @@ export class SceneManager {
     for (const bh of this.objects.blackholes) bh.update(delta, elapsed);
     for (const psr of this.objects.pulsars) psr.update(delta, elapsed);
     if (this.objects.solarSystem) this.objects.solarSystem.update(delta, elapsed);
+    if (this.objects.comets) this.objects.comets.update(delta, elapsed);
     if (this.objects.particleFlow) this.objects.particleFlow.update(delta, elapsed, speed, velocity);
 
     // v13: 更新镜头光晕 (跟随太阳，复用临时向量避免GC)
@@ -189,6 +198,7 @@ export class SceneManager {
     this.objects.blackholes = [];
     this.objects.pulsars = [];
     if (this.objects.solarSystem) this.objects.solarSystem.dispose(this.scene);
+    if (this.objects.comets) this.objects.comets.dispose();
     if (this.objects.particleFlow) this.objects.particleFlow.dispose();
 
     // 清理场景级资源：环境光、雾、背景、银河三级 Group
