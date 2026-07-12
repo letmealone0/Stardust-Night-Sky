@@ -9,7 +9,7 @@ export const config = {
     fov: 75,
     near: 1,
     far: 200000,
-    startPosition: { x: 21000, y: 1500, z: -28000 },
+    startPosition: { x: 7000, y: 3500, z: -28000 }, // v27.7: 太阳系内，俯瞰内行星~火星轨道外
   },
 
   // ---- 玩家控制 (v9.0: 惯性飞行系统) ----

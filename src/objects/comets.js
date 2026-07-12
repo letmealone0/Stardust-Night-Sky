@@ -1,46 +1,57 @@
 /**
- * 彗星系统 v1.0
+ * 彗星系统 v1.1
  * 太阳系内 4 颗标志性周期彗星：
  *   哈雷(1P)、海尔-波普(C/1995 O1)、恩克(2P)、斯威夫特-塔特尔(109P)
- * 开普勒椭圆轨道 + 双尾（尘埃尾/离子尾）+ 彗发辉光
+ * v1.1: 近日点≥200避免穿日、quaternion替代lookAt消除尾部抖动、
+ *       M0Spread分散初始位置、1.5Hz慢脉动
  */
 
 import * as THREE from 'three';
 
 // ==================== 彗星数据 ====================
 // a=半长轴, e=偏心率, i=倾角(度), ω=近日点幅角(度), periodDays=周期(天)
+// v1.1: 近日点距离 ≥ 200（太阳半径120），避免彗星穿日导致尾部抖动
+//       M0Spread 保证初始位置分散在轨道各处
 const COMET_DATA = [
   {
     id: 'halley', name: '1P/Halley', nameCN: '哈雷彗星',
-    a: 2200, e: 0.967, i: 162, ω: 111, periodDays: 76 * 365,
+    a: 6200, e: 0.967, i: 162, ω: 111, periodDays: 130000,
     nucleusRadius: 1.8, comaIr: 6, comaOr: 20,
     dustLen: 400, dustHalfW: 3.5, ionLen: 520, ionHalfW: 1.2,
     dustColor: [0.92, 0.78, 0.45],
     ionColor: [0.22, 0.48, 0.92],
+    M0Spread: 0.0,        // 初始在近日点（靠近太阳，最壮观）
+    perihelion: 204.6,     // a*(1-e)
   },
   {
     id: 'halebopp', name: 'C/1995 O1', nameCN: '海尔-波普彗星',
-    a: 3000, e: 0.995, i: 89, ω: 130, periodDays: 2500 * 365,
+    a: 8000, e: 0.975, i: 89, ω: 130, periodDays: 200000,
     nucleusRadius: 2.5, comaIr: 10, comaOr: 35,
     dustLen: 650, dustHalfW: 5.0, ionLen: 800, ionHalfW: 1.6,
     dustColor: [0.95, 0.82, 0.55],
     ionColor: [0.20, 0.42, 0.95],
+    M0Spread: 0.33,       // 轨道 1/3 处
+    perihelion: 200.0,
   },
   {
     id: 'encke', name: '2P/Encke', nameCN: '恩克彗星',
-    a: 1500, e: 0.848, i: 12, ω: 186, periodDays: 3.3 * 365,
+    a: 1500, e: 0.848, i: 12, ω: 186, periodDays: 1205,
     nucleusRadius: 1.3, comaIr: 4, comaOr: 12,
     dustLen: 250, dustHalfW: 2.2, ionLen: 350, ionHalfW: 0.9,
     dustColor: [0.88, 0.72, 0.40],
     ionColor: [0.25, 0.50, 0.88],
+    M0Spread: 0.55,       // 轨道过半，远离太阳
+    perihelion: 228.0,
   },
   {
     id: 'swifttuttle', name: '109P/Swift-Tuttle', nameCN: '斯威夫特-塔特尔彗星',
-    a: 2600, e: 0.963, i: 113, ω: 153, periodDays: 133 * 365,
+    a: 5500, e: 0.963, i: 113, ω: 153, periodDays: 150000,
     nucleusRadius: 2.0, comaIr: 7, comaOr: 25,
     dustLen: 450, dustHalfW: 4.0, ionLen: 600, ionHalfW: 1.3,
     dustColor: [0.90, 0.75, 0.48],
     ionColor: [0.23, 0.45, 0.90],
+    M0Spread: 0.78,       // 轨道 3/4 处
+    perihelion: 203.5,
   },
 ];
 
@@ -51,9 +62,11 @@ export class CometSystem {
   constructor() {
     this.group = new THREE.Group();
     this.comets = [];
-    // 缓存向量，避免每帧 new
+    // 缓存向量和四元数，避免每帧 new
     this._tmpVec = new THREE.Vector3();
-    this._lookTarget = new THREE.Vector3();
+    this._tailQ = new THREE.Quaternion();
+    this._tailFrom = new THREE.Vector3(0, 0, 1); // +Z
+    this._tailTo = new THREE.Vector3();          // 朝向太阳
   }
 
   // ==================== 初始化 ====================
@@ -100,8 +113,8 @@ export class CometSystem {
     comet.group.add(comet.comaOuter);
     comet.group.add(comet.tailGroup);
 
-    // 初始平均近点角：随机散布，避免所有彗星从同一位置出发
-    comet.M0 = Math.random() * Math.PI * 2;
+    // v1.1: M0Spread 保证初始分散在轨道各处（而非随机可能聚团）
+    comet.M0 = (data.M0Spread || 0) * Math.PI * 2;
 
     this.group.add(comet.group);
     this.comets.push(comet);
@@ -283,12 +296,16 @@ export class CometSystem {
       // 更新彗星位置（相对太阳原点）
       comet.group.position.copy(pos);
 
-      // 尾部指向背离太阳（尾沿 -Z 延伸，lookAt 太阳使 +Z 指向太阳 → -Z 背离太阳）
-      this._lookTarget.set(0, 0, 0);
-      comet.tailGroup.lookAt(this._lookTarget);
+      // v1.1: 尾部指向背离太阳（quaternion替代lookAt，避免近太阳时up-vector奇异抖动）
+      // tailGroup +Z 指向太阳 → -Z(尾沿)背离太阳
+      if (pos.lengthSq() > 1e-6) {
+        this._tailTo.copy(pos).negate().normalize(); // 彗星→太阳方向
+        this._tailQ.setFromUnitVectors(this._tailFrom, this._tailTo);
+        comet.tailGroup.quaternion.copy(this._tailQ);
+      }
 
-      // 彗发脉动微动
-      const pulse = 1.0 + Math.sin(elapsed * 3.0 + comet.M0) * 0.06;
+      // v1.1: 彗发慢速脉动（1.5Hz替代3Hz，避免闪烁感）
+      const pulse = 1.0 + Math.sin(elapsed * 1.5 + comet.M0) * 0.06;
       comet.comaInner.scale.setScalar(pulse);
       comet.comaOuter.scale.setScalar(pulse * 0.95);
     }
