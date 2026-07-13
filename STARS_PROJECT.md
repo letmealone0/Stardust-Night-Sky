@@ -36,7 +36,40 @@ npm run preview      # → 预览构建
 
 构建产物 `dist/` 可部署到 Vercel / Netlify / GitHub Pages。
 
-### 从 Git 仓库重建
+### Vercel 部署
+
+Git 仓库需包含以下内容，Vercel 即可自动构建部署：
+
+**必须在 Git 中的文件：**
+
+| 文件 | 用途 |
+|------|------|
+| `index.html` | 入口 HTML，`<script type="module" src="/src/main.js">` |
+| `package.json` | Vercel 读取 `scripts.build` 确定构建命令，读取 `dependencies` 安装依赖 |
+| `vite.config.js` | Vite 配置（publicDir / outDir / target） |
+| `src/` | 全部源码（JS） |
+| `public/` | 静态资源（纹理贴图等，构建时直接复制到 dist） |
+
+**Git 中不需要的文件（已在 `.gitignore` 中排除）：**
+
+| 目录 | 原因 |
+|------|------|
+| `node_modules/` | Vercel 根据 `package.json` 自动 `npm install` |
+| `dist/` | Vercel 自动执行 `npm run build` 生成 |
+
+**关键配置要点：**
+
+1. **`vite` 必须在 `dependencies` 中**（不能放在 `devDependencies`）。Vercel 默认 `npm install --production` 只安装 `dependencies`。如果 `vite` 在 `devDependencies`，构建时找不到 `vite` 命令，报 `exit code 126`。
+2. **`publicDir: 'public'`** — 确保 `public/textures/` 等静态资源在构建时被复制到 `dist/`。
+3. Vercel 自动检测 Vite 项目，无需额外 `vercel.json` 配置。
+
+**部署流程：**
+```
+GitHub push → Vercel 检测到更新
+  → npm install (安装 dependencies 中的 three + vite)
+  → npm run build (执行 vite build → 生成 dist/)
+  → 部署 dist/ 到 CDN
+```
 
 本仓库 **不提交** `dist/` 和 `node_modules/`，clone 后只需两步即可运行：
 
@@ -126,7 +159,8 @@ stars-project/
 │   │   ├── particleFlow.js     # 全方向粒子流（3000粒子, 相对运动方向反馈）
 │   │   ├── cosmicdust.js       # 宇宙尘埃（2500粒子, 3层结构, 跟随重居中）
 │   │   ├── blackhole.js        # 黑洞（橙黄吸积盘+螺旋坠落+光子环+喷流+引力透镜+行星吸收）
-│   │   ├── pulsar.js           # 脉冲星（中子星/双锥光束/快速旋转/重生）
+│   │   ├── pulsar.js           # 脉冲星（中子星/双锥光束/磁偏角灯塔效应/吸积盘）
+│   │   ├── comets.js           # 彗星系统（4颗标志性周期彗星：哈雷/海尔-波普/恩克/斯威夫特-塔特尔）
 │   │   ├── lensFlare.js        # 镜头光晕（对着亮源时的光学耀斑）
 │   │   └── starGlow.js         # 亮星辉光（ShaderMaterial 光晕）
 │   │
@@ -163,7 +197,8 @@ main.js
        │    ├─ ParticleFlow      (3000 粒子, 全方向粒子流, 速度驱动色温+拖尾)
        │    ├─ CosmicDust        (2500 粒子, 3层结构, 跟随重居中, 湍流扰动)
        │    ├─ BlackHole         (橙黄吸积盘 + 螺旋坠落 + 光子环 + 双极喷流 + 引力透镜 + 行星吸收)
-       │    └─ Pulsar            (中子星 + 双锥光束 + 重生)
+       │    ├─ Pulsar            (中子星 + 双锥光束 + 磁偏角灯塔效应)
+       │    └─ CometSystem       (4 颗彗星: 开普勒轨道 + 十字双尾 + LOD)
        ├─ RendererManager    ─→  WebGLRenderer
        ├─ PlayerController   ─→  PointerLockControls + 键盘
        ├─ PostProcessing     ─→  EffectComposer
@@ -264,10 +299,25 @@ main.js
 - **轴向统一**：光子环+吸积盘+喷流挂载同一 `diskContainer`，喷流 ⊥ 盘面
 - 所有动画 ×delta 帧率解耦
 
-### objects/pulsar.js（v6.0 新增）
-- 中子星本体（Shader 高亮球体 + 核心发光 + 边缘光晕）
-- 双锥光束（锥形几何 + Shader 脉冲衰减）
-- 快速自转（5 弧度/秒）
+### objects/pulsar.js（v27.6）
+- 中子星本体：三层辉光球（核心/中层/外层）+ 磁极增亮 Shader
+- 双锥辐射束：双层高斯柔边 + 能量流动纹理 + 根部亮度加强
+- 磁偏角灯塔效应：磁轴绕 X 偏转 25°，自转时辐射束画圆锥扫过空间
+- 磁场线：8 条独立弧形 Line，两极亮赤道暗 + 相位差脉冲 + 吸积盘遮挡裁剪
+- 薄吸积盘：RingGeometry + Shader 橙红渐变 + 螺旋扰动，开普勒差速旋转
+- 电磁扰动层：Fresnel 菲涅尔 Ball 通透边缘微光
+
+### objects/comets.js（v3.0 新增）
+- 4 颗标志性周期彗星：哈雷(1P)、海尔-波普(C/1995 O1)、恩克(2P)、斯威夫特-塔特尔(109P)
+- 开普勒椭圆轨道：Newton-Raphson 求解，倾角/近日点幅角/偏心率均来自真实数据
+- 初始位置：`Date.now()` 实时计算，基于真实上次近日点日期 + 公转周期
+- 十字交叉尾：每组尾带 2 片互相垂直的 Ribbon（消除侧视穿帮）
+- 尘埃尾 3 层（内/外/晕）+ 离子尾 1 层，共 8 条 Ribbon/彗星
+- 彗发：单球连续弥散气体（径向密度 + 3D 噪声 + 向阳增亮 + 动态膨胀）
+- 随日距动态 activity：近日点尾满长满亮，远日点缩至 1/10 以下
+- 横向扰动：顶点着色器低频摇摆 + 高频抖动，模拟太阳风飘动
+- LOD 三级：近距全显、中距隐尾+彗发、远距全部隐藏
+- 近距离喷发粒子：50 粒子，自定义 ShaderMaterial 逐粒子大小，横向扩散
 
 ### postprocessing/composer.js
 - `RenderPass → UnrealBloomPass → OutputPass`
@@ -472,6 +522,8 @@ main.js
 | **Stars** | v14 | 银河系 GPU 差速自转，OBAFGKM 光谱 |
 | **Planets** | v19.7 | 随机轨道+公转，防重叠，标签面板 |
 | **SolarSystem** | v19.6 | 标签暗底+文字描边，接近信息面板 |
+| **Pulsar** | v27.6 | 磁偏角灯塔效应，十字尾，吸积盘，LOD |
+| **Comets** | v3.0 | 4 颗标志性彗星（哈雷/海尔-波普/恩克/斯威夫特），开普勒轨道，十字双尾，流动动画，LOD |
 | **Engine** | v19.5 | 惯性飞行，FPS 自适应降质，世界速度混合 |
 | **PostProcessing** | v19.5 | 动态模糊，引力透镜，色差，暗角，Bloom |
 
