@@ -236,11 +236,18 @@ export const config = {
     debrisCount: 40,           // 碎片喷射数量
   },
 
-  // ---- 彗星系统（v27.6）----
+  // ---- 彗星系统（v4.0: 梦幻科幻视觉升级）----
   comets: {
     count: 4,                  // 标志性周期彗星数量
     showOrbitLines: false,     // 是否显示轨道线
     orbitLineOpacity: 0.15,    // 轨道线透明度
+    // v4.0: 全局视觉参数
+    globalBreathSpeed: 0.55,   // 全局呼吸脉动速度 (约11.4s周期)
+    burstInterval: 5.0,        // 爆发间隔基数 (秒)
+    comaNoiseSpeed: 0.25,      // 彗发3D噪声流动速度
+    tailWaveAmplitude: 1.0,    // 尾部波纹幅度倍率
+    rainbowIntensity: 1.0,     // 彩虹色散强度倍率
+    glowIntensity: 1.0,        // 整体辉光强度倍率
   },
 
   // ---- 脉冲星系统 ----
