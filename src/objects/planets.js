@@ -9,6 +9,7 @@ import { config } from '../core/config.js';
 import { randomRange, randomChoice } from '../utils/random.js';
 import { hashCoords, seededRandom } from '../utils/seededRandom.js';
 import { isPositionValid, findValidPosition, collectAllPositions } from '../utils/spatial.js';
+import { PlanetRingSystem } from './planetRings.js';
 
 // v11: 行星类型参数
 const TYPE_PARAMS = {
@@ -98,6 +99,7 @@ export class PlanetSystem {
     this.sceneObjects = null;
     this._hud = null;
     this._infoShown = false;
+    this.ringSystem = new PlanetRingSystem();
   }
 
   setSceneObjects(sceneObjects) { this.sceneObjects = sceneObjects; }
@@ -164,6 +166,11 @@ export class PlanetSystem {
       group.add(asteroidBelt.mesh);
     }
     group.add(this._createLabel(type, radius));
+
+    // v-latest: 行星碎石环 — 仅气态巨行星（天文事实）
+    if (!isRogue && type === 'gas' && config.planetRings?.enabled) {
+      this.ringSystem.addRing(group, radius);
+    }
     const seed = index * 7919 + 13, rng = _srng(seed);
     group.userData = {
       index, radius, type, lod, atmLod,
@@ -261,9 +268,9 @@ export class PlanetSystem {
           vec3 lightDir = normalize(uSunPos - vWorldPos);
           float sunAlign = max(0.0, dot(vNormal, lightDir));
           float rim = 1.0 - max(0.0, dot(viewDir, vNormal));
-          vec3 scatterColor = uAtmColor * (0.6 + sunAlign * 1.8);
-          float rimPow = pow(rim, 2.2);
-          float thickness = rimPow * (0.35 + sunAlign * 0.65);
+          vec3 scatterColor = uAtmColor * (0.35 + sunAlign * 0.9);
+          float rimPow = pow(rim, 2.8);
+          float thickness = rimPow * (0.25 + sunAlign * 0.45);
           gl_FragColor = vec4(scatterColor, thickness * uAtmAlpha);
         }
       `,
@@ -379,6 +386,9 @@ export class PlanetSystem {
       }
       if (dist < cfg.infoDistance) this._showInfo(data);
     });
+    // v-latest: 更新行星环旋转
+    this.ringSystem.update(delta);
+
     if (this._hud && this._infoShown) {
       if (!this.planets.some(p => p.position.distanceTo(this.camera.position) < cfg.infoDistance)) {
         this._hud.hideCelestialInfo(); this._infoShown = false;
@@ -415,6 +425,7 @@ export class PlanetSystem {
   getPlanets() { return this.planets; }
 
   dispose(scene) {
+    this.ringSystem.dispose();
     scene.remove(this.group);
     this.planets.forEach((planet) => { planet.traverse((child) => {
       if (child.geometry) child.geometry.dispose();

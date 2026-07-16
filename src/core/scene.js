@@ -18,6 +18,7 @@ import { disposeAllPlanetTextures } from '../objects/planetTextures.js';
 import { LensFlareSystem } from '../objects/lensFlare.js';
 import { CometSystem } from '../objects/comets.js';
 import { generateCelestialLayout } from '../utils/celestialLayout.js';
+import { NearDust } from '../objects/nearDust.js';
 
 export class SceneManager {
   constructor() {
@@ -35,6 +36,7 @@ export class SceneManager {
       particleFlow: null,
       lensFlare: null,
       comets: null,          // v27.6: 彗星系统
+      nearDust: null,   // 近处微尘层
     };
     // 兼容旧代码的 blackhole/pulsar 引用（指向第一个实例）
     this._layout = null;
@@ -153,6 +155,11 @@ export class SceneManager {
       this.objects.lensFlare.init(this.scene);
     } catch (e) { console.warn('[Scene] 镜头光晕初始化失败:', e); }
 
+    try {
+      this.objects.nearDust = new NearDust();
+      this.objects.nearDust.init(this.camera);
+    } catch (e) { console.warn('[Scene] 近处微尘初始化失败:', e); }
+
     // v9.0: 微弱环境光 — 仅防暗部死黑，太阳是主光源
     this.ambientLight = new THREE.AmbientLight(0x111133, config.solarSystem.ambientIntensity || 0.05);
     this.scene.add(this.ambientLight);
@@ -163,18 +170,21 @@ export class SceneManager {
   /**
    * 更新场景
    */
-  update(delta, elapsed, speed = 0, velocity = null) {
+  update(delta, elapsed, speed = 0, velocity = null, maxSpeed = 80, sprintMultiplier = 3.0) {
     if (this.objects.stars) this.objects.stars.update(delta, elapsed);
     if (this.objects.planets) this.objects.planets.update(delta, elapsed);
     if (this.objects.nebula) this.objects.nebula.update(delta, elapsed, this.camera);
-    if (this.objects.speedLines) this.objects.speedLines.update(delta, speed, velocity);
+    if (this.objects.speedLines) this.objects.speedLines.update(delta, speed, velocity, maxSpeed, sprintMultiplier);
     if (this.objects.cosmicDust) this.objects.cosmicDust.update(delta, elapsed, velocity);
     // v25: 多黑洞和多脉冲星
     for (const bh of this.objects.blackholes) bh.update(delta, elapsed);
     for (const psr of this.objects.pulsars) psr.update(delta, elapsed);
     if (this.objects.solarSystem) this.objects.solarSystem.update(delta, elapsed);
     if (this.objects.comets) this.objects.comets.update(delta, elapsed);
-    if (this.objects.particleFlow) this.objects.particleFlow.update(delta, elapsed, speed, velocity);
+    if (this.objects.particleFlow) this.objects.particleFlow.update(delta, elapsed, speed, velocity, maxSpeed, sprintMultiplier);
+
+    // v-latest: 近处微尘参照物
+    if (this.objects.nearDust) this.objects.nearDust.update(delta, velocity);
 
     // v13: 更新镜头光晕 (跟随太阳，复用临时向量避免GC)
     if (this.objects.lensFlare && this.objects.solarSystem?.sun) {
@@ -182,6 +192,14 @@ export class SceneManager {
       this.objects.solarSystem.sun.getWorldPosition(this._sunWorldPos);
       this.objects.lensFlare.update(this.camera, this._sunWorldPos, 0.7, delta);
     }
+  }
+
+  /**
+   * 通知场景当前是第一人称视角模式
+   * @param {string} mode - 'close' | 'wide'
+   */
+  setViewMode(mode) {
+    // nearDust 不依赖场景模式切换
   }
 
   /**
@@ -201,6 +219,8 @@ export class SceneManager {
     if (this.objects.solarSystem) this.objects.solarSystem.dispose(this.scene);
     if (this.objects.comets) this.objects.comets.dispose();
     if (this.objects.particleFlow) this.objects.particleFlow.dispose();
+
+    if (this.objects.nearDust) this.objects.nearDust.dispose();
 
     // 清理场景级资源：环境光、雾、背景、银河三级 Group
     if (this.ambientLight && this.scene) {

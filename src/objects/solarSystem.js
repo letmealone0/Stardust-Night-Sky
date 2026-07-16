@@ -7,6 +7,7 @@ import * as THREE from 'three';
 import { config } from '../core/config.js';
 import { fbm3D } from '../utils/noise.js'; // 仍用于卫星纹理生成
 import { getPlanetTextures, loadAllPlanetTextures } from './planetTextures.js';
+import { PlanetRingSystem } from './planetRings.js';
 
 // v9.2: 轨道+大小按真实比例修正（兼顾可玩性）
 const PLANET_DATA = [
@@ -47,6 +48,7 @@ export class SolarSystem {
     this.group = new THREE.Group();
     this.sun = null;
     this.planets = [];     // { group, data, orbitPivot, moons[] }
+    this.ringSystem = new PlanetRingSystem();
     this.sunMaterial = null;
     this.camera = null;
     this._hud = null;
@@ -239,13 +241,13 @@ export class SolarSystem {
       roughness: isGas ? 0.35 : 0.5,
       metalness: 0.05,
       color: tex?.map ? 0xffffff : new THREE.Color(pData.color),
-      emissive: tex?.map ? new THREE.Color(0x222222) : new THREE.Color(0x000000),
-      emissiveIntensity: 0.3,
+      emissive: tex?.map ? new THREE.Color(0x050505) : new THREE.Color(0x000000),
+      emissiveIntensity: 0.0,
     };
     // v15: 火星偏红 emissive
     if (pData.name === 'Mars') {
-      matOpts.emissive = new THREE.Color(0x331100);
-      matOpts.emissiveIntensity = 0.5;
+      matOpts.emissive = new THREE.Color(0x110800);
+      matOpts.emissiveIntensity = 0.15;
     }
 
     // fix: 移除 displacementMap 误用 normalMap（程序化法线当位移会让球面变"麻子"、扭曲 UV 纹理）
@@ -269,7 +271,7 @@ export class SolarSystem {
         const cloudMat = new THREE.MeshStandardMaterial({
           map: tex.cloudMap,
           transparent: true,
-          opacity: 0.35,
+          opacity: 0.22,
           depthWrite: false,
           roughness: 1.0,
           metalness: 0,
@@ -295,7 +297,14 @@ export class SolarSystem {
       this.addFresnelAtmosphere(planetGroup, pData.radius, new THREE.Color(0.3, 0.4, 1.0));
     }
 
-    // 土星环
+    // v-latest: 碎石环 — 仅气态巨行星（天文事实：只有木星/土星/天王星/海王星有环）
+    // 土星/天王星已有专业环，只为木星和海王星添加稀疏碎石环
+    if (config.planetRings?.enabled && (pData.name === 'Jupiter' || pData.name === 'Neptune')) {
+      // 木星大（r=65）→ 粒子多；海王星小（r=26）→ 粒子少，自动按比例缩放
+      this.ringSystem.addRing(planetGroup, pData.radius);
+    }
+
+    // 土星环（保留原有专业环）
     if (pData.name === 'Saturn') {
       const ring = this.createSaturnRing(pData.radius);
       planetGroup.add(ring);
@@ -373,10 +382,10 @@ export class SolarSystem {
           vec3 lightDir = normalize(uSunPos - vWorldPos);
           float sunAlign = max(0.0, dot(vNormal, lightDir));
           float rim = 1.0 - max(0.0, dot(viewDir, vNormal));
-          vec3 scatterColor = uColor * (0.6 + sunAlign * 1.8);
-          float rimPow = pow(rim, 2.2);
-          float thickness = rimPow * (0.35 + sunAlign * 0.65);
-          gl_FragColor = vec4(scatterColor, thickness * 0.6);
+          vec3 scatterColor = uColor * (0.35 + sunAlign * 0.9);
+          float rimPow = pow(rim, 2.8);
+          float thickness = rimPow * (0.25 + sunAlign * 0.45);
+          gl_FragColor = vec4(scatterColor, thickness * 0.45);
         }
       `,
       blending: THREE.AdditiveBlending,
@@ -670,6 +679,9 @@ export class SolarSystem {
         }
       });
     });
+    // v-latest: 更新行星碎石环
+    this.ringSystem.update(delta);
+
     // 小行星带
     if (this.asteroidBelt && this.asteroidBelt.pivot) {
       this.asteroidBelt.pivot.rotation.y += delta * 0.02;
@@ -1147,6 +1159,7 @@ export class SolarSystem {
   // ==================== 销毁 ====================
 
   dispose(scene) {
+    this.ringSystem.dispose();
     if (scene) scene.remove(this.group);
     // 释放本实例创建的几何体与材质（材质仅 dispose 本身，不释放其共享的行星缓存纹理）
     this.group.traverse((child) => {

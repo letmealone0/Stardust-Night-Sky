@@ -27,12 +27,32 @@ export class PlayerController {
     this.direction = new THREE.Vector3();
 
     // v9.0: 惯性飞行配置
-    this.accel = config.player.accel || 200;
-    this.decelDamping = config.player.decelDamping || 0.94;
-    this.maxSpeed = config.player.maxSpeed || 80;
-    this.sprintMultiplier = config.player.sprintMultiplier || 3.0;
-    this.sprintFovBoost = config.player.sprintFovBoost || 25;
-    this.baseFov = config.camera.fov;
+    this._baseConfig = config.player;
+    this._currentMode = config.player.defaultMode || 'close';
+    this._modeConfig = config.player.modes?.[this._currentMode] || config.player;
+    this._modeTransition = 1.0; // 初始已完成过渡（跳过插值，避免 undefined 目标值导致 NaN）
+
+    this.accel = this._modeConfig.accel || 200;
+    this.decelDamping = this._modeConfig.decelDamping || 0.94;
+    this.maxSpeed = this._modeConfig.maxSpeed || 80;
+    this.sprintMultiplier = this._modeConfig.sprintMultiplier || 3.0;
+    this.sprintFovBoost = this._modeConfig.sprintFovBoost || 25;
+    this.baseFov = config.camera.modes?.[this._currentMode]?.fov ?? config.camera.fov;
+
+    this.mouseSensitivity = this._modeConfig.mouseSensitivity ?? config.player.mouseSensitivity ?? 0.002;
+    this.lookSmoothTime = this._modeConfig.lookSmoothTime ?? config.player.lookSmoothTime ?? 0.045;
+    this.cameraShake = this._modeConfig.cameraShake ?? config.player.cameraShake ?? true;
+    this.shakeAmplitude = this._modeConfig.shakeAmplitude ?? config.player.shakeAmplitude ?? 1.5;
+    this.shakeFrequency = this._modeConfig.shakeFrequency ?? config.player.shakeFrequency ?? 10.0;
+
+    // 初始化插值目标值（与当前模式一致，防止未调用 setMode 时的 NaN）
+    this._targetAccel = this.accel;
+    this._targetMaxSpeed = this.maxSpeed;
+    this._targetSprintMultiplier = this.sprintMultiplier;
+    this._targetSprintFovBoost = this.sprintFovBoost;
+    this._targetMouseSensitivity = this.mouseSensitivity;
+    this._targetLookSmoothTime = this.lookSmoothTime;
+    this._targetShakeAmplitude = this.shakeAmplitude;
 
     this.sprintFactor = 0;
     this._tmpVec = new THREE.Vector3();
@@ -46,7 +66,6 @@ export class PlayerController {
     this.pitch = 0;               // 当前俯仰角（已平滑）
     this.targetYaw = 0;           // 目标偏航角（输入直接写入）
     this.targetPitch = 0;         // 目标俯仰角（输入直接写入）
-    this.lookSmoothTime = config.player.lookSmoothTime ?? 0.045; // 平滑时间常数(秒)
     this._eulerLook = new THREE.Euler(0, 0, 0, 'YXZ'); // 复用，避免每帧 GC
     // 依赖注入：天文对象引用（替代 window.engine 全局耦合）
     this._solarSystem = null;
@@ -224,6 +243,43 @@ export class PlayerController {
   }
 
   /**
+   * 设置移动模式（近景/广域），动态调整速度与操控参数
+   */
+  setMode(mode) {
+    const modeCfg = config.player.modes?.[mode];
+    if (!modeCfg) {
+      console.warn('[PlayerController] 未知模式:', mode);
+      return;
+    }
+    if (this._currentMode === mode) return;
+
+    this._currentMode = mode;
+    this._modeConfig = modeCfg;
+    this._modeTransition = 0;
+
+    // 立即应用目标值，后续 update 会平滑插值
+    this._targetAccel = modeCfg.accel;
+    this._targetMaxSpeed = modeCfg.maxSpeed;
+    this._targetSprintMultiplier = modeCfg.sprintMultiplier;
+    this._targetSprintFovBoost = modeCfg.sprintFovBoost;
+    this._targetMouseSensitivity = modeCfg.mouseSensitivity ?? config.player.mouseSensitivity ?? 0.002;
+    this._targetLookSmoothTime = modeCfg.lookSmoothTime ?? config.player.lookSmoothTime ?? 0.045;
+    this._targetShakeAmplitude = modeCfg.shakeAmplitude ?? config.player.shakeAmplitude ?? 1.5;
+
+    // 同步相机基础FOV（玩家 sprint boost 的基准）
+    this.baseFov = config.camera.modes?.[mode]?.fov ?? config.camera.fov;
+
+    console.log('[PlayerController] 切换到模式:', mode);
+  }
+
+  /**
+   * 获取当前模式
+   */
+  getMode() {
+    return this._currentMode;
+  }
+
+  /**
    * v9.0: 惯性飞行 — 加速度+阻尼模型
    */
   update(delta) {
@@ -235,8 +291,22 @@ export class PlayerController {
       return;
     }
 
+    // v-latest: 模式参数平滑过渡
+    if (this._modeTransition < 1.0) {
+      this._modeTransition = Math.min(1.0, this._modeTransition + delta * 2.5);
+      const t = this._modeTransition;
+      const ease = t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
+      this.accel = THREE.MathUtils.lerp(this.accel, this._targetAccel, ease);
+      this.maxSpeed = THREE.MathUtils.lerp(this.maxSpeed, this._targetMaxSpeed, ease);
+      this.sprintMultiplier = THREE.MathUtils.lerp(this.sprintMultiplier, this._targetSprintMultiplier, ease);
+      this.sprintFovBoost = THREE.MathUtils.lerp(this.sprintFovBoost, this._targetSprintFovBoost, ease);
+      this.mouseSensitivity = THREE.MathUtils.lerp(this.mouseSensitivity, this._targetMouseSensitivity, ease);
+      this.lookSmoothTime = THREE.MathUtils.lerp(this.lookSmoothTime, this._targetLookSmoothTime, ease);
+      this.shakeAmplitude = THREE.MathUtils.lerp(this.shakeAmplitude, this._targetShakeAmplitude, ease);
+    }
+
     // --- v-latest: 平滑鼠标视角（输入与渲染解耦，帧率无关指数阻尼）---
-    const sens = config.player.mouseSensitivity ?? 0.002;
+    const sens = this.mouseSensitivity ?? config.player.mouseSensitivity ?? 0.002;
     const pointerSpeed = this.controls.pointerSpeed ?? 1.0;
     if (this._mouseDX !== 0 || this._mouseDY !== 0) {
       this.targetYaw   -= this._mouseDX * sens * pointerSpeed;
@@ -303,7 +373,7 @@ export class PlayerController {
     this.controls.moveForward(-this.velocity.z * delta);
     this.camera.position.y += this.velocity.y * delta;
 
-    // 动态FOV (速度线性映射: 75→100)
+    // 动态FOV (速度线性映射: 基础FOV + 冲刺增量)
     const speedFraction = Math.min(this.velocity.length() / currentMaxSpeed, 1.0);
     const targetFov = this.baseFov + this.sprintFovBoost * speedFraction;
     const fovDamp = 1 - Math.pow(0.001, delta);
@@ -314,7 +384,7 @@ export class PlayerController {
     this.camera.position.x -= this._shakeOffset.x;
     this.camera.position.y -= this._shakeOffset.y;
     if (config.player.cameraShake !== false && speedFraction > 0.3) {
-      const shakeAmp = (config.player.shakeAmplitude || 1.5) * speedFraction;
+      const shakeAmp = (this.shakeAmplitude || 1.5) * speedFraction;
       const shakeFreq = config.player.shakeFrequency || 10.0;
       const t = performance.now() * 0.001;
       this._shakeOffset.set(

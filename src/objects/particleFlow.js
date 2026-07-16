@@ -71,6 +71,7 @@ export class ParticleFlow {
     this.material = new THREE.ShaderMaterial({
       uniforms: {
         uSpeed: { value: 0 },
+        uMaxSpeed: { value: 40 },
         uVelocity: { value: new THREE.Vector3(0, 0, 0) },
         uTime: { value: 0 },
         uSprintFactor: { value: 0 },
@@ -84,6 +85,7 @@ export class ParticleFlow {
         uniform vec3 uVelocity;
         uniform float uTime;
         uniform float uSprintFactor;
+        uniform float uMaxSpeed;
         uniform float uStreakLength;
         uniform float uPixelRatio;
         varying float vAlpha;
@@ -95,7 +97,8 @@ export class ParticleFlow {
         void main() {
           vec3 pos = position;
 
-          float speedFactor = min(uSpeed / 30.0, 4.0);
+          // speedFactor归一化 + ×2.5恢复原始满速亮度（原始 80/30=2.67）
+          float speedFactor = uMaxSpeed > 1.0 ? min(uSpeed / uMaxSpeed * 2.5, 4.0) : 0.0;
 
           float layerSpeed;
           if (aRandom < 0.3) {
@@ -260,7 +263,7 @@ export class ParticleFlow {
     this.positions[i3 + 2] = localDir.z * forwardDist + pz * perpRadius;
   }
 
-  update(delta, elapsed, speed, velocity) {
+  update(delta, elapsed, speed, velocity, maxSpeedOverride, sprintMultiplierOverride) {
     this.speed = speed;
 
     // 同步跟随 group 到相机位置+朝向（group-local = camera-local）
@@ -281,12 +284,13 @@ export class ParticleFlow {
     }
 
     const uniforms = this.material.uniforms;
+    const maxSpd = maxSpeedOverride || config.player.maxSpeed;
     uniforms.uSpeed.value = speed;
+    uniforms.uMaxSpeed.value = maxSpd;
     uniforms.uVelocity.value.copy(this._localVel);
     uniforms.uTime.value = elapsed;
 
-    const maxSpd = config.player.maxSpeed;
-    const sprintMul = config.player.sprintMultiplier || 3.0;
+    const sprintMul = sprintMultiplierOverride || config.player.sprintMultiplier || 3.0;
     const isSprinting = speed > maxSpd * sprintMul * 0.8;
     const targetSprint = isSprinting ? 1.0 : 0.0;
     this._sprintFactor += (targetSprint - this._sprintFactor) * Math.min(1, delta * 5);
@@ -299,7 +303,8 @@ export class ParticleFlow {
       const i3 = i * 3;
 
       if (vLen > 0.5) {
-        const flowSpeed = (speed / 40) * delta * 25;
+        // 流动速度按 speed/maxSpeed 比例，基准速率 50 还原原始手感
+        const flowSpeed = (speed / Math.max(maxSpd, 1)) * delta * 50;
         pos[i3]     -= this._localVel.x * flowSpeed;
         pos[i3 + 1] -= this._localVel.y * flowSpeed;
         pos[i3 + 2] -= this._localVel.z * flowSpeed;

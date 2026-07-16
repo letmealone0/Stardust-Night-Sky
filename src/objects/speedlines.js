@@ -230,7 +230,7 @@ export class SpeedLines {
     this.sprintColors[i3_1 + 2] = isWarm ? 0.75 : 1.0;
   }
 
-  update(delta, speed, velocity) {
+  update(delta, speed, velocity, maxSpeedOverride, sprintMultiplierOverride) {
     this.speed = speed;
 
     // 同步跟随 group 到相机
@@ -250,8 +250,10 @@ export class SpeedLines {
       this._localVel.set(0, 0, -1);
     }
 
-    // v19.4: 速度线仅在冲刺时可见，平时不遮挡视野
-    const sprintSpeed = config.player.maxSpeed * config.player.sprintMultiplier;
+    // v19.4: 速度线仅在冲刺时可见，使用当前模式的参数
+    const maxSpd = maxSpeedOverride || config.player.maxSpeed;
+    const sprintMul = sprintMultiplierOverride || config.player.sprintMultiplier || 3.0;
+    const sprintSpeed = maxSpd * sprintMul;
     const isSprinting = speed > sprintSpeed * 0.6;
     const targetOpacity = isSprinting
       ? Math.min((speed - sprintSpeed * 0.6) / (sprintSpeed * 0.4), 1.0) * this.cfg.opacityTarget

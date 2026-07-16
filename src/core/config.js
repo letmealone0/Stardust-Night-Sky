@@ -6,29 +6,71 @@
 export const config = {
   // ---- 相机系统 ----
   camera: {
-    fov: 75,
+    // 默认顶层参数（兼容性）
+    fov: 30,
     near: 1,
     far: 200000,
-    startPosition: { x: 7000, y: 3500, z: -28000 }, // v27.7: 太阳系内，俯瞰内行星~火星轨道外
+    startPosition: { x: 7000, y: 3500, z: -28000 },
+
+    // 双视角配置
+    modes: {
+      close: { // 近景沉浸：长焦、星球巨大
+        fov: 25,
+        near: 0.5,
+        far: 50000,
+        name: '近景探索',
+      },
+      wide: { // 广域巡游：宽视野、远裁剪 — 恢复原始经典FOV
+        fov: 75,
+        near: 1,
+        far: 200000,
+        name: '广域巡游',
+      },
+    },
   },
 
   // ---- 玩家控制 (v9.0: 惯性飞行系统) ----
   player: {
-    // 加速度 (单位/s²)
-    accel: 200,              // 线性加速度
-    decelDamping: 0.94,      // 松键阻尼 (每帧指数衰减, 0.94≈3秒衰减到1%)
-    // 速度上限
-    maxSpeed: 80,            // 普通模式最大速度
-    sprintMultiplier: 3.0,   // 冲刺倍数 (maxSpeed × 3 = 240)
-    // FOV
-    sprintFovBoost: 25,      // 冲刺FOV增量 (75+25=100)
+    // 默认模式
+    defaultMode: 'wide', // 'close'=近景沉浸, 'wide'=广域巡游
+
+    modes: {
+      close: { // 近景探索：星球巨大、速度慢、精细操控
+        accel: 60,              // 降低加速度，更有重型飞船感
+        decelDamping: 0.94,
+        maxSpeed: 15,           // 降低极速：保持加速度但上限低，让星球"飞很久都飞不完"
+        sprintMultiplier: 5.0,  // 冲刺多倍补偿：仍可快速移动但需要主动 shift
+        sprintFovBoost: 8,
+        mouseSensitivity: 0.0015, // 降低鼠标速度，让精细操控更稳
+        lookSmoothTime: 0.05,
+        cameraShake: true,
+        shakeAmplitude: 0.5,
+        shakeFrequency: 8.0,
+      },
+      wide: { // 广域巡游：宽阔场景、高速移动
+        accel: 200,
+        decelDamping: 0.94,
+        maxSpeed: 120,
+        sprintMultiplier: 3.0,
+        sprintFovBoost: 25,
+        mouseSensitivity: 0.002,
+        lookSmoothTime: 0.045,
+        cameraShake: true,
+        shakeAmplitude: 1.5,
+        shakeFrequency: 10.0,
+      },
+    },
+
+    // 兼容性：保留顶层字段，模式会覆盖它们
+    accel: 200,
+    decelDamping: 0.94,
+    maxSpeed: 80,
+    sprintMultiplier: 3.0,
+    sprintFovBoost: 25,
     mouseSensitivity: 0.002,
-    // v-latest: 鼠标视角平滑（解耦输入与渲染，帧率无关指数阻尼）
-    lookSmoothTime: 0.045,    // 平滑时间常数(秒)，越小越跟手，越大越顺滑
-    unadjustedMovement: true, // 关闭系统鼠标加速度，输入更线性一致（晃动不突跳）
-    // 限速
-    proximitySlowdown: true, // 接近行星自动限速
-    // 镜头抖动
+    lookSmoothTime: 0.045,
+    unadjustedMovement: true,
+    proximitySlowdown: true,
     cameraShake: true,
     shakeAmplitude: 1.5,
     shakeFrequency: 10.0,
@@ -100,9 +142,9 @@ export const config = {
   solarSystem: {
     sunRadius: 120,
     timeScale: 0.5,
-    sunLightIntensity: 5.0,  // v9.0: PBR材质需要更强光照
+    sunLightIntensity: 3.0,  // v-latest: 5.0→3.0，降低太阳直射强度，避免行星表面过曝并保留暗部体积感
     sunLightRange: 25000,
-    ambientIntensity: 0.12, // v9.5: 稍增环境光,暗面可见
+    ambientIntensity: 0.05, // v-latest: 0.12→0.05，削弱环境光，让背光面更暗、明暗交界更明确
   },
 
   // ---- 银河系宏观运动 (v10.0) ----
@@ -137,9 +179,9 @@ export const config = {
   // ---- 后处理效果 ----
   postprocessing: {
     bloom: {
-      strength: 0.9,         // v14: 增强辉光让画面更明亮
+      strength: 0.6,         // v-latest: 0.9→0.6，降低泛光强度，避免行星亮部被晕成发光体
       radius: 0.5,           // v14: 更柔和的辉光扩散
-      threshold: 0.32,       // v27.1: 进一步降低，让脉冲星触发泛光
+      threshold: 0.55,       // v-latest: 0.32→0.55，提高泛光阈值，只让真正高亮区域（太阳、恒星）触发Bloom
     },
     vignette: {
       offset: 0.5,
@@ -176,9 +218,9 @@ export const config = {
     antialias: true,
     alpha: false,
     powerPreference: 'high-performance',
-    toneMappingExposure: 1.5, // v14: 提高曝光让整体更明亮
-    contrast: 1.05,            // v14: 微调对比度
-    saturation: 1.15,          // v14: 增强饱和度让色彩更鲜艳
+    toneMappingExposure: 0.9, // v-latest: 1.5→0.9，降低整体曝光，防止近距离行星表面过曝发白
+    contrast: 1.0,            // v-latest: 重置为1.0，减少后处理对比度拉伸
+    saturation: 1.05,         // v-latest: 1.15→1.05，轻微保留色彩，避免过度鲜艳
   },
 
   // ---- 速度线（仅冲刺时出现，极简设计）----
@@ -277,6 +319,34 @@ export const config = {
     noiseDistance: 400,        // 噪点干扰生效距离
     maxNoiseIntensity: 0.5,    // 最大噪点强度
     infoDistance: 500,         // 靠近显示信息距离
+  },
+
+  // ---- 行星碎石环系统（仅气态巨行星，基于天文事实）----
+  planetRings: {
+    enabled: true,
+    // 参数以半径=50为基准，实际粒子数 = baseCount * (radius / 50)
+    // 这样木星(r=65)比海王星(r=26)有更多粒子，比例合适
+    gas: {
+      enabled: true,
+      baseCount: 180,       // 基准粒子数（半径50时），按半径等比例缩放
+      innerScale: 1.6,      // 环内半径 = planetRadius * innerScale
+      outerScale: 3.5,      // 环外半径 = planetRadius * outerScale
+      minSize: 0.8,         // 单个碎石最小尺寸
+      maxSize: 8,           // 单个碎石最大尺寸
+      thickness: 0.6,       // 垂直厚度系数（相对于planetRadius）
+      color: '#8a8070',     // 暖灰褐（尘埃+冰混合色）
+    },
+    // Kepler 差速旋转：内圈快、外圈慢
+    orbitSpeedBase: 0.25,
+  },
+
+  // ---- 近处微尘层（尺度参照物，强化速度感和星球巨大感）----
+  nearDust: {
+    count: 200,
+    range: 40,            // 相机前 5~40 单位
+    size: 0.15,
+    opacity: 0.25,
+    driftSpeed: 0.3,
   },
 
   // ---- 宇宙尘埃 ----

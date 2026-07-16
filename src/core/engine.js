@@ -86,6 +86,10 @@ export class Engine {
       this.renderer.renderer.domElement
     );
     this.player.init();
+    // 应用默认模式，确保玩家和相机参数一致
+    const defaultMode = config.player.defaultMode || 'close';
+    this.player.setMode(defaultMode);
+    this.camera.applyMode(defaultMode, false);
     // 注入太阳系引用（替代 window.engine 全局耦合）
     this.player.setSolarSystem(this.scene.objects.solarSystem);
 
@@ -187,6 +191,7 @@ export class Engine {
     window.addEventListener('wheel', this.onWheelBound, { passive: false });
 
     // v9.5: P键暂停/恢复所有天体运动
+    // V键：切换近景/广域第一人称模式
     this.onKeyDownBound = (e) => {
       if (e.code === 'KeyP') {
         this.isMotionFrozen = !this.isMotionFrozen;
@@ -194,6 +199,9 @@ export class Engine {
       }
       if (e.code === 'KeyM') {
         this._startMapTransition(!this._isMapMode);
+      }
+      if (e.code === 'KeyV') {
+        this._toggleViewMode();
       }
     };
     window.addEventListener('keydown', this.onKeyDownBound);
@@ -371,13 +379,20 @@ export class Engine {
 
     if (speed < 0.5) this._worldVel.set(0, 0, 0);
 
+    // v-latest: 相机FOV/near/far平滑过渡
+    this.camera.update(delta);
+
     // 更新系统
     this.player.update(delta);
+    const currentMaxSpeed = this.player.maxSpeed;
+    const currentSprintMultiplier = this.player.sprintMultiplier;
     this.scene.update(
       this.isMotionFrozen ? 0 : delta,
       elapsed,
       speed,
-      this._worldVel
+      this._worldVel,
+      currentMaxSpeed,
+      currentSprintMultiplier
     );
     this.hud.update(delta);
 
@@ -398,8 +413,8 @@ export class Engine {
       this.hud.updateDanger(maxDanger);
     }
 
-    // 更新跃迁特效（冲刺时触发，阈值 = maxSpeed，从配置派生）
-    this.hud.updateWarpEffect(this.player.getSpeed(), config.player.maxSpeed);
+    // 更新跃迁特效（使用当前模式maxSpeed）
+    this.hud.updateWarpEffect(this.player.getSpeed(), currentMaxSpeed);
     this.hud.updateSprint(this.player.isSprinting());
 
     // v11: 更新天体后处理特效（每帧重置，由各天体自行设置强度）
@@ -494,6 +509,24 @@ export class Engine {
         this.scene.objects.stars.hazePoints.geometry.setDrawRange(0, Math.floor(total * 0.2));
       }
     }
+  }
+
+  /**
+   * 切换近景/广域第一人称视角模式
+   */
+  _toggleViewMode() {
+    const currentMode = this.player.getMode();
+    const nextMode = currentMode === 'close' ? 'wide' : 'close';
+
+    this.player.setMode(nextMode);
+    this.camera.applyMode(nextMode, true);
+
+    const modeName = config.camera.modes?.[nextMode]?.name || nextMode;
+    this.hud.showMessage(`视角模式：${modeName}`, 2000);
+    this.hud.updateViewMode(nextMode, modeName);
+
+    // 通知场景子系统切换模式（用于小行星场等 LOD/数量调整）
+    this.scene.setViewMode(nextMode);
   }
 
   /**
