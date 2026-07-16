@@ -65,7 +65,14 @@ const COMET_DATA = [
 
 // ==================== 全局常量（部分从 config 读取）====================
 const _cfg = config.comets || {};
-const TIME_SCALE = 90;
+// v-latest: 公转速度（UX 优先 — 让慢彗星也能被看见）
+// 真实彗星周期相差近 760 倍（恩克约3.3年 vs 海尔-波普约2500年）。若与行星用同一时间
+// 倍率，最慢彗星一圈需数小时，几乎不动。故对周期做指数压缩(指数<1)，在保留“真实快慢
+// 顺序”的前提下把最慢彗星压到 ORBIT_BASE_SECONDS 秒可见。轨道形状(a/e/i/ω)仍完全写实。
+const ORBIT_TIME_SCALE = _cfg.orbitTimeScale ?? 1.0;       // 全局倍率，>1 更快
+const ORBIT_PERIOD_COMPRESS = _cfg.orbitPeriodCompress ?? (1 / 3); // 压缩指数
+const ORBIT_BASE_SECONDS = _cfg.orbitBaseSeconds ?? 90;     // 最慢彗星视觉公转时长(秒)
+const MAX_PERIOD_DAYS = Math.max(...COMET_DATA.map((d) => d.periodDays));
 const LOD_FAR = 45000;
 const LOD_VERY_FAR = 100000;
 const LOD_FADE_START = 25000;   // 超过此距离开始淡出
@@ -209,6 +216,13 @@ export class CometSystem {
     const elapsedDays = (nowMs - data.lastPerihelionMs) / 86400000;
     const frac = (elapsedDays % data.periodDays) / data.periodDays;
     comet.M0 = frac * Math.PI * 2;
+
+    // v-latest: 由“压缩后的视觉周期”推导平均角速度(rad/s)，与帧率无关。
+    // 真实周期越短 → 视觉周期越短 → 角速度越大（保留真实快慢顺序）。
+    const visualPeriodSeconds =
+      (ORBIT_BASE_SECONDS / ORBIT_TIME_SCALE) *
+      Math.pow(data.periodDays / MAX_PERIOD_DAYS, ORBIT_PERIOD_COMPRESS);
+    comet.meanMotion = (Math.PI * 2) / visualPeriodSeconds;
 
     comet._prevPos = null; // 记录上一帧位置用于计算速度方向
     this.group.add(comet.group);
@@ -720,8 +734,8 @@ export class CometSystem {
     for (let ci = 0; ci < this.comets.length; ci++) {
       const comet = this.comets[ci];
       const d = comet.data;
-      const daysElapsed = elapsed * TIME_SCALE;
-      const M = (comet.M0 + (daysElapsed / d.periodDays) * Math.PI * 2) % (Math.PI * 2);
+      // v-latest: 用预计算的 meanMotion(rad/s) 直接驱动，帧率无关且可观赏
+      const M = (comet.M0 + comet.meanMotion * elapsed) % (Math.PI * 2);
       this._solveKepler(d, M);
       comet.group.position.copy(this._orbitPos);
 

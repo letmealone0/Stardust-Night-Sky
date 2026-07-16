@@ -251,6 +251,13 @@ export const config = {
     tailWaveAmplitude: 1.0,    // 尾部波纹幅度倍率
     rainbowIntensity: 1.0,     // 彩虹色散强度倍率
     glowIntensity: 1.0,        // 整体辉光强度倍率
+    // v-latest: 公转速度（UX 优先 — 让慢彗星也能被看见）
+    // 真实彗星周期相差近 760 倍（恩克约3.3年 vs 海尔-波普约2500年）。若与行星用同一
+    // 时间倍率，最慢彗星一圈需数小时，几乎不动。故对周期做指数压缩(指数<1)，在保留
+    // “真实快慢顺序”的前提下把最慢彗星压到 orbitBaseSeconds 秒可见。轨道形状(a/e/i/ω)仍写实。
+    orbitTimeScale: 1.0,        // 全局彗星公转速度倍率（>1 更快，<1 更慢）
+    orbitPeriodCompress: 1 / 3, // 真实周期压缩指数：把 760 倍周期差压成可观赏范围
+    orbitBaseSeconds: 90,       // 最慢彗星(海尔-波普)完整公转的视觉时长(秒)
   },
 
   // ---- 脉冲星系统 ----
