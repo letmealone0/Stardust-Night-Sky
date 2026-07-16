@@ -152,13 +152,15 @@ export class Engine {
     this.onDocumentClickBound = () => {
       if (this._isMapMode) return;
       if (this.player && this.player.controls && !this.player.controls.isLocked) {
-        this.player.controls.lock();
+        this.player.requestLock();
       }
     };
     document.addEventListener('click', this.onDocumentClickBound);
 
     this.onLockBound = () => {
       this.isPaused = false;
+      // v-latest: 锁定后同步内部朝向，避免从地图模式返回或初始进入时视角跳变
+      if (this.player) this.player.syncOrientation();
       this.hud.showMessage('已锁定鼠标 - WASD移动 Shift冲刺 C下降 空格上升');
     };
     this.player.controls.addEventListener('lock', this.onLockBound);
@@ -292,7 +294,7 @@ export class Engine {
         this.isPaused = false;
         setTimeout(() => {
           if (this.player?.controls && !this.player.controls.isLocked) {
-            this.player.controls.lock();
+            this.player.requestLock();
           }
         }, 150);
       }

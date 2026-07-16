@@ -38,6 +38,16 @@ export class PlayerController {
     this._tmpVec = new THREE.Vector3();
     // v9.0-fix: 镜头抖动偏移量跟踪，防止累加导致位置漂移
     this._shakeOffset = new THREE.Vector3();
+
+    // v-latest: 鼠标视角平滑（解耦输入与渲染，帧率无关阻尼）
+    this._mouseDX = 0;            // 本帧累积的鼠标 X 位移
+    this._mouseDY = 0;            // 本帧累积的鼠标 Y 位移
+    this.yaw = 0;                 // 当前偏航角（已平滑）
+    this.pitch = 0;               // 当前俯仰角（已平滑）
+    this.targetYaw = 0;           // 目标偏航角（输入直接写入）
+    this.targetPitch = 0;         // 目标俯仰角（输入直接写入）
+    this.lookSmoothTime = config.player.lookSmoothTime ?? 0.045; // 平滑时间常数(秒)
+    this._eulerLook = new THREE.Euler(0, 0, 0, 'YXZ'); // 复用，避免每帧 GC
     // 依赖注入：天文对象引用（替代 window.engine 全局耦合）
     this._solarSystem = null;
     this._tempPlanetPos = new THREE.Vector3();
@@ -49,6 +59,13 @@ export class PlayerController {
   init() {
     this.controls = new PointerLockControls(this.camera, this.domElement);
 
+    // v-latest: 接管鼠标旋转 — 移除 PLC 内置的即时旋转监听，
+    // 改为累积增量 + 在渲染循环内平滑应用，避免晃动鼠标时视角突跳
+    const doc = this.controls.domElement.ownerDocument;
+    doc.removeEventListener('mousemove', this.controls._onMouseMove);
+    this._onMouseMoveBound = (e) => this.onMouseMove(e);
+    doc.addEventListener('mousemove', this._onMouseMoveBound);
+
     // 绑定键盘事件
     this.bindKeyboardEvents();
 
@@ -59,6 +76,9 @@ export class PlayerController {
       }
     };
     document.addEventListener('pointerlockchange', this.onPointerLockChangeBound);
+
+    // 从相机初始朝向同步 yaw/pitch，保证宇宙倾斜度与初始视角不变
+    this.syncOrientation();
 
     console.log('[PlayerController] 控制器初始化完成');
   }
@@ -74,6 +94,51 @@ export class PlayerController {
     this.moveUp = false;
     this.moveDown = false;
     this.sprint = false;
+  }
+
+  /**
+   * v-latest: 鼠标移动处理 — 仅累积增量，不直接旋转相机。
+   * 真正的旋转在 update() 内以帧率无关的方式平滑应用，
+   * 这样一帧内的多次 mousemove 被合并，快速晃动也不会瞬间跳变。
+   */
+  onMouseMove(event) {
+    if (this.controls.isLocked === false) return;
+    this._mouseDX += event.movementX || 0;
+    this._mouseDY += event.movementY || 0;
+  }
+
+  /**
+   * v-latest: 从相机当前四元数同步 yaw/pitch。
+   * 在锁定/地图模式返回后调用，使内部状态与外部朝向一致，防止视角跳变。
+   */
+  syncOrientation() {
+    this._eulerLook.setFromQuaternion(this.camera.quaternion, 'YXZ');
+    this.yaw = this._eulerLook.y;
+    this.pitch = this._eulerLook.x;
+    this.targetYaw = this.yaw;
+    this.targetPitch = this.pitch;
+    this._mouseDX = 0;
+    this._mouseDY = 0;
+  }
+
+  /**
+   * v-latest: 请求指针锁定，优先关闭系统鼠标加速度以获得线性一致的输入。
+   * 部分浏览器不支持 unadjustedMovement，捕获 Promise 拒绝后回退到普通锁定。
+   */
+  requestLock() {
+    const unadjusted = config.player.unadjustedMovement !== false;
+    let p;
+    try {
+      p = this.controls.lock(unadjusted);
+    } catch (e) {
+      try { this.controls.lock(false); } catch (_) {}
+      return;
+    }
+    if (p && typeof p.catch === 'function') {
+      p.catch(() => {
+        try { this.controls.lock(false); } catch (_) {}
+      });
+    }
   }
 
   /**
@@ -163,10 +228,34 @@ export class PlayerController {
    */
   update(delta) {
     if (!this.controls.isLocked) {
-      // 未锁定时清空抖动偏移，避免恢复后误减
+      // 未锁定时清空抖动偏移与鼠标累积，避免恢复后误减/误转
       this._shakeOffset.set(0, 0, 0);
+      this._mouseDX = 0;
+      this._mouseDY = 0;
       return;
     }
+
+    // --- v-latest: 平滑鼠标视角（输入与渲染解耦，帧率无关指数阻尼）---
+    const sens = config.player.mouseSensitivity ?? 0.002;
+    const pointerSpeed = this.controls.pointerSpeed ?? 1.0;
+    if (this._mouseDX !== 0 || this._mouseDY !== 0) {
+      this.targetYaw   -= this._mouseDX * sens * pointerSpeed;
+      this.targetPitch -= this._mouseDY * sens * pointerSpeed;
+      // 俯仰限位（与 PointerLockControls 一致）
+      const PI_2 = Math.PI / 2;
+      const minP = PI_2 - (this.controls.maxPolarAngle ?? Math.PI);
+      const maxP = PI_2 - (this.controls.minPolarAngle ?? 0);
+      this.targetPitch = Math.max(minP, Math.min(maxP, this.targetPitch));
+      this._mouseDX = 0;
+      this._mouseDY = 0;
+    }
+    // 指数平滑：时间常数 lookSmoothTime，帧率无关
+    const smoothT = 1 - Math.exp(-delta / Math.max(this.lookSmoothTime, 1e-4));
+    this.yaw   += (this.targetYaw   - this.yaw)   * smoothT;
+    this.pitch += (this.targetPitch - this.pitch) * smoothT;
+    this._eulerLook.set(this.pitch, this.yaw, 0, 'YXZ');
+    this.camera.quaternion.setFromEuler(this._eulerLook);
+    this.camera.updateMatrix(); // 让本帧移动方向使用最新朝向
 
     // 移动方向 (归一化)
     this.direction.set(
@@ -305,6 +394,10 @@ export class PlayerController {
    */
   dispose() {
     // 移除事件监听（防止重建时残留与内存泄漏）
+    if (this._onMouseMoveBound) {
+      const doc = this.controls?.domElement?.ownerDocument;
+      if (doc) doc.removeEventListener('mousemove', this._onMouseMoveBound);
+    }
     if (this.onKeyDownBound) window.removeEventListener('keydown', this.onKeyDownBound);
     if (this.onKeyUpBound) window.removeEventListener('keyup', this.onKeyUpBound);
     if (this.onPointerLockChangeBound) document.removeEventListener('pointerlockchange', this.onPointerLockChangeBound);

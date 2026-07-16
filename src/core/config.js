@@ -23,6 +23,9 @@ export const config = {
     // FOV
     sprintFovBoost: 25,      // 冲刺FOV增量 (75+25=100)
     mouseSensitivity: 0.002,
+    // v-latest: 鼠标视角平滑（解耦输入与渲染，帧率无关指数阻尼）
+    lookSmoothTime: 0.045,    // 平滑时间常数(秒)，越小越跟手，越大越顺滑
+    unadjustedMovement: true, // 关闭系统鼠标加速度，输入更线性一致（晃动不突跳）
     // 限速
     proximitySlowdown: true, // 接近行星自动限速
     // 镜头抖动
