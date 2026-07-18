@@ -110,16 +110,14 @@ const CelestialEffectsShader = {
         }
       }
 
-      // 2. 运动模糊
+      // 2. 运动模糊（3 次采样，减少纹理采样开销）
       vec4 color = vec4(0.0);
       if (uMotionBlurIntensity > 0.005) {
-        vec2 vel = uMotionDir * uMotionBlurIntensity * 0.4;
+        vec2 vel = uMotionDir * uMotionBlurIntensity * 0.5;
         color = texture2D(tDiffuse, uv);
         color += texture2D(tDiffuse, clamp(uv + vel, 0.0, 1.0));
         color += texture2D(tDiffuse, clamp(uv - vel, 0.0, 1.0));
-        color += texture2D(tDiffuse, clamp(uv + vel * 2.0, 0.0, 1.0));
-        color += texture2D(tDiffuse, clamp(uv - vel * 2.0, 0.0, 1.0));
-        color /= 5.0;
+        color /= 3.0;
       } else {
         color = texture2D(tDiffuse, uv);
       }
@@ -156,7 +154,7 @@ const CelestialEffectsShader = {
         vec2 center = vec2(0.5);
         float edgeDist = length(vUv - center) * 1.4;
         float fog = uFogDensity * (0.5 + edgeDist * 0.5);
-        color.rgb = mix(color.rgb, uFogColor, clamp(fog, 0.0, 0.7));
+        color.rgb = mix(color.rgb, uFogColor, clamp(fog, 0.0, 0.4));
         color.rgb = mix(color.rgb, vec3(dot(color.rgb, vec3(0.333))), fog * 0.3);
       }
 
@@ -263,7 +261,8 @@ export class PostProcessingManager {
     const flashFactor = u.uFlashIntensity.value;
 
     // 画面偏亮时降低曝光（防止过曝），偏暗时提高曝光
-    const brightness = 0.5 + flashFactor * 2.0 - fogFactor * 0.3;
+    // 基线 brightness=1.0 → exposure=1.0，避免默认曝光漂到 2.0
+    const brightness = 1.0 + flashFactor * 1.5 - fogFactor * 0.4;
     this._exposureTarget = 1.0 / Math.max(0.3, brightness);
 
     // 平滑过渡（模拟人眼适应，约1.5秒达到目标）

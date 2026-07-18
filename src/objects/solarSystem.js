@@ -725,9 +725,8 @@ export class SolarSystem {
       // 解决"靠近时标签爆炸成巨大白块"的视觉bug
       const camPos = this.camera?.position;
       if (camPos && planet.labelSprite) {
-        const planetPos = new THREE.Vector3();
-        planet.group.getWorldPosition(planetPos);
-        const dist = camPos.distanceTo(planetPos);
+        planet.group.getWorldPosition(this._tempVec);
+        const dist = camPos.distanceTo(this._tempVec);
         const minDist = d.radius * 4;  // 太近：能看到行星本体，不需要标签
         const maxDist = config.solarSystem?.labelMaxDistance ?? 6000;
         planet.labelSprite.visible = dist > minDist && dist < maxDist;
@@ -754,9 +753,8 @@ export class SolarSystem {
     let closestDist = Infinity;
 
     this.planets.forEach((planet) => {
-      const worldPos = new THREE.Vector3();
-      planet.group.getWorldPosition(worldPos);
-      const dist = this.camera.position.distanceTo(worldPos) - planet.data.radius;
+      planet.group.getWorldPosition(this._tempVec);
+      const dist = this.camera.position.distanceTo(this._tempVec) - planet.data.radius;
       const threshold = planet.data.radius * 5 + 80;
       if (dist < threshold && dist < closestDist) {
         closestDist = dist;

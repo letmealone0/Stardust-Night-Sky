@@ -245,83 +245,105 @@ export class Pulsar {
     this.beams.push(beam);
   }
 
-  // ==================== v28: 磁场线（20条独立Line + 相位差 + 粗细亮度变化 + 吸积盘遮挡裁剪） ====================
+  // ==================== v28: 磁场线（合并为单个 LineSegments，20 条线 → 1 draw call） ====================
   _createMagneticFieldLines(cfg, maxArcRadius) {
-    const count = 20; // v28: 8→20，模拟真实磁力线疏密分布
+    const count = 20; // 20条磁力线
     const r = cfg.radius;
     const segments = 48;
-    this._fieldLinesGroup = new THREE.Group();
-    this._magneticGroup.add(this._fieldLinesGroup);
+    // 每条线 segments 段，每段 2 顶点（LineSegments/LINES 模式）
+    const vertCount = count * segments * 2;
+    const positions = new Float32Array(vertCount * 3);
+    const phases = new Float32Array(vertCount);
+    const brightnesses = new Float32Array(vertCount);
 
     for (let i = 0; i < count; i++) {
       const phi = (i / count) * Math.PI * 2 + (Math.random() - 0.5) * 0.3;
-      // v28: 粗细变化——部分磁力线更突出
       const curveOffset = 0.4 + Math.random() * 0.8;
       const brightness = 0.4 + Math.random() * 0.6; // 亮度差异模拟疏密
-      const positions = [];
+      const phase = i / count;
+      const cosPhi = Math.cos(phi), sinPhi = Math.sin(phi);
+
+      let prevX = 0, prevY = 0, prevZ = 0;
       for (let j = 0; j <= segments; j++) {
         const t = j / segments;
         const theta = Math.PI * t;
         const arcR = r * 1.3 + maxArcRadius * Math.sin(theta) * curveOffset;
-        positions.push(
-          Math.cos(phi) * arcR * Math.sin(theta),
-          Math.cos(theta) * arcR,
-          Math.sin(phi) * arcR * Math.sin(theta)
-        );
+        const x = cosPhi * arcR * Math.sin(theta);
+        const y = Math.cos(theta) * arcR;
+        const z = sinPhi * arcR * Math.sin(theta);
+        if (j > 0) {
+          // 写入一段：prev -> current（LineSegments 每段2顶点）
+          const segBase = (i * segments + (j - 1)) * 2;
+          const aIdx = segBase * 3;
+          const bIdx = (segBase + 1) * 3;
+          positions[aIdx] = prevX; positions[aIdx + 1] = prevY; positions[aIdx + 2] = prevZ;
+          positions[bIdx] = x; positions[bIdx + 1] = y; positions[bIdx + 2] = z;
+          phases[segBase] = phase; phases[segBase + 1] = phase;
+          brightnesses[segBase] = brightness; brightnesses[segBase + 1] = brightness;
+        }
+        prevX = x; prevY = y; prevZ = z;
       }
-
-      const geo = new THREE.BufferGeometry();
-      geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(positions), 3));
-      const phase = i / count;
-      const mat = new THREE.ShaderMaterial({
-        uniforms: {
-          uTime: { value: 0 },
-          uPhase: { value: phase },
-          uDiskThickness: { value: r * 0.6 },
-          uBrightness: { value: brightness }, // v28: 亮度差异
-        },
-        vertexShader: `
-          varying float vTheta;
-          varying vec3 vLocalPos;
-          void main() {
-            vec3 normPos = normalize(position);
-            vTheta = acos(clamp(normPos.y, -1.0, 1.0));
-            vLocalPos = position;
-            gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-          }
-        `,
-        fragmentShader: `
-          precision highp float;
-          varying float vTheta;
-          varying vec3 vLocalPos;
-          uniform float uTime;
-          uniform float uPhase;
-          uniform float uDiskThickness;
-          uniform float uBrightness;
-          void main() {
-            float poleFactor = abs(cos(vTheta));
-            float brightness = 0.2 + poleFactor * 0.8;
-            // v27.5: 每线独立相位，脉冲错开
-            float TAU = 6.283185307;
-            float pulse = 0.65 + sin(uTime * 2.5 + uPhase * TAU) * 0.25;
-            // 吸积盘平面裁剪
-            float diskDist = abs(vLocalPos.y);
-            float diskMask = smoothstep(0.0, uDiskThickness, diskDist);
-            // v28: 亮度差异 + 基础透明度降低（20条线需要更透）
-            float alpha = 0.07 * brightness * pulse * diskMask * uBrightness;
-            if (alpha < 0.005) discard;
-            vec3 col = mix(vec3(0.4, 0.6, 1.0), vec3(0.6, 0.85, 1.0), brightness);
-            gl_FragColor = vec4(col, alpha);
-          }
-        `,
-        blending: THREE.AdditiveBlending,
-        transparent: true, depthWrite: false,
-      });
-      const line = new THREE.Line(geo, mat);
-      line.renderOrder = 0; // 先于吸积盘渲染
-      line.userData.material = mat;
-      this._fieldLinesGroup.add(line);
     }
+
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    geo.setAttribute('aPhase', new THREE.BufferAttribute(phases, 1));
+    geo.setAttribute('aBrightness', new THREE.BufferAttribute(brightnesses, 1));
+
+    const mat = new THREE.ShaderMaterial({
+      uniforms: {
+        uTime: { value: 0 },
+        uDiskThickness: { value: r * 0.6 },
+      },
+      vertexShader: `
+        attribute float aPhase;
+        attribute float aBrightness;
+        varying float vTheta;
+        varying vec3 vLocalPos;
+        varying float vBrightness;
+        varying float vPhase;
+        void main() {
+          vec3 normPos = normalize(position);
+          vTheta = acos(clamp(normPos.y, -1.0, 1.0));
+          vLocalPos = position;
+          vBrightness = aBrightness;
+          vPhase = aPhase;
+          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        }
+      `,
+      fragmentShader: `
+        precision highp float;
+        varying float vTheta;
+        varying vec3 vLocalPos;
+        varying float vBrightness;
+        varying float vPhase;
+        uniform float uTime;
+        uniform float uDiskThickness;
+        void main() {
+          float poleFactor = abs(cos(vTheta));
+          float brightness = 0.2 + poleFactor * 0.8;
+          // 每线独立相位，脉冲错开（phase 通过 attribute 传入）
+          float TAU = 6.283185307;
+          float pulse = 0.65 + sin(uTime * 2.5 + vPhase * TAU) * 0.25;
+          // 吸积盘平面裁剪
+          float diskDist = abs(vLocalPos.y);
+          float diskMask = smoothstep(0.0, uDiskThickness, diskDist);
+          float alpha = 0.07 * brightness * pulse * diskMask * vBrightness;
+          if (alpha < 0.005) discard;
+          vec3 col = mix(vec3(0.4, 0.6, 1.0), vec3(0.6, 0.85, 1.0), brightness);
+          gl_FragColor = vec4(col, alpha);
+        }
+      `,
+      blending: THREE.AdditiveBlending,
+      transparent: true, depthWrite: false,
+    });
+
+    this._fieldLinesGroup = new THREE.Group();
+    const lines = new THREE.LineSegments(geo, mat);
+    lines.renderOrder = 0; // 先于吸积盘渲染
+    lines.userData.material = mat;
+    this._fieldLinesGroup.add(lines);
+    this._magneticGroup.add(this._fieldLinesGroup);
   }
 
   // ==================== v27.3: 薄吸积盘（RingGeometry连续盘 + 着色器 + 开普勒旋转） ====================
@@ -577,12 +599,14 @@ export class Pulsar {
 
   dispose(scene) {
     scene.remove(this.group);
-    this.group.children.forEach((child) => {
+    // 递归释放所有子节点（_magneticGroup 下的中子星/光束/磁场线、_diskGroup 下的盘/环、shell）
+    // 原 forEach 只遍历直接子节点（均为 Group，无 geometry/material），导致大量资源泄漏
+    this.group.traverse((child) => {
       if (child.geometry) child.geometry.dispose();
       if (child.material) child.material.dispose();
     });
     this.beams = [];
-    // v27.5: 清理子组引用，避免内存泄漏
+    // 清理子组引用，避免内存泄漏
     this._fieldLinesGroup = null;
     this._diskGroup = null;
   }

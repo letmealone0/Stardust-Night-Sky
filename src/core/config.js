@@ -6,8 +6,8 @@
 export const config = {
   // ---- 相机系统 ----
   camera: {
-    // 默认顶层参数（兼容性）
-    fov: 30,
+    // 默认顶层参数（与 defaultMode='wide' 一致，避免首帧 FOV 跳变）
+    fov: 75,
     near: 1,
     far: 200000,
     startPosition: { x: 7000, y: 3500, z: -28000 },

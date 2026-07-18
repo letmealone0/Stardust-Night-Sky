@@ -144,8 +144,8 @@ export class Engine {
       player.maxSpeed = 80;
     }
     if (planets.count < 1) {
-      console.warn('[Config] planets.count 必须 > 0，已重置为 8');
-      planets.count = 8;
+      console.warn('[Config] planets.count 必须 > 0，已重置为 4');
+      planets.count = 4;
     }
   }
 
@@ -214,6 +214,10 @@ export class Engine {
       }
       if (e.code === 'KeyV') {
         this._toggleViewMode();
+      }
+      if (e.code === 'KeyR' && !this._isMapMode && this.player) {
+        this.player.resetToStart();
+        this.hud.showMessage('已返回起始位置', 2000);
       }
     };
     window.addEventListener('keydown', this.onKeyDownBound);
@@ -441,9 +445,25 @@ export class Engine {
     const cPass = this.postprocessing.getCelestialPass();
     if (cPass) {
       const u = cPass.uniforms;
-      // 黑洞引力透镜（v25: 取最近黑洞的透镜效果）
-      if (this.scene.objects.blackholes.length > 0) {
-        this.scene.objects.blackholes[0].updatePostEffects(u, this.camera.camera);
+      // 黑洞引力透镜（v-fix: 对 dangerLevel 最大的黑洞生效，而非固定 blackholes[0]）
+      // 此前只调 blackholes[0]，若玩家接近的是第2个黑洞，其引力透镜完全不触发
+      let activeBH = null;
+      let maxDanger = 0;
+      for (const bh of this.scene.objects.blackholes) {
+        const d = bh.getDangerLevel();
+        if (d > maxDanger) { maxDanger = d; activeBH = bh; }
+      }
+      if (activeBH) {
+        activeBH.updatePostEffects(u, this.camera.camera);
+      } else if (this.scene.objects.blackholes.length > 0) {
+        // 无接近黑洞时仍调最近的一个，让其平滑衰减透镜到 0（避免残留扭曲）
+        let nearest = this.scene.objects.blackholes[0];
+        let nd = nearest.group.position.distanceTo(this.camera.camera.position);
+        for (const bh of this.scene.objects.blackholes) {
+          const d = bh.group.position.distanceTo(this.camera.camera.position);
+          if (d < nd) { nd = d; nearest = bh; }
+        }
+        nearest.updatePostEffects(u, this.camera.camera);
       }
       // v25.1: 多脉冲星后处理累加（取最大值合并，避免互相覆盖）
       if (this.scene.objects.pulsars.length > 0) {

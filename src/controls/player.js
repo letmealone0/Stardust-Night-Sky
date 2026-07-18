@@ -429,8 +429,11 @@ export class PlayerController {
       }
     }
 
-    if (minDistToSurface < 500 && minDistToSurface > 0) {
-      const factor = Math.max(0.08, minDistToSurface / 500);
+    if (minDistToSurface < 500) {
+      // 距表面越近限速越严；穿入天体(surfDist<0)时强制极低速，避免"刹不住车"
+      const factor = minDistToSurface > 0
+        ? Math.max(0.08, minDistToSurface / 500)
+        : 0.08;
       const speedLimit = currentMaxSpeed * factor;
       const vLen = this.velocity.length();
       if (vLen > speedLimit) {
@@ -465,6 +468,19 @@ export class PlayerController {
    */
   getVelocity() {
     return this.velocity;
+  }
+
+  /**
+   * 重置到起始位置（R 键回家功能）
+   */
+  resetToStart() {
+    if (!this.camera) return;
+    const start = config.camera.startPosition;
+    this.camera.position.set(start.x, start.y, start.z);
+    this.velocity.set(0, 0, 0);
+    this._shakeOffset.set(0, 0, 0);
+    // 同步内部朝向到当前相机朝向（保持视角方向不跳变）
+    this.syncOrientation();
   }
 
   /**

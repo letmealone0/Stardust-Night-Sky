@@ -59,7 +59,7 @@ async function init() {
     setTimeout(() => {
       hideLoading();
       // 显示欢迎消息
-      engine.hud.showMessage('欢迎来到深空探索 - 点击屏幕开始', 5000);
+      engine.hud.showMessage('欢迎来到深空探索 · 点击屏幕开始 · WASD移动 Shift冲刺 V切视角 M看地图 R回起点 P暂停', 6000);
     }, 500);
 
     console.log('[Main] 初始化完成');

@@ -217,6 +217,12 @@ export class CosmicDust {
     const camPos = this.camera.position;
     this._centerPos.copy(camPos);
 
+    // 复用 init 的分布逻辑，避免重居中后旋臂结构突变成球壳
+    const armDistribution = cfg.armDistribution !== false;
+    const armCount = config.stars?.galaxy?.armCount || 5;
+    const spin = config.stars?.galaxy?.spin || 2.5;
+    const spreadFactor = cfg.armSpread || 0.25;
+
     this.layers.forEach((layer) => {
       const lcfg = layer.layerCfg;
       const spread = lcfg.spread || cfg.spread;
@@ -224,18 +230,30 @@ export class CosmicDust {
       const init = layer.initialPositions;
       const count = pos.length / 3;
 
-      // v25-fix: 壳层分布（中间密、边缘稀），不形成实心球
       for (let i = 0, i3 = 0; i < count; i++, i3 += 3) {
-        const theta = Math.random() * Math.PI * 2;
-        const phi = Math.acos(2 * Math.random() - 1);
-        // 壳层分布：innerRadius ~ outerRadius，中间密
-        const innerR = spread * 0.3;
-        const outerR = spread;
-        const t = Math.random();
-        const r = innerR + (outerR - innerR) * Math.pow(t, 0.6);
-        const x = r * Math.sin(phi) * Math.cos(theta);
-        const y = r * Math.sin(phi) * Math.sin(theta) * 0.3; // v25-fix: 扁平化
-        const z = r * Math.cos(phi);
+        let x, y, z;
+        if (armDistribution) {
+          // 旋臂分布（与 init 一致）
+          const arm = i % armCount;
+          const armAngle = (arm / armCount) * Math.PI * 2;
+          const dist = spread * (0.2 + Math.random() * 0.8);
+          const theta = armAngle + Math.log(1 + dist / spread) * spin;
+          const jitter = (Math.random() - 0.5) * spread * spreadFactor;
+          x = dist * Math.cos(theta) + jitter;
+          z = dist * Math.sin(theta) + jitter;
+          y = (Math.random() - 0.5) * spread * 0.15;
+        } else {
+          // 壳层分布（中间密、边缘稀），不形成实心球
+          const theta = Math.random() * Math.PI * 2;
+          const phi = Math.acos(2 * Math.random() - 1);
+          const innerR = spread * 0.3;
+          const outerR = spread;
+          const t = Math.random();
+          const r = innerR + (outerR - innerR) * Math.pow(t, 0.6);
+          x = r * Math.sin(phi) * Math.cos(theta);
+          y = r * Math.sin(phi) * Math.sin(theta) * 0.3; // 扁平化
+          z = r * Math.cos(phi);
+        }
         init[i3] = camPos.x + x;
         init[i3 + 1] = camPos.y + y;
         init[i3 + 2] = camPos.z + z;

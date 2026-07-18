@@ -34,7 +34,7 @@ export class SpeedLines {
     this.sprintMaterial = null;
     this.sprintPositions = null;
     this.sprintColors = null;
-    this.springCount = this.cfg.sprintExtraCount || 200;
+    this.sprintCount = this.cfg.sprintExtraCount || 200;
   }
 
   init(scene, camera) {
@@ -71,11 +71,11 @@ export class SpeedLines {
     this.group.add(this.lineSegments);
 
     // 冲刺额外亮线
-    const sprintVertexCount = this.springCount * 2;
+    const sprintVertexCount = this.sprintCount * 2;
     this.sprintPositions = new Float32Array(sprintVertexCount * 3);
     this.sprintColors = new Float32Array(sprintVertexCount * 3);
 
-    for (let i = 0; i < this.springCount; i++) {
+    for (let i = 0; i < this.sprintCount; i++) {
       this.resetSprintLine(i, defaultDir);
     }
 
@@ -95,7 +95,7 @@ export class SpeedLines {
     this.sprintLines = new THREE.LineSegments(sprintGeo, this.sprintMaterial);
     this.group.add(this.sprintLines);
 
-    console.log('[SpeedLines] v19.1 速度线系统初始化完成（主线:', this.lineCount, '+ 冲刺线:', this.springCount, ')');
+    console.log('[SpeedLines] v19.1 速度线系统初始化完成（主线:', this.lineCount, '+ 冲刺线:', this.sprintCount, ')');
   }
 
   /**
@@ -300,7 +300,7 @@ export class SpeedLines {
 
     if (this.sprintPositions && this.sprintMaterial && this.sprintMaterial.opacity > 0.01) {
       const sprintMove = move * 1.5;
-      for (let i = 0; i < this.springCount; i++) {
+      for (let i = 0; i < this.sprintCount; i++) {
         const i2 = i * 2;
         const i3_0 = i2 * 3;
         const i3_1 = (i2 + 1) * 3;

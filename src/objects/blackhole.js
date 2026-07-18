@@ -267,12 +267,10 @@ export class BlackHole {
           vec3 toCamera = normalize(cameraPosition - particleWorld.xyz);
           vDoppler = dot(orbitTangent, toCamera);
 
-          // v26.3: "暗"黑洞 — 吸积盘应黯淡微弱，仅近距离可见
-          float distFactor = clamp((currentR - uInnerRadius) / (uOuterRadius - uInnerRadius), 0.0, 1.0);
-          vDistNorm = distFactor;
-          float brightness = exp(-distFactor * 4.8) * 0.12;  // v20: 0.62→0.12
-          brightness += exp(-distFactor * 13.0) * 0.08;       // v20: 0.48→0.08
-          brightness += uBrightnessPulse * exp(-distFactor * 5.5) * 0.15; // v20: 0.8→0.15
+          // v26.3-fix: 回调亮度，避免黑洞过暗在中等距离几乎不可见
+          float brightness = exp(-distFactor * 4.8) * 0.18;  // v20: 0.12→0.18
+          brightness += exp(-distFactor * 13.0) * 0.12;       // v20: 0.08→0.12
+          brightness += uBrightnessPulse * exp(-distFactor * 5.5) * 0.20; // v20: 0.15→0.20
 
           // v19: 内缘裁剪 — <1.1×事件视界直接透明，保证黑核纯黑
           float distFromEH = currentR / uEventHorizonR;
@@ -288,11 +286,13 @@ export class BlackHole {
 
           vec4 wp = modelMatrix * vec4(pos, 1.0); vWPos = wp.xyz;
 
-          vec4 mvPosition = modelViewMatrix * vec4(pos, 1.0);
+          // v-fix: 粒子大小基于世界距离（而非视图深度 -mvPosition.z），
+          // 避免镜头转动时粒子在屏幕边缘/中心深度变化导致大小波动 → "光弥散"
+          float distToCam = length(cameraPosition - vWPos);
           float size = 1.2 + (1.0 - distFactor) * 0.6;
-          gl_PointSize = size * uPixelRatio * (220.0 / max(-mvPosition.z, 1.0));
+          gl_PointSize = size * uPixelRatio * (220.0 / max(distToCam, 1.0));
           gl_PointSize = clamp(gl_PointSize, 0.8, 12.0);
-          gl_Position = projectionMatrix * mvPosition;
+          gl_Position = projectionMatrix * modelViewMatrix * vec4(pos, 1.0);
         }
       `,
       fragmentShader: `
@@ -436,11 +436,11 @@ export class BlackHole {
           vAlpha = axialFade * 0.12 * nodePulse;
 
           vec4 wp = modelMatrix * vec4(pos, 1.0); vWorldPos = wp.xyz;
-          vec4 mvPosition = modelViewMatrix * vec4(pos, 1.0);
-          // v18: 粒子尺寸也随轴向快速衰减
-          gl_PointSize = (0.6 + (1.0 - t) * 1.0) * axialFade * uPixelRatio * (280.0 / max(-mvPosition.z, 1.0));
+          // v-fix: 基于世界距离，避免镜头转动时粒子大小波动 → "光弥散"
+          float distToCam = length(cameraPosition - vWorldPos);
+          gl_PointSize = (0.6 + (1.0 - t) * 1.0) * axialFade * uPixelRatio * (280.0 / max(distToCam, 1.0));
           gl_PointSize = clamp(gl_PointSize, 0.5, 14.0);
-          gl_Position = projectionMatrix * mvPosition;
+          gl_Position = projectionMatrix * modelViewMatrix * vec4(pos, 1.0);
         }
       `,
       fragmentShader: `
@@ -608,10 +608,12 @@ export class BlackHole {
           vAlpha = aAlpha * (0.02 + (1.0 - distNorm) * 0.15) * fade; // v26.3: 坠落粒子大幅压暗
           float sizeScale = 0.25 + distNorm * 0.75;
 
-          vec4 mvPosition = modelViewMatrix * vec4(pos, 1.0);
-          gl_PointSize = aSize * sizeScale * uPixelRatio * (600.0 / max(-mvPosition.z, 1.0));
+          // v-fix: 基于世界距离，避免镜头转动时粒子大小波动 → "光弥散"
+          vec4 wp = modelMatrix * vec4(pos, 1.0);
+          float distToCam = length(cameraPosition - wp.xyz);
+          gl_PointSize = aSize * sizeScale * uPixelRatio * (600.0 / max(distToCam, 1.0));
           gl_PointSize = clamp(gl_PointSize, 0.8, 15.0);
-          gl_Position = projectionMatrix * mvPosition;
+          gl_Position = projectionMatrix * modelViewMatrix * vec4(pos, 1.0);
         }
       `,
       fragmentShader: `
@@ -900,7 +902,7 @@ export class BlackHole {
     }
   }
 
-  // ==================== 后处理（v14: 引力透镜平方反比衰减） ====================
+  // ==================== 后处理（v14: 引力透镜平方反比衰减 + 平滑插值） ====================
   updatePostEffects(uniforms, camera) {
     const cfg = config.blackhole;
     if (!camera || !this.group || !uniforms) return;
@@ -908,20 +910,38 @@ export class BlackHole {
     if (!uniforms.uLensStrength || !uniforms.uLensCenter || !uniforms.uLensRadius) return;
     const dist = this.group.position.distanceTo(camera.position);
     const lensingRange = (cfg.distorionRadius || 600) * 1.4;
+
+    // 先算目标值（不直接写 uniforms）
+    let targetX = 0.5, targetY = 0.5, targetStrength = 0, targetRadius = 0.16;
     if (dist < lensingRange && this.dangerLevel > 0) {
       this._tempVec.copy(this.group.position).project(camera);
       const screenX = (this._tempVec.x + 1) * 0.5;
       const screenY = (this._tempVec.y + 1) * 0.5;
       if (screenX > -0.1 && screenX < 1.1 && screenY > -0.1 && screenY < 1.1) {
-        uniforms.uLensCenter.value.set(screenX, screenY);
+        targetX = screenX;
+        targetY = screenY;
         const maxStrength = (cfg.lensingStrength || 0.35) * 1.5 * this.dangerLevel;
         const screenDist = Math.sqrt(
           (screenX - 0.5) * (screenX - 0.5) + (screenY - 0.5) * (screenY - 0.5)
         );
-        uniforms.uLensStrength.value = maxStrength / (1.0 + screenDist * screenDist * 80.0);
-        uniforms.uLensRadius.value = 0.16 + this.dangerLevel * 0.18;
-      } else { uniforms.uLensStrength.value = 0; }
-    } else { uniforms.uLensStrength.value = 0; }
+        targetStrength = maxStrength / (1.0 + screenDist * screenDist * 80.0);
+        targetRadius = 0.16 + this.dangerLevel * 0.18;
+      }
+    }
+
+    // v-fix: 平滑插值 — 避免镜头转动时扭曲中心/强度逐帧跳变造成"红光弥散"
+    if (this._lensSX === undefined) {
+      this._lensSX = 0.5; this._lensSY = 0.5; this._lensSS = 0; this._lensSR = 0.16;
+    }
+    const sm = 0.18; // 每帧朝目标移动 18%，约 5 帧到位（~80ms）
+    this._lensSX += (targetX - this._lensSX) * sm;
+    this._lensSY += (targetY - this._lensSY) * sm;
+    this._lensSS += (targetStrength - this._lensSS) * sm;
+    this._lensSR += (targetRadius - this._lensSR) * sm;
+
+    uniforms.uLensCenter.value.set(this._lensSX, this._lensSY);
+    uniforms.uLensStrength.value = this._lensSS;
+    uniforms.uLensRadius.value = this._lensSR;
   }
 
   // ==================== 行星吸收（v13: delta解耦） ====================

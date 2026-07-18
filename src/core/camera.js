@@ -11,7 +11,8 @@ export class CameraController {
     this.camera = null;
     this.aspect = window.innerWidth / window.innerHeight;
     this._currentMode = config.camera.defaultMode || 'close';
-    this._targetFov = config.camera.fov;
+    // 注意：FOV 运行时由 PlayerController 管理（冲刺 FOV 扩展），
+    // CameraController 仅负责 near/far 平滑过渡，避免两者互相覆盖。
     this._targetNear = config.camera.near;
     this._targetFar = config.camera.far;
   }
@@ -46,14 +47,14 @@ export class CameraController {
 
     this._currentMode = mode;
     if (smooth) {
-      this._targetFov = modeCfg.fov;
+      // fov 交给 PlayerController 平滑（其 baseFov 会同步更新），
+      // 这里只平滑 near/far，避免与冲刺 FOV 互相覆盖。
       this._targetNear = modeCfg.near;
       this._targetFar = modeCfg.far;
     } else {
       this.camera.fov = modeCfg.fov;
       this.camera.near = modeCfg.near;
       this.camera.far = modeCfg.far;
-      this._targetFov = modeCfg.fov;
       this._targetNear = modeCfg.near;
       this._targetFar = modeCfg.far;
       this.camera.updateProjectionMatrix();
@@ -68,25 +69,19 @@ export class CameraController {
   }
 
   /**
-   * 每帧插值 FOV/near/far（平滑过渡）
+   * 每帧平滑 near/far（fov 由 PlayerController 管理，避免冲刺 FOV 被覆盖）
    */
   update(delta) {
     if (!this.camera) return;
-    const fovDamp = 1 - Math.pow(0.001, delta);
-    const nearDamp = 1 - Math.pow(0.001, delta);
-    const farDamp = 1 - Math.pow(0.001, delta);
+    const damp = 1 - Math.pow(0.001, delta);
 
     let changed = false;
-    if (Math.abs(this.camera.fov - this._targetFov) > 0.01) {
-      this.camera.fov += (this._targetFov - this.camera.fov) * fovDamp;
-      changed = true;
-    }
     if (Math.abs(this.camera.near - this._targetNear) > 0.01) {
-      this.camera.near += (this._targetNear - this.camera.near) * nearDamp;
+      this.camera.near += (this._targetNear - this.camera.near) * damp;
       changed = true;
     }
     if (Math.abs(this.camera.far - this._targetFar) > 0.1) {
-      this.camera.far += (this._targetFar - this.camera.far) * farDamp;
+      this.camera.far += (this._targetFar - this.camera.far) * damp;
       changed = true;
     }
     if (changed) {

@@ -224,7 +224,6 @@ export class CometSystem {
       Math.pow(data.periodDays / MAX_PERIOD_DAYS, ORBIT_PERIOD_COMPRESS);
     comet.meanMotion = (Math.PI * 2) / visualPeriodSeconds;
 
-    comet._prevPos = null; // 记录上一帧位置用于计算速度方向
     this.group.add(comet.group);
     this.comets.push(comet);
   }
@@ -739,28 +738,13 @@ export class CometSystem {
       this._solveKepler(d, M);
       comet.group.position.copy(this._orbitPos);
 
-      // 尾部方向 = 与运动方向相反（拖尾效果）
-      // 真实彗星尾背向太阳，但视觉上尾随运动方向更符合直觉
+      // 尾部方向 = 背向太阳（真实彗星尾方向，开普勒远日点速度慢时也稳定无抖动）
       if (this._orbitPos.lengthSq() > 1e-6) {
-        if (comet._prevPos) {
-          // 用上一帧到当前帧的位移计算速度方向
-          const vel = new THREE.Vector3().copy(this._orbitPos).sub(comet._prevPos);
-          if (vel.lengthSq() > 0.001) {
-            this._tailTo.copy(vel).negate().normalize();
-          } else {
-            // 速度太小则回退到背向太阳
-            this._tailTo.copy(this._orbitPos).negate().normalize();
-          }
-        } else {
-          // 第一帧：背向太阳
-          this._tailTo.copy(this._orbitPos).negate().normalize();
-        }
+        this._tailTo.copy(this._orbitPos).negate().normalize();
         this._tailQ.setFromUnitVectors(this._tailFrom, this._tailTo);
         comet.tailGroup.quaternion.copy(this._tailQ);
         comet.coma.quaternion.copy(this._tailQ);
       }
-      // 保存当前帧位置供下一帧速度计算
-      comet._prevPos = this._orbitPos.clone();
 
       const r = this._orbitPos.length();
       const activity = this._computeActivity(d, r);

@@ -162,7 +162,7 @@ export class HUD {
       border: '1px solid rgba(100, 150, 255, 0.08)',
       borderRadius: '2px',
     });
-    hint.innerHTML = 'WASD 移动 · 鼠标 视角 · 空格 上升 · C 下降 · Shift 冲刺 · V 切换视角 · M 地图 · P 暂停';
+    hint.innerHTML = 'WASD 移动 · 鼠标 视角 · 空格 上升 · C 下降 · Shift 冲刺 · V 切换视角 · M 地图 · R 回起点 · P 暂停';
     document.body.appendChild(hint);
     this.elements.hint = hint;
   }
@@ -289,18 +289,7 @@ export class HUD {
     document.body.appendChild(container);
     this.elements.mapHeightSlider = container;
     this._mapHeightInput = document.getElementById('map-height-input');
-
-    // 滚轮控制高度
-    this._mapHeightInput.addEventListener('wheel', (e) => {
-      e.preventDefault();
-      const step = 20000;
-      const val = parseInt(this._mapHeightInput.value, 10);
-      const min = parseInt(this._mapHeightInput.min, 10);
-      const max = parseInt(this._mapHeightInput.max, 10);
-      this._mapHeightInput.value = Math.min(max, Math.max(min, val + (e.deltaY > 0 ? step : -step)));
-      // 触发 input 事件让 engine 响应
-      this._mapHeightInput.dispatchEvent(new Event('input'));
-    }, { passive: false });
+    // 注意：滚轮调整高度由 Engine 的 window wheel 监听统一处理，这里不再重复监听（避免双重调整）
   }
 
   createMapPlayerMarker() {

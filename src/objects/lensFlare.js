@@ -161,40 +161,58 @@ export class LensFlareSystem {
       return;
     }
 
-    // 亮度随到屏幕中心距离衰减 (中心最亮)
+    this.group.visible = true;
+    const fadeSpeed = 4.0 * delta;
+    const starDist = camera.position.distanceTo(starWorldPos);
+
+    // 关键修复 1：距离衰减 — 远处太阳/亮源 lens flare 平方反比衰减
+    // 玩家远离天体时 flare 自然弱化，避免"远处一团明显红光 + 弥散"
+    // 近距离（<3000）几乎全亮；3000→0.5；10000→0.09；50000→0.003
+    const distFade = 1.0 / (1.0 + (starDist / 3000.0) * (starDist / 3000.0));
+
+    // 屏幕中心衰减
     const centerFade = 1.0 - Math.min(1.0, screenDist / 1.2);
-    const targetOpacity = centerFade * brightness * 0.8;
+    const targetOpacity = centerFade * brightness * distFade * 0.8;
 
     if (targetOpacity < 0.05) {
       this._fade(delta);
       return;
     }
 
-    this.group.visible = true;
-    const fadeSpeed = 4.0 * delta;
+    // 关键修复 2：让 group 面向相机（lookAt），其局部 XY 对齐屏幕 right/up。
+    // 此前 dot 沿世界空间光轴分布且 group 无旋转，相机转动时世界轴在屏幕上的
+    // 投影方向变化，导致 dot 在屏幕上做圆弧扫过 → "红光弥散"。
+    this.group.position.copy(starWorldPos);
+    this.group.lookAt(camera.position);
 
-    // v2: 计算相机到恒星的世界空间方向向量，光斑沿此方向分布
-    this._flareDir.subVectors(starWorldPos, camera.position).normalize();
-    const starDist = camera.position.distanceTo(starWorldPos);
+    // 屏幕方向（恒星→屏幕中心连线，NDC 归一化）
+    const screenDirLen = Math.sqrt(screenX * screenX + screenY * screenY);
+    const sdx = screenDirLen > 1e-4 ? screenX / screenDirLen : 0;
+    const sdy = screenDirLen > 1e-4 ? screenY / screenDirLen : 0;
 
     this.flares.forEach(sprite => {
       const target = targetOpacity * sprite.userData.baseOpacity;
       sprite.material.opacity += (target - sprite.material.opacity) * fadeSpeed;
 
       if (sprite.userData.isDot) {
-        // v2: 光斑沿世界空间光轴（相机→恒星方向）分布
+        // 沿屏幕方向（恒星↔屏幕中心）在面向相机的平面上分布
         const offset = sprite.userData.offsetFactor;
         const distAlong = offset * starDist * 0.3;
-        sprite.position.copy(
-          this._flareDir.clone().multiplyScalar(distAlong)
-        );
+        const tx = sdx * distAlong;
+        const ty = sdy * distAlong;
+        // 关键修复 3：dot 位置平滑插值 — 避免镜头转动时 sdx/sdy 跳变
+        // 导致 dot 在屏幕上突然"跳动/扩散"造成弥散感
+        if (!sprite.userData._smoothPos) {
+          sprite.userData._smoothPos = { x: tx, y: ty };
+        } else {
+          sprite.userData._smoothPos.x += (tx - sprite.userData._smoothPos.x) * fadeSpeed;
+          sprite.userData._smoothPos.y += (ty - sprite.userData._smoothPos.y) * fadeSpeed;
+        }
+        sprite.position.set(sprite.userData._smoothPos.x, sprite.userData._smoothPos.y, 0);
       } else {
         sprite.position.set(0, 0, 0);
       }
     });
-
-    // 整体位置跟随恒星
-    this.group.position.copy(starWorldPos);
   }
 
   _fade(delta) {
