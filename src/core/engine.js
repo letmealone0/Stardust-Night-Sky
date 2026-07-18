@@ -11,6 +11,7 @@ import { RendererManager } from './renderer.js';
 import { PlayerController } from '../controls/player.js';
 import { PostProcessingManager } from '../postprocessing/composer.js';
 import { HUD } from '../ui/hud.js';
+import { TrackingController } from '../controls/tracking.js';
 
 export class Engine {
   constructor() {
@@ -124,6 +125,15 @@ export class Engine {
     if (objs.nebula) objs.nebula.setHUD(this.hud);
     if (objs.planets) objs.planets.setHUD(this.hud);
 
+    // 创建跟踪视角控制器
+    this.tracking = new TrackingController(this.camera.camera, this.renderer.renderer.domElement);
+    this.tracking.init();
+    this.tracking.setTargets(this._collectTrackTargets());
+    this.tracking.setOnExit(() => this._onTrackingExit());
+    this.hud.setTrackingTargets(this.tracking.getTargets());
+    this.hud.setOnTrackSelect((i) => this._enterTracking(i));
+    this.hud.setOnMenuClose(() => this._closeTrackingMenu());
+
     // 绑定事件
     this.bindEvents();
 
@@ -167,6 +177,8 @@ export class Engine {
     // 锁定/解锁鼠标（地图模式下不锁定，保持鼠标指针可见）
     this.onDocumentClickBound = () => {
       if (this._isMapMode) return;
+      // 跟踪模式或菜单打开时不锁定鼠标（OrbitControls/菜单需要自由鼠标）
+      if (this.tracking?.isActive() || this.hud?.isMenuOpen()) return;
       if (this.player && this.player.controls && !this.player.controls.isLocked) {
         this.player.requestLock();
       }
@@ -182,6 +194,8 @@ export class Engine {
     this.player.controls.addEventListener('lock', this.onLockBound);
 
     this.onUnlockBound = () => {
+      // 跟踪模式或菜单打开时，解锁鼠标不暂停（场景继续更新）
+      if (this.tracking?.isActive() || this.hud?.isMenuOpen()) return;
       this.isPaused = true;
       this.hud.showMessage('点击屏幕继续探索');
     };
@@ -215,9 +229,26 @@ export class Engine {
       if (e.code === 'KeyV') {
         this._toggleViewMode();
       }
-      if (e.code === 'KeyR' && !this._isMapMode && this.player) {
+      if (e.code === 'KeyR' && !this._isMapMode && !this.tracking?.isActive() && this.player) {
         this.player.resetToStart();
         this.hud.showMessage('已返回起始位置', 2000);
+      }
+      if (e.code === 'KeyT' && !this._isMapMode) {
+        this._toggleTrackingMenu();
+      }
+      if (e.code === 'Tab') {
+        e.preventDefault();
+        if (this.tracking?.isActive()) {
+          this.tracking.nextTarget(e.shiftKey ? -1 : 1);
+          this.hud.updateTrackingStatus(this.tracking.getCurrentName());
+        }
+      }
+      if (e.code === 'Escape') {
+        if (this.hud?.isMenuOpen()) {
+          this._closeTrackingMenu();
+        } else if (this.tracking?.isActive()) {
+          this.tracking.exit();
+        }
       }
     };
     window.addEventListener('keydown', this.onKeyDownBound);
@@ -309,6 +340,45 @@ export class Engine {
     // 暂停时只更新 camera uniform（避免恢复时位置跳变），跳过重计算
     if (this.isPaused && !this._isMapMode && this._mapBlend >= 1.0) {
       if (this.scene.objects.nebula) this.scene.objects.nebula.update(0, elapsed, this.camera.camera);
+      this.postprocessing.render(delta);
+      return;
+    }
+
+    // 跟踪视角模式：由 TrackingController 接管相机，跳过第一人称逻辑
+    if (this.tracking?.isActive()) {
+      // 关键时序：先更新场景（让 planet 移到当前帧位置），再让跟踪相机跟随。
+      // 否则 tracking.update 用上一帧 worldPos，相机看的是上一帧位置、planet 已飞到新位置，
+      // 在运动快的天体（彗星近日点、内行星）上每帧 1-2 单位偏差 → 画面晃动。
+      const zeroVel = this._worldVel ? this._worldVel.set(0, 0, 0) : new THREE.Vector3();
+      this.scene.update(this.isMotionFrozen ? 0 : delta, elapsed, 0, zeroVel);
+      this.tracking.update(delta);
+      this.camera.update(delta); // near/far 平滑
+      this.hud.update(delta);
+      this.hud.updatePosition(
+        this.camera.camera.position.x,
+        this.camera.camera.position.y,
+        this.camera.camera.position.z
+      );
+      this.hud.updateSpeed(0);
+      // 黑洞危险等级（跟踪时也显示警告）
+      if (this.scene.objects.blackholes.length > 0) {
+        let maxDanger = 0;
+        for (const bh of this.scene.objects.blackholes) maxDanger = Math.max(maxDanger, bh.getDangerLevel());
+        this.hud.updateDanger(maxDanger);
+      }
+      this._applyCelestialPostEffects(delta);
+      // 银河宏观运动（太阳系公转 + 较差自转）
+      const gm = config.galaxyMotion;
+      if (gm && gm.enabled !== false && !this.isMotionFrozen) {
+        const ts = gm.timeScale || 1;
+        if (this.scene.solarOrbitNode) this.scene.solarOrbitNode.rotation.y += (gm.solarOrbitSpeed || 0.0015) * delta * ts;
+        const gmMat = this.scene.objects.stars?.galaxyMaterial;
+        if (gmMat?.uniforms) {
+          gmMat.uniforms.uTimeScale.value = ts;
+          gmMat.uniforms.uCoreRotSpeed.value = gm.coreRotSpeed || 0.008;
+          gmMat.uniforms.uRadiusFalloff.value = gm.radiusFalloff || 0.00004;
+        }
+      }
       this.postprocessing.render(delta);
       return;
     }
@@ -441,65 +511,8 @@ export class Engine {
     this.hud.updateWarpEffect(this.player.getSpeed(), currentMaxSpeed);
     this.hud.updateSprint(this.player.isSprinting());
 
-    // v11: 更新天体后处理特效（每帧重置，由各天体自行设置强度）
-    const cPass = this.postprocessing.getCelestialPass();
-    if (cPass) {
-      const u = cPass.uniforms;
-      // 黑洞引力透镜（v-fix: 对 dangerLevel 最大的黑洞生效，而非固定 blackholes[0]）
-      // 此前只调 blackholes[0]，若玩家接近的是第2个黑洞，其引力透镜完全不触发
-      let activeBH = null;
-      let maxDanger = 0;
-      for (const bh of this.scene.objects.blackholes) {
-        const d = bh.getDangerLevel();
-        if (d > maxDanger) { maxDanger = d; activeBH = bh; }
-      }
-      if (activeBH) {
-        activeBH.updatePostEffects(u, this.camera.camera);
-      } else if (this.scene.objects.blackholes.length > 0) {
-        // 无接近黑洞时仍调最近的一个，让其平滑衰减透镜到 0（避免残留扭曲）
-        let nearest = this.scene.objects.blackholes[0];
-        let nd = nearest.group.position.distanceTo(this.camera.camera.position);
-        for (const bh of this.scene.objects.blackholes) {
-          const d = bh.group.position.distanceTo(this.camera.camera.position);
-          if (d < nd) { nd = d; nearest = bh; }
-        }
-        nearest.updatePostEffects(u, this.camera.camera);
-      }
-      // v25.1: 多脉冲星后处理累加（取最大值合并，避免互相覆盖）
-      if (this.scene.objects.pulsars.length > 0) {
-        // 先重置脉冲星相关uniform
-        const prevNoise = u.uNoiseIntensity.value;
-        const prevFlash = u.uFlashIntensity.value;
-        const prevCA = u.uChromaticAberration.value;
-        u.uNoiseIntensity.value = 0;
-        u.uFlashIntensity.value = 0;
-        u.uChromaticAberration.value = 0;
-
-        for (const psr of this.scene.objects.pulsars) {
-          psr.updatePostEffects(u, this.camera.camera, delta);
-        }
-
-        // 确保最终值取累加后的最大值（防止uniform被覆盖回零）
-        u.uNoiseIntensity.value = Math.max(prevNoise, u.uNoiseIntensity.value);
-        u.uFlashIntensity.value = Math.max(prevFlash, u.uFlashIntensity.value);
-        if (u.uChromaticAberration) {
-          u.uChromaticAberration.value = Math.max(prevCA, u.uChromaticAberration.value);
-        }
-      }
-      // 星云雾化
-      if (this.scene.objects.nebula) {
-        this.scene.objects.nebula.updatePostEffects(u, this.camera.camera);
-      }
-      // v13: 更新星云太阳方向（复用临时向量避免GC）
-      if (this.scene.objects.nebula && this.scene.objects.solarSystem?.sun) {
-        this._sunPos.set(0, 0, 0);
-        this.scene.objects.solarSystem.sun.getWorldPosition(this._sunPos);
-        this.scene.objects.nebula.nebulae?.forEach(neb => {
-          this._sunPos.sub(neb.position).normalize();
-          neb.userData?.material?.uniforms?.uSunDir?.value?.copy(this._sunPos);
-        });
-      }
-    }
+    // v11: 更新天体后处理特效（提取为方法，第一人称/跟踪共用）
+    this._applyCelestialPostEffects(delta);
 
     // v10.0: 银河宏观运动 — 太阳系公转 + 较差自转
     const gm = config.galaxyMotion;
@@ -634,6 +647,179 @@ export class Engine {
     this._mapBlend = 0; // 启动过渡动画
   }
 
+  // ==================== 跟踪视角 ====================
+
+  /** 收集所有可跟踪天体 */
+  _collectTrackTargets() {
+    const targets = [];
+    const objs = this.scene.objects;
+
+    // 太阳
+    if (objs.solarSystem?.sun) {
+      targets.push({
+        name: '太阳', type: 'star',
+        getWorldPos: (v) => objs.solarSystem.sun.getWorldPosition(v),
+        radius: config.solarSystem.sunRadius || 120,
+      });
+    }
+    // 8 大行星 + 卫星
+    if (objs.solarSystem?.planets) {
+      objs.solarSystem.planets.forEach(p => {
+        targets.push({
+          name: p.data.name, type: 'planet',
+          getWorldPos: (v) => p.group.getWorldPosition(v),
+          getVelocityDir: (v) => {
+            // 轨道切线方向（运动方向）：rad × yAxis（绕 Y 正转的切线）
+            const pivotPos = new THREE.Vector3();
+            p.orbitPivot.getWorldPosition(pivotPos);
+            const planetPos = new THREE.Vector3();
+            p.group.getWorldPosition(planetPos);
+            const rad = new THREE.Vector3().subVectors(planetPos, pivotPos);
+            const q = new THREE.Quaternion();
+            p.orbitPivot.getWorldQuaternion(q);
+            const yAxis = new THREE.Vector3(0, 1, 0).applyQuaternion(q);
+            return v.copy(rad).cross(yAxis).normalize();
+          },
+          radius: p.data.radius,
+        });
+        // 不跟踪卫星：太小且绕行星快速运动，Tab 切换时视觉混乱
+      });
+    }
+    // 彗星
+    if (objs.comets?.comets) {
+      objs.comets.comets.forEach(c => {
+        targets.push({
+          name: c.data.nameCN || c.data.name, type: 'comet',
+          getWorldPos: (v) => c.group.getWorldPosition(v),
+          radius: c.data.comaRadius || 20,
+        });
+      });
+    }
+    // 黑洞
+    objs.blackholes.forEach((bh, i) => {
+      targets.push({
+        name: `黑洞 ${i + 1}`, type: 'blackhole',
+        getWorldPos: (v) => bh.group.getWorldPosition(v),
+        radius: config.blackhole.accretionOuterRadius || 200,
+      });
+    });
+    // 脉冲星
+    objs.pulsars.forEach((psr, i) => {
+      targets.push({
+        name: `脉冲星 ${i + 1}`, type: 'pulsar',
+        getWorldPos: (v) => psr.group.getWorldPosition(v),
+        radius: config.pulsar.radius * 5 || 25,
+      });
+    });
+    // 随机系外行星
+    if (objs.planets?.getPlanets) {
+      objs.planets.getPlanets().forEach((p, i) => {
+        targets.push({
+          name: `系外行星 ${i + 1}`, type: 'exoplanet',
+          getWorldPos: (v) => p.getWorldPosition(v),
+          radius: p.userData?.radius || 50,
+        });
+      });
+    }
+    return targets;
+  }
+
+  _enterTracking(index) {
+    if (!this.tracking) return;
+    // 解锁鼠标（OrbitControls 需要自由鼠标）
+    if (this.player.controls.isLocked) {
+      this.player.controls.unlock();
+    }
+    this.tracking.enter(index);
+    this.hud.hideTrackingMenu();
+    this.hud.updateTrackingStatus(this.tracking.getCurrentName());
+    this.hud.showMessage(`跟踪：${this.tracking.getCurrentName()}`, 2000);
+  }
+
+  _toggleTrackingMenu() {
+    if (this.hud.isMenuOpen()) {
+      this._closeTrackingMenu();
+    } else {
+      if (this.player.controls.isLocked) {
+        this.player.controls.unlock();
+      }
+      this.hud.showTrackingMenu();
+    }
+  }
+
+  _closeTrackingMenu() {
+    this.hud.hideTrackingMenu();
+    // 若未在跟踪，恢复第一人称运行状态（不主动 requestLock，由用户点击触发）
+    if (!this.tracking?.isActive()) {
+      this.isPaused = false;
+      this.hud.showMessage('点击屏幕继续探索');
+    }
+  }
+
+  _onTrackingExit() {
+    this.hud.updateTrackingStatus(null);
+    // 显式恢复运行状态（避免 onUnlockBound 在非手势 requestLock 失败时误设 isPaused=true 导致画面冻结）
+    this.isPaused = false;
+    this.hud.showMessage('点击屏幕继续探索');
+    // 不在此 requestLock：requestPointerLock 需用户手势，setTimeout 内调用会被浏览器拒绝
+    // 且 lock→unlock 抖动会触发 onUnlockBound 设 isPaused=true。改由用户点击触发（onDocumentClickBound）
+  }
+
+  /** 天体后处理特效（黑洞引力透镜 + 脉冲星 + 星云）— 第一人称/跟踪共用 */
+  _applyCelestialPostEffects(delta) {
+    const cPass = this.postprocessing.getCelestialPass();
+    if (!cPass) return;
+    const u = cPass.uniforms;
+    // 黑洞引力透镜（对 dangerLevel 最大的黑洞生效）
+    let activeBH = null;
+    let maxDanger = 0;
+    for (const bh of this.scene.objects.blackholes) {
+      const d = bh.getDangerLevel();
+      if (d > maxDanger) { maxDanger = d; activeBH = bh; }
+    }
+    if (activeBH) {
+      activeBH.updatePostEffects(u, this.camera.camera);
+    } else if (this.scene.objects.blackholes.length > 0) {
+      let nearest = this.scene.objects.blackholes[0];
+      let nd = nearest.group.position.distanceTo(this.camera.camera.position);
+      for (const bh of this.scene.objects.blackholes) {
+        const d = bh.group.position.distanceTo(this.camera.camera.position);
+        if (d < nd) { nd = d; nearest = bh; }
+      }
+      nearest.updatePostEffects(u, this.camera.camera);
+    }
+    // 脉冲星后处理（累加取最大）
+    if (this.scene.objects.pulsars.length > 0) {
+      const prevNoise = u.uNoiseIntensity.value;
+      const prevFlash = u.uFlashIntensity.value;
+      const prevCA = u.uChromaticAberration.value;
+      u.uNoiseIntensity.value = 0;
+      u.uFlashIntensity.value = 0;
+      u.uChromaticAberration.value = 0;
+      for (const psr of this.scene.objects.pulsars) {
+        psr.updatePostEffects(u, this.camera.camera, delta);
+      }
+      u.uNoiseIntensity.value = Math.max(prevNoise, u.uNoiseIntensity.value);
+      u.uFlashIntensity.value = Math.max(prevFlash, u.uFlashIntensity.value);
+      if (u.uChromaticAberration) {
+        u.uChromaticAberration.value = Math.max(prevCA, u.uChromaticAberration.value);
+      }
+    }
+    // 星云雾化
+    if (this.scene.objects.nebula) {
+      this.scene.objects.nebula.updatePostEffects(u, this.camera.camera);
+    }
+    // 星云太阳方向
+    if (this.scene.objects.nebula && this.scene.objects.solarSystem?.sun) {
+      this._sunPos.set(0, 0, 0);
+      this.scene.objects.solarSystem.sun.getWorldPosition(this._sunPos);
+      this.scene.objects.nebula.nebulae?.forEach(neb => {
+        this._sunPos.sub(neb.position).normalize();
+        neb.userData?.material?.uniforms?.uSunDir?.value?.copy(this._sunPos);
+      });
+    }
+  }
+
   /**
    * 销毁引擎
    */
@@ -655,6 +841,7 @@ export class Engine {
     if (this.postprocessing) this.postprocessing.dispose();
     if (this.hud) this.hud.dispose();
     if (this.player) this.player.dispose();
+    if (this.tracking) this.tracking.dispose();
     if (this.camera) this.camera.dispose();
     if (this.renderer) this.renderer.dispose();
   }

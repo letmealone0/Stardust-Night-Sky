@@ -112,10 +112,10 @@ export class SolarSystem {
     const glowGeo = new THREE.SphereGeometry(cfg.sunRadius * 3, 32, 32);
     const glowMat = new THREE.ShaderMaterial({
       uniforms: { uTime: { value: 0 } },
-      vertexShader: `varying vec3 vNormal; varying vec3 vWorldPos; void main() { vNormal = normalize(normalMatrix * normal); vWorldPos = (modelMatrix * vec4(position,1.0)).xyz; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
+      vertexShader: `varying vec3 vNormal; varying vec3 vWorldPos; varying float vCamDist; varying float vRadius; void main() { vNormal = normalize(normalMatrix * normal); vWorldPos = (modelMatrix * vec4(position,1.0)).xyz; vec3 center = (modelMatrix * vec4(0.0,0.0,0.0,1.0)).xyz; vCamDist = length(cameraPosition - center); vRadius = length(position); gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
       fragmentShader: `
         precision highp float;
-        varying vec3 vNormal; varying vec3 vWorldPos; uniform float uTime;
+        varying vec3 vNormal; varying vec3 vWorldPos; varying float vCamDist; varying float vRadius; uniform float uTime;
         float hash(vec3 p){ return fract(sin(dot(p, vec3(127.1,311.7,74.7)))*43758.5453); }
         float noise(vec3 p){ vec3 i=floor(p),f=fract(p); f=f*f*(3.0-2.0*f);
           return mix(mix(mix(hash(i),hash(i+vec3(1,0,0)),f.x),mix(hash(i+vec3(0,1,0)),hash(i+vec3(1,1,0)),f.x),f.y),
@@ -126,6 +126,9 @@ export class SolarSystem {
           float alpha = exp(-rim * 3.5) * 0.9;  // 中心不透明，外层自然淡出
           float n = noise(vWorldPos * 0.015 + uTime * 0.05) * 0.2;
           float total = alpha * (1.0 + n);
+          // 相机进入光晕球体时淡出，避免遮挡镜头（跟踪行星靠近太阳时）
+          float camFade = smoothstep(vRadius * 0.7, vRadius * 1.3, vCamDist);
+          total *= camFade;
           vec3 c = mix(vec3(1.0, 1.0, 0.85), vec3(1.0, 0.85, 0.4), smoothstep(0.3, 0.7, rim));
           c = mix(c, vec3(0.9, 0.5, 0.15), smoothstep(0.6, 1.0, rim));
           gl_FragColor = vec4(c * total, total * 0.8);
@@ -143,9 +146,14 @@ export class SolarSystem {
       vertexShader: `
         varying vec3 vNormal;
         varying vec3 vWorldPos;
+        varying float vCamDist;
+        varying float vRadius;
         void main() {
           vNormal = normalize(normalMatrix * normal);
           vWorldPos = (modelMatrix * vec4(position, 1.0)).xyz;
+          vec3 center = (modelMatrix * vec4(0.0, 0.0, 0.0, 1.0)).xyz;
+          vCamDist = length(cameraPosition - center);
+          vRadius = length(position);
           gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
         }
       `,
@@ -153,6 +161,8 @@ export class SolarSystem {
         precision highp float;
         varying vec3 vNormal;
         varying vec3 vWorldPos;
+        varying float vCamDist;
+        varying float vRadius;
         uniform float uTime;
 
         // Simplex 3D noise
@@ -212,7 +222,9 @@ export class SolarSystem {
           // v15: 三段颜色渐变(亮黄→橙→暗红)
           vec3 c = mix(vec3(1.0, 0.95, 0.6), vec3(1.0, 0.6, 0.15), granMix);
           c = mix(c, vec3(0.8, 0.15, 0.02), pow(rim, 4.0));
-          gl_FragColor = vec4(c, intensity * 0.3 * pulse);
+          // 相机进入日冕球体时淡出，避免遮挡镜头
+          float camFade = smoothstep(vRadius * 0.7, vRadius * 1.3, vCamDist);
+          gl_FragColor = vec4(c, intensity * 0.3 * pulse * camFade);
         }
       `,
       blending: THREE.AdditiveBlending, side: THREE.BackSide, transparent: true, depthWrite: false,
@@ -375,9 +387,14 @@ export class SolarSystem {
       vertexShader: `
         varying vec3 vNormal;
         varying vec3 vWorldPos;
+        varying float vCamDist;
+        varying float vRadius;
         void main() {
           vNormal = normalize(normalMatrix * normal);
           vWorldPos = (modelMatrix * vec4(position, 1.0)).xyz;
+          vec3 center = (modelMatrix * vec4(0.0, 0.0, 0.0, 1.0)).xyz;
+          vCamDist = length(cameraPosition - center);
+          vRadius = length(position);
           gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
         }
       `,

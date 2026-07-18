@@ -42,7 +42,7 @@ const COMET_DATA = [
   {
     id: 'encke', name: '2P/Encke', nameCN: '恩克彗星',
     lastPerihelionMs: Date.UTC(2023, 9, 22),
-    a: 1500, e: 0.848, i: 12, ω: 186, periodDays: 1205,
+    a: 2800, e: 0.848, i: 12, ω: 186, periodDays: 1205,
     nucleusRadius: 1.3, comaRadius: 10,
     dustLen: 280, dustHalfW: 3.0, ionLen: 380, ionHalfW: 0.5,
     dustInner: [0.52, 0.24, 0.72],

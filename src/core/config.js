@@ -415,6 +415,19 @@ export const config = {
     warmupSeconds: 3,          // v8.0: 启动预热时间（期间不降质）
     maxTotalParticles: 200000, // 粒子总数上限
   },
+
+  // ---- 跟踪视角 ----
+  // 距离系数：跟踪时相机距天体 = radius × distanceFactor
+  //   3.5 = 默认（天体占屏幕 ~35%，看清全貌+留白）
+  //   2.0 = 近（占屏幕 ~60%）
+  //   5.0 = 远（占屏幕 ~25%）
+  // 改这个值可整体调整跟踪远近
+  tracking: {
+    distanceFactor: 3.5,      // 距离系数（半径的倍数）
+    transitionDuration: 1.5,  // 进入/退出过渡时长（秒）
+    dampingFactor: 0.08,      // OrbitControls 阻尼系数
+    maxDistanceFactor: 50,    // 最大缩放距离 = 半径 × 50
+  },
 };
 
 // ---- v25: 运行时配置安全校验（防止缺失字段导致 NaN 错误）----

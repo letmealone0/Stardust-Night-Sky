@@ -29,6 +29,8 @@ export class HUD {
     this.createMapSunMarker();
     this.createMapPlayerMarker();
     this.createMapHeightSlider();
+    this.createTrackingMenu();
+    this.createTrackingStatus();
 
     // 缓存常用 DOM 引用
     this._fpsEl = document.getElementById('fps');
@@ -162,7 +164,7 @@ export class HUD {
       border: '1px solid rgba(100, 150, 255, 0.08)',
       borderRadius: '2px',
     });
-    hint.innerHTML = 'WASD 移动 · 鼠标 视角 · 空格 上升 · C 下降 · Shift 冲刺 · V 切换视角 · M 地图 · R 回起点 · P 暂停';
+    hint.innerHTML = 'WASD 移动 · 鼠标 视角 · Shift 冲刺 · V 视角 · M 地图 · T 跟踪 · R 回起点 · P 暂停';
     document.body.appendChild(hint);
     this.elements.hint = hint;
   }
@@ -476,6 +478,111 @@ export class HUD {
 
   update(delta) {
     // 实时更新逻辑可在此扩展
+  }
+
+  // ==================== 跟踪视角：天体选择菜单 + 状态条 ====================
+  createTrackingMenu() {
+    const menu = document.createElement('div');
+    menu.id = 'tracking-menu';
+    this.applyStyles(menu, {
+      position: 'fixed', top: '0', left: '0', width: '100%', height: '100%',
+      background: 'rgba(0, 5, 15, 0.85)',
+      backdropFilter: 'blur(8px)',
+      zIndex: '2000',
+      display: 'none',
+      overflowY: 'auto',
+      padding: '40px 20px',
+      boxSizing: 'border-box',
+    });
+
+    const inner = document.createElement('div');
+    inner.style.cssText = 'max-width: 900px; margin: 0 auto;';
+
+    const title = document.createElement('div');
+    title.style.cssText = 'color: rgba(150,200,255,0.9); font-size: 20px; letter-spacing: 4px; text-align: center; margin-bottom: 8px; text-transform: uppercase;';
+    title.textContent = '天体跟踪';
+    inner.appendChild(title);
+
+    const subtitle = document.createElement('div');
+    subtitle.style.cssText = 'color: rgba(150,180,220,0.5); font-size: 11px; letter-spacing: 2px; text-align: center; margin-bottom: 24px;';
+    subtitle.textContent = '点击天体进入跟踪 · T/Esc 关闭 · 跟踪中 Tab 切换';
+    inner.appendChild(subtitle);
+
+    this._trackingGrid = document.createElement('div');
+    this._trackingGrid.style.cssText = 'display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 10px;';
+    inner.appendChild(this._trackingGrid);
+
+    const closeBtn = document.createElement('button');
+    closeBtn.textContent = '返回探索 (Esc)';
+    closeBtn.style.cssText = 'display:block; margin: 24px auto 0; padding: 10px 24px; background: rgba(100,150,255,0.15); border: 1px solid rgba(100,150,255,0.3); color: rgba(200,220,255,0.9); border-radius: 4px; cursor: pointer; font-size: 13px; letter-spacing: 2px;';
+    closeBtn.onmouseover = () => closeBtn.style.background = 'rgba(100,150,255,0.25)';
+    closeBtn.onmouseout = () => closeBtn.style.background = 'rgba(100,150,255,0.15)';
+    closeBtn.onclick = () => { if (this._onMenuClose) this._onMenuClose(); };
+    inner.appendChild(closeBtn);
+
+    menu.appendChild(inner);
+    document.body.appendChild(menu);
+    this.elements.trackingMenu = menu;
+    this._trackingTargets = [];
+  }
+
+  setTrackingTargets(targets) {
+    this._trackingTargets = targets || [];
+    this._renderTrackingGrid();
+  }
+
+  _renderTrackingGrid() {
+    if (!this._trackingGrid) return;
+    this._trackingGrid.innerHTML = '';
+    const typeLabels = {
+      star: '恒星', planet: '行星', moon: '卫星',
+      comet: '彗星', blackhole: '黑洞', pulsar: '脉冲星', exoplanet: '系外行星',
+    };
+    const typeColors = {
+      star: '#ffaa55', planet: '#66aaff', moon: '#cccccc',
+      comet: '#aa88ff', blackhole: '#ff6644', pulsar: '#55ddff', exoplanet: '#88dd88',
+    };
+    this._trackingTargets.forEach((t, i) => {
+      const card = document.createElement('div');
+      const color = typeColors[t.type] || '#888888';
+      card.style.cssText = 'padding: 14px 12px; background: linear-gradient(135deg, rgba(10,20,40,0.6), rgba(5,10,20,0.4)); border: 1px solid rgba(100,150,255,0.2); border-radius: 6px; cursor: pointer; transition: all 0.2s;';
+      card.onmouseover = () => { card.style.borderColor = color; card.style.transform = 'translateY(-2px)'; };
+      card.onmouseout = () => { card.style.borderColor = 'rgba(100,150,255,0.2)'; card.style.transform = 'none'; };
+      card.innerHTML = `<div style="font-size: 14px; color: rgba(220,235,255,0.95); margin-bottom: 4px;">${t.name}</div><div style="font-size: 10px; color: ${color}; letter-spacing: 2px; text-transform: uppercase;">${typeLabels[t.type] || t.type}</div>`;
+      card.onclick = () => { if (this._onTrackSelect) this._onTrackSelect(i); };
+      this._trackingGrid.appendChild(card);
+    });
+  }
+
+  showTrackingMenu() { if (this.elements.trackingMenu) this.elements.trackingMenu.style.display = 'block'; }
+  hideTrackingMenu() { if (this.elements.trackingMenu) this.elements.trackingMenu.style.display = 'none'; }
+  isMenuOpen() { return this.elements.trackingMenu && this.elements.trackingMenu.style.display !== 'none'; }
+  setOnTrackSelect(cb) { this._onTrackSelect = cb; }
+  setOnMenuClose(cb) { this._onMenuClose = cb; }
+
+  createTrackingStatus() {
+    const bar = document.createElement('div');
+    bar.id = 'tracking-status';
+    this.applyStyles(bar, {
+      position: 'fixed', top: '20px', left: '50%', transform: 'translateX(-50%)',
+      color: 'rgba(200,220,255,0.95)', fontFamily: "'JetBrains Mono', monospace",
+      fontSize: '13px', letterSpacing: '2px', zIndex: '1001',
+      padding: '10px 20px', background: 'linear-gradient(135deg, rgba(10,20,40,0.6), rgba(5,10,20,0.4))',
+      border: '1px solid rgba(100,150,255,0.25)', borderRadius: '4px',
+      backdropFilter: 'blur(4px)', display: 'none', whiteSpace: 'nowrap',
+      textShadow: '0 0 10px rgba(100,150,255,0.4)',
+    });
+    bar.innerHTML = '<span id="tracking-name">--</span> · <span style="color:rgba(150,180,220,0.6)">鼠标环绕 · 滚轮缩放 · Tab 切换 · Esc 返回</span>';
+    document.body.appendChild(bar);
+    this.elements.trackingStatus = bar;
+  }
+
+  updateTrackingStatus(name) {
+    if (this.elements.trackingStatus) {
+      const nameEl = this.elements.trackingStatus.querySelector('#tracking-name');
+      if (nameEl) nameEl.textContent = `◆ ${name || '--'}`;
+      this.elements.trackingStatus.style.display = name ? 'block' : 'none';
+    }
   }
 
   applyStyles(element, styles) {
