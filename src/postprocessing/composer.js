@@ -5,6 +5,7 @@ import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js'
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { config } from '../core/config.js';
+import { BLACKHOLE_RAY_SHADER } from '../objects/blackhole_raytrace.js';
 
 /** v25: 统一后处理特效 Shader（引力透镜 + 脉冲噪点 + 闪光 + 星云雾化 + 运动模糊 + 自动曝光 + 色彩分级） */
 const CelestialEffectsShader = {
@@ -190,6 +191,7 @@ export class PostProcessingManager {
     this.camera = camera;
     this.composer = null;
     this.bloomPass = null;
+    this.bhRayPass = null;      // v29: Gargantua 黑洞光线追踪
     this.celestialPass = null;
     this.dofPass = null;
     this._prevCamPos = new THREE.Vector3();
@@ -229,6 +231,22 @@ export class PostProcessingManager {
     );
     this.composer.addPass(this.bloomPass);
 
+    // Pass 2.5: v29 Gargantua 黑洞光线追踪（Bloom 之后、Celestial 之前）
+    this.bhRayPass = new ShaderPass(BLACKHOLE_RAY_SHADER);
+    this.bhRayPass.uniforms.uSteps.value = config.blackhole.raytrace.steps;
+    this.bhRayPass.uniforms.uDin.value = config.blackhole.raytrace.diskInner;
+    this.bhRayPass.uniforms.uDout.value = config.blackhole.raytrace.diskOuter;
+    this.bhRayPass.uniforms.uDopMax.value = config.blackhole.raytrace.dopplerMax;
+    this.bhRayPass.uniforms.uOpNear.value = config.blackhole.raytrace.opacityNear;
+    this.bhRayPass.uniforms.uOpFar.value = config.blackhole.raytrace.opacityFar;
+    this.bhRayPass.uniforms.uDiskBright.value = config.blackhole.raytrace.diskBrightness;
+    this.bhRayPass.uniforms.uStarBright.value = config.blackhole.raytrace.starBrightness;
+    this.bhRayPass.uniforms.uSkyFloor.value = config.blackhole.raytrace.skyFloor;
+    this.bhRayPass.uniforms.uRotSpeed.value = config.blackhole.raytrace.rotSpeed;
+    this.bhRayPass.uniforms.uSizeScale.value = config.blackhole.raytrace.sizeScale || 3.0;
+    this.bhRayPass.uniforms.uDebug.value = config.blackhole.raytrace.debug;
+    this.composer.addPass(this.bhRayPass);
+
     // Pass 3: 天体效果 + 运动模糊 + 镜头效果 + 色调增强
     this.celestialPass = new ShaderPass(CelestialEffectsShader);
     this.composer.addPass(this.celestialPass);
@@ -249,6 +267,10 @@ export class PostProcessingManager {
 
   getCelestialPass() {
     return this.celestialPass;
+  }
+
+  getBhRayPass() {
+    return this.bhRayPass;
   }
 
   /** v25: 自动曝光更新 — 根据场景亮度动态调整曝光值 */
@@ -337,6 +359,7 @@ export class PostProcessingManager {
       this.composer = null;
     }
     this.bloomPass = null;
+    this.bhRayPass = null;
     this.celestialPass = null;
     this.dofPass = null;
   }

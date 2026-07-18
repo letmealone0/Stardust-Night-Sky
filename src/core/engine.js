@@ -52,6 +52,7 @@ export class Engine {
     this._mapToPos = new THREE.Vector3();
     this._mapToQuat = new THREE.Quaternion();
     this._mapTempM4 = new THREE.Matrix4();
+    this._trackingJustExited = false;  // v29-fix: 跟踪退出后短暂忽略 unlock
   }
 
   /**
@@ -187,6 +188,7 @@ export class Engine {
 
     this.onLockBound = () => {
       this.isPaused = false;
+      this._trackingJustExited = false;  // v29-fix: 锁定成功，清除保护标志
       // v-latest: 锁定后同步内部朝向，避免从地图模式返回或初始进入时视角跳变
       if (this.player) this.player.syncOrientation();
       this.hud.showMessage('已锁定鼠标 - WASD移动 Shift冲刺 C下降 空格上升');
@@ -194,6 +196,8 @@ export class Engine {
     this.player.controls.addEventListener('lock', this.onLockBound);
 
     this.onUnlockBound = () => {
+      // v29-fix: 跟踪刚退出时忽略 unlock 事件，防止 isPaused 被误设回 true
+      if (this._trackingJustExited) return;
       // 跟踪模式或菜单打开时，解锁鼠标不暂停（场景继续更新）
       if (this.tracking?.isActive() || this.hud?.isMenuOpen()) return;
       this.isPaused = true;
@@ -337,22 +341,13 @@ export class Engine {
       }
     }
 
-    // 暂停时只更新 camera uniform（避免恢复时位置跳变），跳过重计算
-    if (this.isPaused && !this._isMapMode && this._mapBlend >= 1.0) {
-      if (this.scene.objects.nebula) this.scene.objects.nebula.update(0, elapsed, this.camera.camera);
-      this.postprocessing.render(delta);
-      return;
-    }
-
+    // v29-fix: 跟踪视角优先于暂停 — 确保暂停状态下也能进入/退出跟踪
     // 跟踪视角模式：由 TrackingController 接管相机，跳过第一人称逻辑
     if (this.tracking?.isActive()) {
-      // 关键时序：先更新场景（让 planet 移到当前帧位置），再让跟踪相机跟随。
-      // 否则 tracking.update 用上一帧 worldPos，相机看的是上一帧位置、planet 已飞到新位置，
-      // 在运动快的天体（彗星近日点、内行星）上每帧 1-2 单位偏差 → 画面晃动。
       const zeroVel = this._worldVel ? this._worldVel.set(0, 0, 0) : new THREE.Vector3();
       this.scene.update(this.isMotionFrozen ? 0 : delta, elapsed, 0, zeroVel);
       this.tracking.update(delta);
-      this.camera.update(delta); // near/far 平滑
+      this.camera.update(delta);
       this.hud.update(delta);
       this.hud.updatePosition(
         this.camera.camera.position.x,
@@ -360,14 +355,12 @@ export class Engine {
         this.camera.camera.position.z
       );
       this.hud.updateSpeed(0);
-      // 黑洞危险等级（跟踪时也显示警告）
       if (this.scene.objects.blackholes.length > 0) {
         let maxDanger = 0;
         for (const bh of this.scene.objects.blackholes) maxDanger = Math.max(maxDanger, bh.getDangerLevel());
         this.hud.updateDanger(maxDanger);
       }
       this._applyCelestialPostEffects(delta);
-      // 银河宏观运动（太阳系公转 + 较差自转）
       const gm = config.galaxyMotion;
       if (gm && gm.enabled !== false && !this.isMotionFrozen) {
         const ts = gm.timeScale || 1;
@@ -379,6 +372,13 @@ export class Engine {
           gmMat.uniforms.uRadiusFalloff.value = gm.radiusFalloff || 0.00004;
         }
       }
+      this.postprocessing.render(delta);
+      return;
+    }
+
+    // 暂停时只更新 camera uniform（避免恢复时位置跳变），跳过重计算
+    if (this.isPaused && !this._isMapMode && this._mapBlend >= 1.0) {
+      if (this.scene.objects.nebula) this.scene.objects.nebula.update(0, elapsed, this.camera.camera);
       this.postprocessing.render(delta);
       return;
     }
@@ -749,20 +749,21 @@ export class Engine {
 
   _closeTrackingMenu() {
     this.hud.hideTrackingMenu();
-    // 若未在跟踪，恢复第一人称运行状态（不主动 requestLock，由用户点击触发）
     if (!this.tracking?.isActive()) {
       this.isPaused = false;
+      this._trackingJustExited = true;  // v29-fix: 阻止 onUnlockBound 把 isPaused 设回 true
       this.hud.showMessage('点击屏幕继续探索');
+      setTimeout(() => { this._trackingJustExited = false; }, 1000);
     }
   }
 
   _onTrackingExit() {
     this.hud.updateTrackingStatus(null);
-    // 显式恢复运行状态（避免 onUnlockBound 在非手势 requestLock 失败时误设 isPaused=true 导致画面冻结）
     this.isPaused = false;
+    this._trackingJustExited = true;  // v29-fix: 阻止 onUnlockBound 把 isPaused 设回 true
     this.hud.showMessage('点击屏幕继续探索');
-    // 不在此 requestLock：requestPointerLock 需用户手势，setTimeout 内调用会被浏览器拒绝
-    // 且 lock→unlock 抖动会触发 onUnlockBound 设 isPaused=true。改由用户点击触发（onDocumentClickBound）
+    // v29-fix: 1秒后自动清除标志（即使不点击也不会永久锁死）
+    setTimeout(() => { this._trackingJustExited = false; }, 1000);
   }
 
   /** 天体后处理特效（黑洞引力透镜 + 脉冲星 + 星云）— 第一人称/跟踪共用 */
@@ -818,6 +819,94 @@ export class Engine {
         neb.userData?.material?.uniforms?.uSunDir?.value?.copy(this._sunPos);
       });
     }
+
+    // v29: Gargantua 黑洞光线追踪
+    this._updateBhRaytrace();
+  }
+
+  /**
+   * v29: 更新黑洞光线追踪 ShaderPass uniforms
+   */
+  _updateBhRaytrace() {
+    const bhPass = this.postprocessing.getBhRayPass();
+    if (!bhPass) return;
+    const cfg = config.blackhole.raytrace;
+    if (!cfg.enabled) { bhPass.uniforms.uEnabled.value = 0; return; }
+
+    // 找到最近的（或 dangerLevel 最高的）黑洞
+    const bhs = this.scene.objects.blackholes;
+    if (bhs.length === 0) { bhPass.uniforms.uEnabled.value = 0; return; }
+
+    let targetBH = bhs[0];
+    let minDist = Infinity;
+    for (const bh of bhs) {
+      const wp = new THREE.Vector3();
+      bh.group.getWorldPosition(wp);
+      const dist = this.camera.camera.position.distanceTo(wp);
+      if (dist < minDist) { minDist = dist; targetBH = bh; }
+    }
+
+    // v29: 大范围启用（50000），屏幕空间混合自动处理远近
+    const enableDist = cfg.enableDistance;
+    const enabled = minDist < enableDist ? 1.0 : 0.0;
+    bhPass.uniforms.uEnabled.value = enabled;
+    if (enabled < 0.5) return;
+
+    const u = bhPass.uniforms;
+    const cam = this.camera.camera;
+
+    // 黑洞世界坐标
+    const bhWorldPos = new THREE.Vector3();
+    targetBH.group.getWorldPosition(bhWorldPos);
+    u.uBHWorldPos.value.copy(bhWorldPos);
+
+    // 投影到屏幕空间
+    const bhScreen = new THREE.Vector3().copy(bhWorldPos).project(cam);
+    u.uBHScreenPos.value.set(
+      (bhScreen.x + 1.0) * 0.5,
+      (bhScreen.y + 1.0) * 0.5
+    );
+
+    u.uInvScale.value = 1.0 / config.blackhole.eventHorizonRadius;
+
+    // v29-fix: 盘面世界空间基底（把世界射线变换到盘局部空间，盘面在 y=0）
+    if (targetBH._diskContainer) {
+      const me = targetBH._diskContainer.matrixWorld.elements;
+      const e0 = new THREE.Vector3(me[0], me[1], me[2]);  // 局部 X → 世界
+      const e1 = new THREE.Vector3(me[4], me[5], me[6]);  // 局部 Y → 世界 (盘面法线)
+      const e2 = new THREE.Vector3(me[8], me[9], me[10]); // 局部 Z → 世界
+      u.uDiskRot0.value.copy(e0);
+      u.uDiskRot1.value.copy(e1);
+      u.uDiskRot2.value.copy(e2);
+    }
+
+    // 相机参数
+    u.uCamPos.value.copy(cam.position);
+    const dir = new THREE.Vector3();
+    cam.getWorldDirection(dir);
+    u.uCamDir.value.copy(dir);
+    const up = new THREE.Vector3(0, 1, 0);
+    const right = new THREE.Vector3().crossVectors(dir, up).normalize();
+    const camUp = new THREE.Vector3().crossVectors(right, dir).normalize();
+    u.uCamUp.value.copy(camUp);
+    u.uCamRight.value.copy(right);
+    u.uAspect.value = cam.aspect;
+    u.uFovScale.value = Math.tan((cam.fov * Math.PI / 180) * 0.5);
+
+    // 参数同步
+    u.uTime.value = performance.now() * 0.001;
+    u.uSteps.value = cfg.steps;
+    u.uDin.value = cfg.diskInner;
+    u.uDout.value = cfg.diskOuter;
+    u.uDopMax.value = cfg.dopplerMax;
+    u.uOpNear.value = cfg.opacityNear;
+    u.uOpFar.value = cfg.opacityFar;
+    u.uDiskBright.value = cfg.diskBrightness;
+    u.uStarBright.value = cfg.starBrightness;
+    u.uSkyFloor.value = cfg.skyFloor;
+    u.uRotSpeed.value = cfg.rotSpeed;
+    u.uSizeScale.value = cfg.sizeScale || 3.0;
+    u.uDebug.value = cfg.debug;
   }
 
   /**

@@ -282,6 +282,28 @@ export const config = {
     matterStreamParticles: 80, // 每条流线粒子数
     tidalStretchFactor: 3.0,   // 潮汐拉伸倍数
     debrisCount: 40,           // 碎片喷射数量
+
+    // v29: Gargantua 光线追踪参数
+    renderMode: 'raytrace',     // 'raytrace'=光线追踪, 'particles'=旧粒子系统
+    particleDiskEnabled: false, // 旧粒子盘总开关（仅在 renderMode='particles' 时有效）
+    raytrace: {
+      enabled: true,            // 总开关
+      steps: 200,               // 每像素测地线步数 (60-400, 越高越精细)
+      enableDistance: 8000,     // raytrace 启用距离（需要主动探索才能发现黑洞）
+      blendNear: 600,           // （保留，屏幕空间模式下不再使用世界距离 blend）
+      blendFar: 6000,           // （保留）
+      diskInner: 2.2,           // 吸积盘内缘 (RS 单位，留出更多空间让光子环显形)
+      diskOuter: 12.0,          // 吸积盘外缘 (RS 单位，更宽的盘让多普勒更明显)
+      dopplerMax: 2.6,          // 最大多普勒增强 (强化明暗两半对比)
+      opacityNear: 0.95,        // 内盘不透明度
+      opacityFar: 0.85,         // 外盘不透明度
+      diskBrightness: 2.2,      // 盘面亮度
+      starBrightness: 1.2,      // 星空亮度
+      skyFloor: 0.06,           // 天光基底
+      rotSpeed: 1.0,            // 盘面旋转速度
+      sizeScale: 2.0,           // v29-fix: 视觉缩放（2.0 更平衡，避免过度压缩成色块）
+      debug: 0,                 // 0=正常, 1-9=调试视图
+    },
   },
 
   // ---- 彗星系统（v4.0: 梦幻科幻视觉升级）----

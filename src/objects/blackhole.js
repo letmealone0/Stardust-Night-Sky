@@ -1,12 +1,18 @@
 /**
- * 黑洞系统 v20 — 亮度大幅压暗+多普勒3.2×+内落视角偏置+螺旋噪声增强
+ * 黑洞系统 v28 — Bug修复 + 科幻视觉升级 + 性能优化
  *
- * v20 核心改进：
- * - 亮度大幅压暗：基线0.72/0.55（原1.05/0.85），"黑暗中扭曲火焰"
- * - 多普勒3.2×：月牙亮弧更强烈，色偏×1.5
- * - 内落视角偏置：朝向相机侧粒子更快内落，不对称内落
- * - 螺旋噪声带增强：频率2.8/5.0，幅度0.6，更自然不规则
- * - 光子环微调：rim^10（介于12和9之间）
+ * v28 核心改进：
+ * - [Bug修复] distFactor 未定义导致吸积盘不显示 → 基于 currentR 动态计算
+ * - [Bug修复] ShaderMaterial.opacity 无效 → 全部改用 uGlobalOpacity uniform
+ * - [视觉] 吸积盘：磁场线 + X射线高能环 + 增强多普勒色散
+ * - [视觉] 光子环：色散衍射（RGB不同绕射指数）
+ * - [视觉] 喷流：Fresnel核心能量光束（圆柱体"骨干"）
+ * - [视觉] 事件视界：吸积盘赤道倒影（极淡扭曲环）
+ * - [视觉] 坠落粒子：彗星状时空拖尾
+ * - [性能] LOD分级更激进（远距离完全不可见）
+ * - [性能] 物质流线降频到 20fps + 15000+ 距离禁用
+ * - [性能] Shader 细节分级（远距离跳过噪声采样）
+ * - [性能] 碎片/吸收粒子休眠时 visible=false（减少 GPU draw call）
  */
 
 import * as THREE from 'three';
@@ -32,8 +38,11 @@ export class BlackHole {
     this._debrisVelocities = null;
     this._debrisActive = false;
     this._debrisProgress = 0;
+    this._matterStreamAccum = 0;  // v28: 物质流线降频累加器
     this._diskBrightnessPulse = 0;
     this._diskContainer = null;  // v14: 盘容器（光子环+盘+喷流统一倾斜）
+    this._jetBeamMaterial = null; // v28: 喷流核心光束
+    this._ehReflectionMat = null; // v28: 事件视界倒影
     this._absorbColor = new THREE.Color(1.0, 0.4, 0.05);
     this._hud = null;
   }
@@ -49,38 +58,57 @@ export class BlackHole {
     const horizonMat = new THREE.MeshBasicMaterial({ color: 0x000000 });
     this.group.add(new THREE.Mesh(horizonGeo, horizonMat));
 
-    // v14: 吸积盘容器 — 光子环+吸积盘+喷流统一倾斜，喷流⊥盘面
+    // v29: raytrace 模式下只保留事件视界 + 盘容器（供 raytrace shader 取矩阵），跳过旧粒子
+    const useLegacy = cfg.renderMode !== 'raytrace' && cfg.particleDiskEnabled !== false;
+
+    // v14: 吸积盘容器（raytrace 需要其 worldMatrix 做坐标变换）
     this._diskContainer = new THREE.Group();
     this._diskContainer.rotation.x = Math.PI * 0.5 + 0.61; // 35°倾斜
     this._diskContainer.rotation.y = Math.random() * Math.PI * 2;
     this.group.add(this._diskContainer);
 
-    // 2. v14: 光子球 → 极细亮环（挂载到盘容器，与盘面共面）
-    this.createPhotonSphere(cfg);
+    if (useLegacy) {
+      // 传统粒子模式：创建所有旧效果
+      const reflectionGeo = new THREE.SphereGeometry(cfg.eventHorizonRadius * 1.01, 32, 32);
+      const reflectionMat = new THREE.ShaderMaterial({
+        uniforms: {
+          uTime: { value: 0 },
+          uDiskColor: { value: new THREE.Color(1.0, 0.6, 0.2) },
+          uGlobalOpacity: { value: 1.0 },
+        },
+        vertexShader: `
+          varying vec3 vNormal; varying vec3 vPos;
+          void main() { vNormal = normalize(normalMatrix * normal); vPos = position; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }
+        `,
+        fragmentShader: `
+          varying vec3 vNormal; varying vec3 vPos;
+          uniform vec3 uDiskColor; uniform float uGlobalOpacity;
+          void main() {
+            float equator = 1.0 - abs(vNormal.y);
+            float band = smoothstep(0.0, 0.3, equator) * smoothstep(0.6, 0.3, equator);
+            float twist = sin(atan(vPos.z, vPos.x) * 3.0) * 0.1;
+            float alpha = band * 0.03 * (1.0 + twist) * uGlobalOpacity;
+            if (alpha < 0.005) discard;
+            gl_FragColor = vec4(uDiskColor * band, alpha);
+          }
+        `,
+        transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.FrontSide,
+      });
+      this._ehReflectionMat = reflectionMat;
+      this.group.add(new THREE.Mesh(reflectionGeo, reflectionMat));
 
-    // 3. v14: 吸积盘（挂载到盘容器）
-    this.createAccretionDisk(cfg);
-
-    // 4. v14: 喷流（挂载到盘容器，自动⊥盘面）
-    this.createJets(cfg);
-
-    // 5. v13: 外层光晕（暖橙微光，透明度-60%）
-    this.createGlow(cfg);
-
-    // 6. v13: 环境螺旋坠落粒子
-    this.createInfallParticles(cfg);
-
-    // 7. 物质流线
-    this.createMatterStreams(cfg);
-
-    // 8. 吸收粒子
-    this.createAbsorbParticles(cfg);
-
-    // 9. 碎片喷射
-    this.createDebrisParticles(cfg);
+      this.createPhotonSphere(cfg);
+      this.createAccretionDisk(cfg);
+      this.createJets(cfg);
+      this.createGlow(cfg);
+      this.createInfallParticles(cfg);
+      this.createMatterStreams(cfg);
+      this.createAbsorbParticles(cfg);
+      this.createDebrisParticles(cfg);
+    }
 
     scene.add(this.group);
-    console.log('[BlackHole] v20 黑暗火焰+内落视角偏置初始化完成');
+    console.log('[BlackHole] v29 ' + (cfg.renderMode === 'raytrace' ? 'Gargantua 光线追踪' : '传统粒子') + '模式初始化完成');
   }
 
   // ==================== v14: 光子球 → 极细亮环（挂载盘容器，与盘面共面） ====================
@@ -92,6 +120,7 @@ export class BlackHole {
       uniforms: {
         uTime: { value: 0 },
         uColor: { value: new THREE.Color(1.0, 0.85, 0.6) },
+        uGlobalOpacity: { value: 1.0 },  // v28
       },
       vertexShader: `
         varying vec3 vWorldPos;
@@ -108,14 +137,21 @@ export class BlackHole {
         varying vec3 vNormal;
         uniform float uTime;
         uniform vec3 uColor;
+        uniform float uGlobalOpacity;
         void main() {
           vec3 viewDir = normalize(cameraPosition - vWorldPos);
           float rim = 1.0 - abs(dot(normalize(vNormal), viewDir));
-          float ring = pow(rim, 10.0);
+
+          // v28: 色散衍射 — 不同波长光绕射圈数不同，红光绕射更多，蓝光更少
+          float rimR = pow(rim, 8.0);
+          float rimG = pow(rim, 10.0);
+          float rimB = pow(rim, 12.0);
+          vec3 dispersedColor = vec3(rimR, rimG, rimB) * vec3(1.0, 0.9, 0.75);
+
           float pulse = 0.8 + sin(uTime * 4.0) * 0.2;
-          float a = ring * 0.05 * pulse; // v26.3: 0.22→0.05 极淡光子环
+          float a = (rimR + rimG + rimB) / 3.0 * 0.05 * pulse * uGlobalOpacity;
           if (a < 0.02) discard;
-          gl_FragColor = vec4(uColor * ring * pulse * 1.0, a);
+          gl_FragColor = vec4(dispersedColor * pulse, a);
         }
       `,
       blending: THREE.AdditiveBlending,
@@ -192,6 +228,8 @@ export class BlackHole {
         uInnerRadius: { value: innerR },
         uOuterRadius: { value: outerR },
         uEventHorizonR: { value: cfg.eventHorizonRadius },
+        uGlobalOpacity: { value: 1.0 },  // v28: 替代 ShaderMaterial.opacity（无效）
+        uDetailLevel: { value: 1.0 },   // v28: Shader 细节分级
       },
       vertexShader: `
         attribute float aRandom;
@@ -203,6 +241,7 @@ export class BlackHole {
         uniform float uInnerRadius;
         uniform float uOuterRadius;
         uniform float uEventHorizonR;
+        uniform float uGlobalOpacity;
         varying vec3 vColor;
         varying float vAlpha;
         varying float vDistNorm;
@@ -267,6 +306,9 @@ export class BlackHole {
           vec3 toCamera = normalize(cameraPosition - particleWorld.xyz);
           vDoppler = dot(orbitTangent, toCamera);
 
+          // v28-fix: 基于当前实际半径计算归一化距离（修复 distFactor 未定义 Bug）
+          float distFactor = clamp((currentR - uInnerRadius) / max(uOuterRadius - uInnerRadius, 0.001), 0.0, 1.0);
+
           // v26.3-fix: 回调亮度，避免黑洞过暗在中等距离几乎不可见
           float brightness = exp(-distFactor * 4.8) * 0.18;  // v20: 0.12→0.18
           brightness += exp(-distFactor * 13.0) * 0.12;       // v20: 0.08→0.12
@@ -281,7 +323,7 @@ export class BlackHole {
           float fadeFromOuter = smoothstep(0.0, 0.06, baseInfallT);
           float fadeAlpha = fadeNearInner * max(fadeFromOuter, 0.15);
 
-          vAlpha = clamp(brightness * (0.6 + 0.4 * (1.0 - distFactor)) * fadeAlpha * ehClip, 0.0, 1.0);
+          vAlpha = clamp(brightness * (0.6 + 0.4 * (1.0 - distFactor)) * fadeAlpha * ehClip * uGlobalOpacity, 0.0, 1.0);
           vColor *= brightness * ehClip;
 
           vec4 wp = modelMatrix * vec4(pos, 1.0); vWPos = wp.xyz;
@@ -304,6 +346,7 @@ export class BlackHole {
         varying float vDoppler;
         uniform float uTime;
         uniform float uOuterRadius;
+        uniform float uDetailLevel;
 
         float hash2(vec2 p) { return fract(sin(dot(p, vec2(127.1,311.7)))*43758.5453); }
         float noise2D(vec2 p) {
@@ -318,13 +361,19 @@ export class BlackHole {
           float alpha = 1.0 - smoothstep(0.0, 1.0, d);
           alpha = pow(alpha, 0.6);
 
-          // v20: 大尺度角向噪声带（2-3条不规则螺旋暗带/亮带）— 更强扰动
+          // v28: Shader 细节分级（Fill-rate 优化）
           float angle2 = atan(vWPos.z, vWPos.x);
           float r2 = length(vWPos.xz) / max(uOuterRadius, 1.0);
-          float n = noise2D(vec2(cos(angle2)*3.5, r2*6.0 + uTime*0.15));
-          float spiralBand = noise2D(vec2(angle2 * 2.8 + r2 * 5.0, uTime * 0.08)) * 0.6;
-          float bandNoise = noise2D(vec2(cos(angle2)*1.2, r2*2.5 + uTime*0.05));
-          float brightnessMod = 0.42 + n * 0.55 + spiralBand * 0.32 + bandNoise * 0.18;
+          float brightnessMod;
+          if (uDetailLevel > 0.5) {
+            float n = noise2D(vec2(cos(angle2)*3.5, r2*6.0 + uTime*0.15));
+            float spiralBand = noise2D(vec2(angle2 * 2.8 + r2 * 5.0, uTime * 0.08)) * 0.6;
+            float bandNoise = noise2D(vec2(cos(angle2)*1.2, r2*2.5 + uTime*0.05));
+            brightnessMod = 0.42 + n * 0.55 + spiralBand * 0.32 + bandNoise * 0.18;
+          } else {
+            // 远距离：只用简单 sin 模拟大尺度结构，跳过昂贵噪声采样
+            brightnessMod = 0.5 + sin(angle2 * 3.0 + r2 * 5.0) * 0.15;
+          }
 
           // v21: 多普勒 3.5× — 更戏剧化月牙
           float dopplerBright = 1.0 + vDoppler * 3.5;
@@ -332,9 +381,28 @@ export class BlackHole {
           alpha *= vAlpha * brightnessMod * dopplerBright;
           if (alpha < 0.008) discard;
 
-          // v20: 多普勒色偏增强 — 月牙不对称蓝白/暗红（×1.5 加强）
+          // v28: 多普勒色偏增强 — 月牙不对称蓝白/暗红
           vec3 finalColor = vColor * brightnessMod * dopplerBright;
           finalColor += vec3(-0.12, -0.04, 0.18) * vDoppler * 1.5;
+
+          // v28: 磁场线效果 — 螺旋状能量条纹（MRI磁转动不稳定性）
+          if (uDetailLevel > 0.5) {
+            float magneticLines = sin(angle2 * 8.0 + r2 * 20.0 + uTime * 0.8) * 0.5 + 0.5;
+            magneticLines = pow(magneticLines, 5.0);
+            float magneticIntensity = magneticLines * 0.3 * (1.0 - r2 * 0.6);
+            finalColor += vec3(0.2, 0.05, 0.4) * magneticIntensity;
+
+            // X射线高能环 — 内缘极紫外辐射（科幻蓝白色）
+            float xrayRing = smoothstep(0.12, 0.0, r2) * 0.5;
+            vec3 xrayColor = vec3(0.5, 0.8, 1.0) * xrayRing;
+            finalColor += xrayColor;
+          }
+
+          // v28: 增强多普勒色散 — 一侧电离蓝，一侧暗红
+          vec3 dopplerShift = vec3(1.0, 0.95, 0.9);
+          if (vDoppler > 0.2) dopplerShift = vec3(0.6, 0.8, 1.1);
+          else if (vDoppler < -0.2) dopplerShift = vec3(1.1, 0.5, 0.3);
+          finalColor *= dopplerShift;
 
           gl_FragColor = vec4(finalColor, alpha);
         }
@@ -393,6 +461,7 @@ export class BlackHole {
         uJetLength: { value: jetLen },
         uEHRadius: { value: cfg.eventHorizonRadius },
         uPixelRatio: { value: Math.min(window.devicePixelRatio, 2) },
+        uGlobalOpacity: { value: 1.0 },  // v28
       },
       vertexShader: `
         attribute float aPhase;
@@ -400,6 +469,7 @@ export class BlackHole {
         uniform float uJetLength;
         uniform float uEHRadius;
         uniform float uPixelRatio;
+        uniform float uGlobalOpacity;
         varying vec3 vColor;
         varying float vAlpha;
         varying float vPhase;
@@ -433,7 +503,7 @@ export class BlackHole {
           // 周期节点亮斑（减弱）
           float nodePulse = 1.0 + sin(t * 18.0 + uTime * 2.0) * 0.2;
           // v26.3: 喷流进一步压暗
-          vAlpha = axialFade * 0.12 * nodePulse;
+          vAlpha = axialFade * 0.12 * nodePulse * uGlobalOpacity;
 
           vec4 wp = modelMatrix * vec4(pos, 1.0); vWorldPos = wp.xyz;
           // v-fix: 基于世界距离，避免镜头转动时粒子大小波动 → "光弥散"
@@ -471,6 +541,51 @@ export class BlackHole {
     this.jetParticles = new THREE.Points(geo, this._jetMaterial);
     // v14: 挂载到盘容器，自动⊥盘面
     this._diskContainer.add(this.jetParticles);
+
+    // v28: 核心能量光束 — Fresnel圆柱体作为喷流"骨干"
+    const beamGeo = new THREE.CylinderGeometry(
+      cfg.eventHorizonRadius * 0.03,  // 顶部半径（基部）
+      cfg.eventHorizonRadius * 0.01,  // 底部半径（远端）
+      jetLen * 2.2,
+      12, 1, true
+    );
+    const beamMat = new THREE.ShaderMaterial({
+      uniforms: {
+        uTime: { value: 0 },
+        uColor: { value: new THREE.Color(0.4, 0.7, 1.0) },
+        uGlobalOpacity: { value: 1.0 },
+      },
+      vertexShader: `
+        varying vec3 vNormal;
+        varying vec3 vViewPos;
+        void main() {
+          vNormal = normalize(normalMatrix * normal);
+          vec4 mv = modelViewMatrix * vec4(position, 1.0);
+          vViewPos = -mv.xyz;
+          gl_Position = projectionMatrix * mv;
+        }
+      `,
+      fragmentShader: `
+        varying vec3 vNormal;
+        varying vec3 vViewPos;
+        uniform vec3 uColor;
+        uniform float uGlobalOpacity;
+        void main() {
+          vec3 viewDir = normalize(vViewPos);
+          float fresnel = pow(1.0 - abs(dot(vNormal, viewDir)), 2.0);
+          float alpha = fresnel * 0.12 * uGlobalOpacity;
+          if (alpha < 0.01) discard;
+          gl_FragColor = vec4(uColor * (0.5 + fresnel * 0.5), alpha);
+        }
+      `,
+      transparent: true,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+      side: THREE.DoubleSide,
+    });
+    this._jetBeamMaterial = beamMat;
+    const beam = new THREE.Mesh(beamGeo, beamMat);
+    this._diskContainer.add(beam);
   }
 
   // ==================== v26.3: 外层光晕 — 大幅压暗，黑洞应为「暗」天体 ====================
@@ -480,6 +595,7 @@ export class BlackHole {
       uniforms: {
         uTime: { value: 0 },
         uColor: { value: new THREE.Color(0.3, 0.12, 0.05) },
+        uGlobalOpacity: { value: 1.0 },  // v28
       },
       vertexShader: `
         varying vec3 vNormal;
@@ -499,6 +615,7 @@ export class BlackHole {
         varying vec3 vLocalPos;
         uniform float uTime;
         uniform vec3 uColor;
+        uniform float uGlobalOpacity;
         void main() {
           vec3 viewDir = normalize(cameraPosition - vWorldPos);
           float rim = 1.0 - max(0.0, abs(dot(vNormal, viewDir)));
@@ -506,9 +623,9 @@ export class BlackHole {
           float h = abs(vLocalPos.y);
           float diskShape = exp(-h * h / (r * r * 0.08 + 1.0));
           float intensity = pow(rim, 5.0) * diskShape;
-          float alpha = intensity * 0.008; // v26.3: 0.06→0.008 (大幅压暗)
+          float alpha = intensity * 0.008 * uGlobalOpacity; // v26.3: 0.06→0.008 (大幅压暗)
           if (alpha < 0.001) discard;
-          gl_FragColor = vec4(uColor * intensity * 0.3, alpha);
+          gl_FragColor = vec4(uColor * intensity * 0.3 * uGlobalOpacity, alpha);
         }
       `,
       blending: THREE.AdditiveBlending,
@@ -553,6 +670,7 @@ export class BlackHole {
         uEHRadius: { value: cfg.eventHorizonRadius },
         uRange: { value: range },
         uPixelRatio: { value: Math.min(window.devicePixelRatio, 2) },
+        uGlobalOpacity: { value: 1.0 },  // v28
       },
       vertexShader: `
         attribute float aAlpha;
@@ -562,6 +680,7 @@ export class BlackHole {
         uniform float uEHRadius;
         uniform float uRange;
         uniform float uPixelRatio;
+        uniform float uGlobalOpacity;
         varying float vAlpha;
         varying float vDist;
 
@@ -605,7 +724,7 @@ export class BlackHole {
           float distNorm = clamp(currentR / (uEHRadius * 10.0), 0.0, 1.0);
           // 近视界更亮更小，重生时淡入
           float fade = smoothstep(0.0, 0.05, phase); // 重生淡入
-          vAlpha = aAlpha * (0.02 + (1.0 - distNorm) * 0.15) * fade; // v26.3: 坠落粒子大幅压暗
+          vAlpha = aAlpha * (0.02 + (1.0 - distNorm) * 0.15) * fade * uGlobalOpacity; // v28: +uGlobalOpacity
           float sizeScale = 0.25 + distNorm * 0.75;
 
           // v-fix: 基于世界距离，避免镜头转动时粒子大小波动 → "光弥散"
@@ -624,6 +743,11 @@ export class BlackHole {
           float d = length(gl_PointCoord - 0.5) * 2.0;
           float alpha = 1.0 - smoothstep(0.0, 1.0, d);
           alpha = pow(alpha, 0.6);
+
+          // v28: 彗星状时空拖尾 — 模拟高速螺旋坠落方向
+          float tail = smoothstep(0.0, 1.0, gl_PointCoord.x);
+          alpha *= (0.4 + 0.6 * (1.0 - tail * 0.8));
+
           alpha *= vAlpha;
           if (alpha < 0.008) discard;
           float t = clamp(vDist / 300.0, 0.0, 1.0);
@@ -749,12 +873,16 @@ export class BlackHole {
 
     // 喷流
     if (this._jetMaterial?.uniforms) this._jetMaterial.uniforms.uTime.value = elapsed;
+    if (this._jetBeamMaterial?.uniforms) this._jetBeamMaterial.uniforms.uTime.value = elapsed;
 
     // 光子球
     if (this._photonSphere?.material?.uniforms) this._photonSphere.material.uniforms.uTime.value = elapsed;
 
     // v15: 光晕
     if (this.glowMaterial) this.glowMaterial.uniforms.uTime.value = elapsed;
+
+    // v28: 事件视界倒影
+    if (this._ehReflectionMat?.uniforms) this._ehReflectionMat.uniforms.uTime.value = elapsed;
 
     // v15: 黑洞自转 × delta（帧率解耦）
     this.group.rotation.y += (cfg.selfRotationSpeed || 1.5) * dt * motionScale;
@@ -765,37 +893,59 @@ export class BlackHole {
       this._diskContainer.rotation.z += wobble * dt * motionScale;
     }
 
-    // v26.3: 黑洞 LOD — 远处几乎不可见，尤其俯视图（>30000）
+    // v28-fix: 黑洞 LOD — 始终保持全亮度，由 shader 自身的 gl_PointSize + alpha 测试处理远距离衰减
+    // （v20 的 .opacity 实际上无效，v28 用 uGlobalOpacity 真正生效后反而把黑洞变暗了）
     if (this.camera) {
       const dist = this.group.position.distanceTo(this.camera.position);
-      let lodOpacity;
-      if (dist < 2000) { lodOpacity = 1.0; }
-      else if (dist < 5000) { lodOpacity = 0.4; }
-      else if (dist < 10000) { lodOpacity = 0.12; }
-      else if (dist < 30000) { lodOpacity = 0.03; }
-      else { lodOpacity = 0.005; } // 俯视图距离几乎不可见
+      const lodOpacity = 1.0;  // v28-fix: 保持全亮，由 shader 内部处理距离衰减
 
-      // 吸积盘粒子数
+      // 吸积盘粒子数（保守削减，保证至少绘制一个粒子）
       if (this.accretionDisk) {
         const totalCount = this.accretionDisk.geometry.userData?.totalCount || 10000;
         let targetFraction;
         if (dist < 2000) targetFraction = 1.0;
         else if (dist < 5000) targetFraction = 0.3;
-        else if (dist < 10000) targetFraction = 0.1;
-        else targetFraction = 0.03; // 远处仅保留极少数粒子
-        const target = Math.max(Math.floor(totalCount * targetFraction), 80);
+        else if (dist < 10000) targetFraction = 0.08;
+        else if (dist < 30000) targetFraction = 0.02;
+        else targetFraction = 0.005; // v28-fix: 保留极少粒子
+        const target = Math.max(Math.floor(totalCount * targetFraction), 1); // v28-fix: 最少1个
         if (this.accretionDisk.geometry.drawRange.count !== target) {
           this.accretionDisk.geometry.setDrawRange(0, target);
         }
       }
 
-      // 所有发光组件的全局透明度衰减
-      if (this.diskMaterial) this.diskMaterial.opacity = lodOpacity;
-      if (this.glowMaterial) this.glowMaterial.opacity = lodOpacity;
-      if (this._jetMaterial) this._jetMaterial.opacity = lodOpacity;
-      if (this._infallParticles?.material) this._infallParticles.material.opacity = lodOpacity;
-      if (this._matterStreams?.material) this._matterStreams.material.opacity = lodOpacity;
-      if (this._photonSphere?.material) this._photonSphere.material.opacity = lodOpacity;
+      // v28: Shader 细节分级（Fill-rate 优化）
+      const detailLevel = dist < 5000 ? 1.0 : (dist < 15000 ? 0.5 : 0.0);
+      if (this.diskMaterial?.uniforms?.uDetailLevel) {
+        this.diskMaterial.uniforms.uDetailLevel.value = detailLevel;
+      }
+
+      // v28: 所有 ShaderMaterial 使用 uGlobalOpacity（替代无效的 .opacity）
+      if (this.diskMaterial?.uniforms?.uGlobalOpacity) {
+        this.diskMaterial.uniforms.uGlobalOpacity.value = lodOpacity;
+      }
+      if (this.glowMaterial?.uniforms?.uGlobalOpacity) {
+        this.glowMaterial.uniforms.uGlobalOpacity.value = lodOpacity;
+      }
+      if (this._jetMaterial?.uniforms?.uGlobalOpacity) {
+        this._jetMaterial.uniforms.uGlobalOpacity.value = lodOpacity;
+      }
+      if (this._jetBeamMaterial?.uniforms?.uGlobalOpacity) {
+        this._jetBeamMaterial.uniforms.uGlobalOpacity.value = lodOpacity;
+      }
+      if (this._infallParticles?.material?.uniforms?.uGlobalOpacity) {
+        this._infallParticles.material.uniforms.uGlobalOpacity.value = lodOpacity;
+      }
+      if (this._photonSphere?.material?.uniforms?.uGlobalOpacity) {
+        this._photonSphere.material.uniforms.uGlobalOpacity.value = lodOpacity;
+      }
+      if (this._ehReflectionMat?.uniforms?.uGlobalOpacity) {
+        this._ehReflectionMat.uniforms.uGlobalOpacity.value = lodOpacity;
+      }
+      // v28: _matterStreams 使用 PointsMaterial，.opacity 有效
+      if (this._matterStreams?.material) {
+        this._matterStreams.material.opacity = lodOpacity * 0.15;
+      }
     }
 
     // v24: 坠落粒子 — GPU驱动，仅更新uTime（零CPU遍历）
@@ -836,11 +986,27 @@ export class BlackHole {
     this.updatePlanetAbsorption(cfg, dt, elapsed);
   }
 
-  // ==================== 物质流线更新（v13: delta解耦） ====================
+  // ==================== 物质流线更新（v28: 降频到20fps + 远距离禁用） ====================
   updateMatterStreams(cfg, dt, elapsed, motionScale) {
     if (!this._matterStreams) return;
+
+    // v28: 远距离完全禁用物质流线更新
+    if (this.camera) {
+      const dist = this.group.position.distanceTo(this.camera.position);
+      if (dist > 15000) {
+        if (this._matterStreams.visible) this._matterStreams.visible = false;
+        return;
+      }
+      if (!this._matterStreams.visible) this._matterStreams.visible = true;
+    }
+
+    // v28: 降频到 20fps
+    this._matterStreamAccum = (this._matterStreamAccum || 0) + dt;
+    if (this._matterStreamAccum < 0.05) return;
+    this._matterStreamAccum = 0;
+
     const data = this._matterStreams.userData;
-    data.animOffset += dt * 0.5 * motionScale;
+    data.animOffset += 0.05 * 0.5 * motionScale;
 
     const pos = this._matterStreams.geometry.attributes.position.array;
     const alphas = this._matterStreams.geometry.attributes.aAlpha.array;
@@ -863,9 +1029,13 @@ export class BlackHole {
     this._matterStreams.geometry.attributes.aAlpha.needsUpdate = true;
   }
 
-  // ==================== 碎片更新（v13: delta解耦） ====================
+  // ==================== 碎片更新（v28: 休眠时隐藏GPU提交） ====================
   updateDebris(cfg, dt) {
-    if (!this._debrisParticles || !this._debrisParticles.userData.active) return;
+    if (!this._debrisParticles || !this._debrisParticles.userData.active) {
+      if (this._debrisParticles) this._debrisParticles.visible = false;
+      return;
+    }
+    this._debrisParticles.visible = true;
     const data = this._debrisParticles.userData;
     data.progress += dt * 1.5;
     const pos = this._debrisParticles.geometry.attributes.position.array;
@@ -899,6 +1069,7 @@ export class BlackHole {
     if (data.progress > 1.5) {
       this._debrisParticles.userData.active = false;
       this._debrisParticles.material.opacity = 0;
+      this._debrisParticles.visible = false;
     }
   }
 
