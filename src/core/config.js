@@ -135,6 +135,7 @@ export const config = {
     asteroidBeltChance: 0.3, // 30% 概率带小行星带
     asteroidBeltCount: 120,  // 小行星带粒子数
     infoDistance: 600,        // 靠近显示天体信息的距离
+    labelDistance: 3000,      // v25: 标签可见距离（超出隐藏，减少屏幕杂乱）
     hostStarRadius: 8,       // 宿主小恒星半径
   },
 
@@ -142,9 +143,10 @@ export const config = {
   solarSystem: {
     sunRadius: 120,
     timeScale: 0.5,
-    sunLightIntensity: 3.0,  // v-latest: 5.0→3.0，降低太阳直射强度，避免行星表面过曝并保留暗部体积感
+    sunLightIntensity: 3.0,
     sunLightRange: 25000,
-    ambientIntensity: 0.05, // v-latest: 0.12→0.05，削弱环境光，让背光面更暗、明暗交界更明确
+    ambientIntensity: 0.05,
+    labelMaxDistance: 6000,  // v25: 太阳系行星标签最大可见距离
   },
 
   // ---- 银河系宏观运动 (v10.0) ----
@@ -224,19 +226,20 @@ export const config = {
   },
 
   // ---- 速度线（仅冲刺时出现，极简设计）----
+  // v26: 整体弱化 + 边缘化 + 单一冷色调，不与粒子流重复
   speedLines: {
-    count: 400,               // v19.5: 适度增加，但集中边缘
-    minRadius: 15.0,          // 更远离中心
-    maxRadius: 70.0,          // 更大 = 屏幕边缘
-    minLength: 4,
-    maxLength: 16,
-    zStart: -100,
-    zEnd: -8,
+    count: 280,               // 400 → 280，减少密度
+    minRadius: 25.0,          // 15→25，更远离中心（中心清空）
+    maxRadius: 80.0,          // 70→80，扩展到屏幕外圈
+    minLength: 3,
+    maxLength: 12,
+    zStart: -120,
+    zEnd: -10,
     speedThreshold: 999,
-    opacityTarget: 0.22,
+    opacityTarget: 0.16,      // 0.22→0.16，降低整体亮度
     opacitySpeed: 0.3,
     moveFactor: 35,
-    sprintExtraCount: 150,
+    sprintExtraCount: 80,     // 150→80
   },
 
   // ---- 全局天体布局 ----
@@ -341,11 +344,13 @@ export const config = {
   },
 
   // ---- 近处微尘层（尺度参照物，强化速度感和星球巨大感）----
+  // v25: 数量大幅减少 + 圆形软点贴图 + 降低透明度，避免"方块脏点"视觉bug
+  // v26: 冷蓝色调 + 偏边缘分布，与速度线/粒子流分层显示
   nearDust: {
-    count: 200,
-    range: 40,            // 相机前 5~40 单位
-    size: 0.15,
-    opacity: 0.25,
+    count: 40,            // 边缘分布数量
+    range: 30,            // 相机前 8~30 单位
+    size: 0.25,           // 缩小基础尺寸
+    opacity: 0.08,        // 极低基础不透明度
     driftSpeed: 0.3,
   },
 
@@ -368,8 +373,9 @@ export const config = {
   },
 
   // ---- 全方向粒子流 ----
+  // v26: 数量大减 + 中心透明化 + 冷蓝调，避免和速度线视觉冲突
   particleFlow: {
-    count: 3000,              // v19.3: 极简粒子，仅点缀运动感
+    count: 1500,              // 3000 → 1500
     spread: 200,
     sprintColorBoost: 1.5,
     streakLength: 2.5,
@@ -410,3 +416,38 @@ export const config = {
     maxTotalParticles: 200000, // 粒子总数上限
   },
 };
+
+// ---- v25: 运行时配置安全校验（防止缺失字段导致 NaN 错误）----
+(function sanitizeConfig() {
+  const defaults = {
+    camera: { fov: 75, near: 1, far: 200000 },
+    player: { accel: 200, maxSpeed: 80, sprintMultiplier: 3.0, sprintFovBoost: 25, mouseSensitivity: 0.002 },
+    postprocessing: { bloom: { strength: 0.9, radius: 0.5, threshold: 0.4 } },
+    renderer: { contrast: 1.0, saturation: 1.0 },
+  };
+
+  function ensure(obj, path, fallback) {
+    const keys = path.split('.');
+    let current = obj;
+    for (const key of keys) {
+      if (current[key] === undefined || current[key] === null) {
+        // 找到缺失点，设置兜底
+        let target = obj;
+        for (let i = 0; i < keys.length - 1; i++) {
+          if (!target[keys[i]]) target[keys[i]] = {};
+          target = target[keys[i]];
+        }
+        target[keys[keys.length - 1]] = fallback;
+        console.warn(`[Config] "${path}" 缺失，使用默认值:`, fallback);
+        return;
+      }
+      current = current[key];
+    }
+  }
+
+  for (const [section, fields] of Object.entries(defaults)) {
+    for (const [key, val] of Object.entries(fields)) {
+      ensure(config, `${section}.${key}`, val);
+    }
+  }
+})();

@@ -92,6 +92,18 @@ export class Engine {
     this.camera.applyMode(defaultMode, false);
     // 注入太阳系引用（替代 window.engine 全局耦合）
     this.player.setSolarSystem(this.scene.objects.solarSystem);
+    // v25: 注册额外碰撞体（黑洞、脉冲星、系外行星 → 接近自动限速）
+    for (const bh of this.scene.objects.blackholes) {
+      this.player.addCollidableBody(bh.group, config.blackhole.eventHorizonRadius * 8);
+    }
+    for (const psr of this.scene.objects.pulsars) {
+      this.player.addCollidableBody(psr.group, config.pulsar.radius * 12);
+    }
+    if (this.scene.objects.planets?.getPlanets) {
+      for (const p of this.scene.objects.planets.getPlanets()) {
+        this.player.addCollidableBody(p, p.userData?.radius ?? 80);
+      }
+    }
 
     // 创建后处理
     this.postprocessing = new PostProcessingManager(
@@ -238,11 +250,19 @@ export class Engine {
   }
 
   /**
-   * 动画循环
+   * 动画循环（v19.6: 单帧错误不中断整体运行）
    */
   animate() {
     if (!this.isRunning) return;
 
+    try {
+      this._animateFrame();
+    } catch (err) {
+      console.error('[Engine] 渲染帧错误（已恢复，继续运行）:', err);
+    }
+  }
+
+  _animateFrame() {
     // Delta clamping: 防止 Tab 切换或掉帧导致大跳跃
     const delta = Math.min(this.clock.getDelta(), 0.1);
     const elapsed = this.clock.getElapsedTime();
@@ -285,7 +305,7 @@ export class Engine {
     // 暂停时只更新 camera uniform（避免恢复时位置跳变），跳过重计算
     if (this.isPaused && !this._isMapMode && this._mapBlend >= 1.0) {
       if (this.scene.objects.nebula) this.scene.objects.nebula.update(0, elapsed, this.camera.camera);
-      this.postprocessing.render();
+      this.postprocessing.render(delta);
       return;
     }
 
@@ -310,7 +330,7 @@ export class Engine {
       const zeroVel = this._worldVel ? this._worldVel.set(0, 0, 0) : new THREE.Vector3();
       this.scene.update(this.isMotionFrozen ? 0 : delta, elapsed, 0, zeroVel);
       this.hud.update(delta);
-      this.postprocessing.render();
+      this.postprocessing.render(delta);
       return;
     }
 
@@ -349,7 +369,7 @@ export class Engine {
       const py = (-playerScreenPos.y + 1) * 0.5 * window.innerHeight;
       this.hud.updateMapPlayerMarker(px, py);
 
-      this.postprocessing.render();
+      this.postprocessing.render(delta);
       return;
     }
 
@@ -425,9 +445,26 @@ export class Engine {
       if (this.scene.objects.blackholes.length > 0) {
         this.scene.objects.blackholes[0].updatePostEffects(u, this.camera.camera);
       }
-      // 脉冲星闪光+噪点（v25: 取第一个脉冲星的效果）
+      // v25.1: 多脉冲星后处理累加（取最大值合并，避免互相覆盖）
       if (this.scene.objects.pulsars.length > 0) {
-        this.scene.objects.pulsars[0].updatePostEffects(u, this.camera.camera, delta);
+        // 先重置脉冲星相关uniform
+        const prevNoise = u.uNoiseIntensity.value;
+        const prevFlash = u.uFlashIntensity.value;
+        const prevCA = u.uChromaticAberration.value;
+        u.uNoiseIntensity.value = 0;
+        u.uFlashIntensity.value = 0;
+        u.uChromaticAberration.value = 0;
+
+        for (const psr of this.scene.objects.pulsars) {
+          psr.updatePostEffects(u, this.camera.camera, delta);
+        }
+
+        // 确保最终值取累加后的最大值（防止uniform被覆盖回零）
+        u.uNoiseIntensity.value = Math.max(prevNoise, u.uNoiseIntensity.value);
+        u.uFlashIntensity.value = Math.max(prevFlash, u.uFlashIntensity.value);
+        if (u.uChromaticAberration) {
+          u.uChromaticAberration.value = Math.max(prevCA, u.uChromaticAberration.value);
+        }
       }
       // 星云雾化
       if (this.scene.objects.nebula) {
@@ -465,8 +502,8 @@ export class Engine {
     // v13: 运动模糊更新
     this.postprocessing.updateMotionBlur(this.camera.camera, delta);
 
-    // 渲染
-    this.postprocessing.render();
+    // 渲染（v25: 传入delta用于自动曝光）
+    this.postprocessing.render(delta);
   }
 
   /**

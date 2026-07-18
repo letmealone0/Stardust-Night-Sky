@@ -49,7 +49,7 @@ export class Pulsar {
     scene.add(this.group);
     this._infoShown = false;
     this._flashDecay = 0;
-    console.log(`[Pulsar] v27.6 初始化完成（磁偏角 ${cfg.magneticTilt || 25}°，灯塔效应已启用）`);
+    console.log(`[Pulsar] v28 初始化完成（磁偏角 ${cfg.magneticTilt || 25}°，20条磁场线，灯塔效应已启用）`);
   }
 
   // ==================== 中子星本体（三层辉光结构） ====================
@@ -245,9 +245,9 @@ export class Pulsar {
     this.beams.push(beam);
   }
 
-  // ==================== v27.5: 磁场线（8条独立Line + 相位差 + 吸积盘遮挡裁剪） ====================
+  // ==================== v28: 磁场线（20条独立Line + 相位差 + 粗细亮度变化 + 吸积盘遮挡裁剪） ====================
   _createMagneticFieldLines(cfg, maxArcRadius) {
-    const count = 8;
+    const count = 20; // v28: 8→20，模拟真实磁力线疏密分布
     const r = cfg.radius;
     const segments = 48;
     this._fieldLinesGroup = new THREE.Group();
@@ -255,7 +255,9 @@ export class Pulsar {
 
     for (let i = 0; i < count; i++) {
       const phi = (i / count) * Math.PI * 2 + (Math.random() - 0.5) * 0.3;
-      const curveOffset = 0.6 + Math.random() * 0.6;
+      // v28: 粗细变化——部分磁力线更突出
+      const curveOffset = 0.4 + Math.random() * 0.8;
+      const brightness = 0.4 + Math.random() * 0.6; // 亮度差异模拟疏密
       const positions = [];
       for (let j = 0; j <= segments; j++) {
         const t = j / segments;
@@ -270,12 +272,13 @@ export class Pulsar {
 
       const geo = new THREE.BufferGeometry();
       geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(positions), 3));
-      const phase = i / count; // 每条线独有相位，错开脉冲
+      const phase = i / count;
       const mat = new THREE.ShaderMaterial({
         uniforms: {
           uTime: { value: 0 },
           uPhase: { value: phase },
           uDiskThickness: { value: r * 0.6 },
+          uBrightness: { value: brightness }, // v28: 亮度差异
         },
         vertexShader: `
           varying float vTheta;
@@ -294,18 +297,19 @@ export class Pulsar {
           uniform float uTime;
           uniform float uPhase;
           uniform float uDiskThickness;
+          uniform float uBrightness;
           void main() {
-            // v27.5: 两极最亮赤道最暗（cos(vTheta) 在两极为±1、赤道为0）
             float poleFactor = abs(cos(vTheta));
-            float brightness = 0.3 + poleFactor * 0.7;
-            // v27.5: 每线独立相位，脉冲错开 (uPhase * TAU)
+            float brightness = 0.2 + poleFactor * 0.8;
+            // v27.5: 每线独立相位，脉冲错开
             float TAU = 6.283185307;
             float pulse = 0.65 + sin(uTime * 2.5 + uPhase * TAU) * 0.25;
-            // v27.5: 吸积盘平面裁剪 — 靠近y=0时衰减，模拟遮挡
+            // 吸积盘平面裁剪
             float diskDist = abs(vLocalPos.y);
             float diskMask = smoothstep(0.0, uDiskThickness, diskDist);
-            float alpha = 0.12 * brightness * pulse * diskMask;
-            if (alpha < 0.008) discard;
+            // v28: 亮度差异 + 基础透明度降低（20条线需要更透）
+            float alpha = 0.07 * brightness * pulse * diskMask * uBrightness;
+            if (alpha < 0.005) discard;
             vec3 col = mix(vec3(0.4, 0.6, 1.0), vec3(0.6, 0.85, 1.0), brightness);
             gl_FragColor = vec4(col, alpha);
           }
@@ -504,7 +508,9 @@ export class Pulsar {
   // ==================== 后处理（闪光蓝白 + 扫描线噪点） ====================
   updatePostEffects(uniforms, camera, delta) {
     const cfg = config.pulsar;
-    if (!camera || !this.group) return;
+    if (!camera || !this.group || !uniforms) return;
+    // v28: 防御性检查 — 确保所需 uniform 存在再操作
+    if (uniforms.uFlashIntensity === undefined && uniforms.uNoiseIntensity === undefined) return;
 
     const dist = this.group.position.distanceTo(camera.position);
 
@@ -538,19 +544,18 @@ export class Pulsar {
     uniforms.uFlashIntensity.value = this._flashDecay;
     // 恢复对比度
     if (this._flashDecay < 0.001 && uniforms.uContrast) {
-      uniforms.uContrast.value = config.renderer.contrast || 1.0;
+      uniforms.uContrast.value = config.renderer?.contrast ?? 1.0;
     }
 
-    // v27: 噪点分层 — 原有随机噪点 + 横向扫描线干扰
+    // v27: 噪点分层
     const noiseRange = cfg.noiseDistance || 400;
-    if (dist < noiseRange) {
+    if (dist < noiseRange && uniforms.uNoiseIntensity !== undefined) {
       const noiseStrength = (1 - dist / noiseRange) * (cfg.maxNoiseIntensity || 0.5);
       uniforms.uNoiseIntensity.value = noiseStrength;
-      // 扫描线随距离平滑渐强
       if (uniforms.uChromaticAberration !== undefined) {
         uniforms.uChromaticAberration.value = noiseStrength * 0.03;
       }
-    } else {
+    } else if (uniforms.uNoiseIntensity !== undefined) {
       uniforms.uNoiseIntensity.value = 0;
     }
   }

@@ -165,7 +165,8 @@ export class PlanetSystem {
       asteroidBelt = this._createAsteroidBelt(radius, cfg.asteroidBeltCount || 120);
       group.add(asteroidBelt.mesh);
     }
-    group.add(this._createLabel(type, radius));
+    const label = this._createLabel(type, radius);
+    group.add(label);
 
     // v-latest: 行星碎石环 — 仅气态巨行星（天文事实）
     if (!isRogue && type === 'gas' && config.planetRings?.enabled) {
@@ -173,7 +174,7 @@ export class PlanetSystem {
     }
     const seed = index * 7919 + 13, rng = _srng(seed);
     group.userData = {
-      index, radius, type, lod, atmLod,
+      index, radius, type, lod, atmLod, label,
       rotationSpeed: randomRange(0.005, 0.025),
       orbitSpeed: isRogue ? 0 : randomRange(0.002, 0.012),
       orbitRadius: isRogue ? 0 : (60 + rng() * 140),
@@ -330,6 +331,10 @@ export class PlanetSystem {
     this.planets.forEach((planet) => {
       const data = planet.userData;
       const dist = planet.position.distanceTo(this.camera.position);
+      // v25: 距离标签剔除（超过阈值隐藏标签，减少屏幕杂乱）
+      if (data.label) {
+        data.label.visible = dist < (cfg.labelDistance || 3000);
+      }
       // v25: 无重生，固定位置
       if (data.lod) data.lod.update(this.camera);
       if (data.atmLod) data.atmLod.update(this.camera);

@@ -162,19 +162,19 @@ export class SpeedLines {
     this.positions[i3_1 + 1] = cy - fy * halfLen;
     this.positions[i3_1 + 2] = cz - fz * halfLen;
 
-    // v19.5: 边缘偏冷蓝，内圈偏暖 → 屏幕边缘有蓝色微光
+    // v26: 统一冷蓝灰，去掉暖色偏移（避免和粒子流色彩冲突）
     const edge = (radius - cfg.minRadius) / Math.max(cfg.maxRadius - cfg.minRadius, 1);
-    const r_col = 0.3 + edge * 0.2;
-    const g_col = 0.45 + edge * 0.3;
-    const b_col = 0.6 + edge * 0.4;
+    const r_col = 0.25 + edge * 0.1;
+    const g_col = 0.35 + edge * 0.15;
+    const b_col = 0.55 + edge * 0.25;
 
     this.colors[i3_0]     = r_col;
     this.colors[i3_0 + 1] = g_col;
     this.colors[i3_0 + 2] = b_col;
 
-    this.colors[i3_1]     = r_col + 0.12;
-    this.colors[i3_1 + 1] = g_col + 0.08;
-    this.colors[i3_1 + 2] = b_col + 0.08;
+    this.colors[i3_1]     = r_col + 0.08;
+    this.colors[i3_1 + 1] = g_col + 0.05;
+    this.colors[i3_1 + 2] = b_col + 0.05;
 
     if (this.geometry) {
       this.geometry.attributes.color.needsUpdate = true;
@@ -219,15 +219,15 @@ export class SpeedLines {
     this.sprintPositions[i3_1 + 1] = cy - fy * halfLen;
     this.sprintPositions[i3_1 + 2] = cz - fz * halfLen;
 
-    // 暖白/亮蓝混合颜色
-    const isWarm = Math.random() > 0.8;
-    this.sprintColors[i3_0]     = isWarm ? 1.0 : 0.5;
-    this.sprintColors[i3_0 + 1] = isWarm ? 0.85 : 0.65;
-    this.sprintColors[i3_0 + 2] = isWarm ? 0.6 : 1.0;
+    // v26: 冲刺线统一冷蓝白，去掉暖色调（避免和白粒子流冲突）
+    const isBright = Math.random() > 0.7;
+    this.sprintColors[i3_0]     = isBright ? 0.7 : 0.4;
+    this.sprintColors[i3_0 + 1] = isBright ? 0.8 : 0.55;
+    this.sprintColors[i3_0 + 2] = isBright ? 1.0 : 0.85;
 
-    this.sprintColors[i3_1]     = isWarm ? 1.0 : 0.75;
-    this.sprintColors[i3_1 + 1] = isWarm ? 0.92 : 0.82;
-    this.sprintColors[i3_1 + 2] = isWarm ? 0.75 : 1.0;
+    this.sprintColors[i3_1]     = isBright ? 0.85 : 0.6;
+    this.sprintColors[i3_1 + 1] = isBright ? 0.92 : 0.72;
+    this.sprintColors[i3_1 + 2] = isBright ? 1.0 : 0.95;
   }
 
   update(delta, speed, velocity, maxSpeedOverride, sprintMultiplierOverride) {

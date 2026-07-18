@@ -88,10 +88,13 @@ export class PlayerController {
     // 绑定键盘事件
     this.bindKeyboardEvents();
 
-    // PointerLock 中断时重置按键状态（防止 Alt+Tab 后按键卡住）
+    // PointerLock 中断时重置按键状态并清空速度（防止解锁后继续漂移）
     this.onPointerLockChangeBound = () => {
       if (!this.controls.isLocked) {
         this.resetKeys();
+        this.velocity.set(0, 0, 0); // fix: 清空速度向量，防止解锁后玩家持续漂移
+        // v25-fix: 同步内部朝向状态到相机当前朝向，防止重新锁定时视角跳变
+        this.syncOrientation();
       }
     };
     document.addEventListener('pointerlockchange', this.onPointerLockChangeBound);
@@ -399,28 +402,47 @@ export class PlayerController {
     }
   }
 
-  /** v9.0: 接近行星表面自动限速 */
+  /** v9.0: 接近天体表面自动限速（v25: 扩展至黑洞、脉冲星、系外行星） */
   applyProximitySlowdown(delta, currentMaxSpeed) {
-    if (!this._solarSystem) return;
-    const planets = this._solarSystem.planets;
-    if (!planets) return;
-
     let minDistToSurface = Infinity;
-    planets.forEach(p => {
-      p.group.getWorldPosition(this._tempPlanetPos);
-      const dist = this.camera.position.distanceTo(this._tempPlanetPos);
-      const surfDist = dist - p.data.radius;
-      if (surfDist < minDistToSurface) minDistToSurface = surfDist;
-    });
+
+    // 太阳系行星
+    if (this._solarSystem?.planets) {
+      this._solarSystem.planets.forEach(p => {
+        p.group.getWorldPosition(this._tempPlanetPos);
+        const dist = this.camera.position.distanceTo(this._tempPlanetPos);
+        const surfDist = dist - p.data.radius;
+        if (surfDist < minDistToSurface) minDistToSurface = surfDist;
+      });
+    }
+
+    // v25: 额外检测天体
+    if (this._extraBodies) {
+      for (const body of this._extraBodies) {
+        const pos = body.group?.getWorldPosition
+          ? body.group.getWorldPosition(this._tempPlanetPos)
+          : body.getWorldPosition?.(this._tempPlanetPos);
+        if (!pos) continue;
+        const dist = this.camera.position.distanceTo(this._tempPlanetPos);
+        const surfDist = dist - (body.radius || 20);
+        if (surfDist < minDistToSurface) minDistToSurface = surfDist;
+      }
+    }
 
     if (minDistToSurface < 500 && minDistToSurface > 0) {
-      const factor = Math.max(0.1, minDistToSurface / 500);
+      const factor = Math.max(0.08, minDistToSurface / 500);
       const speedLimit = currentMaxSpeed * factor;
       const vLen = this.velocity.length();
       if (vLen > speedLimit) {
         this.velocity.multiplyScalar(speedLimit / vLen);
       }
     }
+  }
+
+  /** v25: 注册额外碰撞体（黑洞、脉冲星等） */
+  addCollidableBody(group, radius) {
+    if (!this._extraBodies) this._extraBodies = [];
+    this._extraBodies.push({ group, radius });
   }
 
   /**

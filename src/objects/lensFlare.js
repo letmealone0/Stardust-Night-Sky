@@ -86,6 +86,8 @@ export class LensFlareSystem {
     this.active = false;
     this._textures = {};
     this._tempVec = new THREE.Vector3();
+    this._flareDir = new THREE.Vector3();
+    this._camToStar = new THREE.Vector3();
   }
 
   init(scene) {
@@ -102,12 +104,12 @@ export class LensFlareSystem {
     // 六边形
     this._addSprite(this._textures.hex, 0.4, 2.5);
 
-    // 沿光轴的光斑
-    const dotPositions = [0.3, 0.5, 0.7, -0.3, -0.5];
+    // 沿光轴的光斑（使用世界空间偏移因子）
+    const dotOffsets = [0.3, 0.5, 0.7, -0.3, -0.5];
     const dotSizes = [0.6, 0.8, 0.5, 0.4, 0.3];
-    dotPositions.forEach((pos, i) => {
+    dotOffsets.forEach((offset, i) => {
       const sprite = this._addSprite(this._textures.dot, 0.3, dotSizes[i]);
-      sprite.userData.offsetFactor = pos;
+      sprite.userData.offsetFactor = offset;
       sprite.userData.isDot = true;
     });
 
@@ -135,7 +137,8 @@ export class LensFlareSystem {
   }
 
   /**
-   * 更新光晕
+   * v2: 使用世界空间方向向量沿光轴分布光斑
+   * 修复：原版使用NDC坐标×固定系数，恒星偏离屏幕中心时方向/大小完全错误
    * @param {THREE.Camera} camera
    * @param {THREE.Vector3} starWorldPos - 恒星世界坐标
    * @param {number} brightness - 恒星亮度 (0~1)
@@ -144,7 +147,7 @@ export class LensFlareSystem {
   update(camera, starWorldPos, brightness, delta) {
     if (!camera || !starWorldPos) return;
 
-    // 将恒星位置投影到屏幕（复用临时向量避免GC）
+    // 将恒星位置投影到屏幕
     const pos = this._tempVec.copy(starWorldPos).project(camera);
     const screenX = pos.x;
     const screenY = pos.y;
@@ -160,7 +163,7 @@ export class LensFlareSystem {
 
     // 亮度随到屏幕中心距离衰减 (中心最亮)
     const centerFade = 1.0 - Math.min(1.0, screenDist / 1.2);
-    const targetOpacity = centerFade * brightness * 0.8; // v22: -20%
+    const targetOpacity = centerFade * brightness * 0.8;
 
     if (targetOpacity < 0.05) {
       this._fade(delta);
@@ -170,17 +173,20 @@ export class LensFlareSystem {
     this.group.visible = true;
     const fadeSpeed = 4.0 * delta;
 
+    // v2: 计算相机到恒星的世界空间方向向量，光斑沿此方向分布
+    this._flareDir.subVectors(starWorldPos, camera.position).normalize();
+    const starDist = camera.position.distanceTo(starWorldPos);
+
     this.flares.forEach(sprite => {
       const target = targetOpacity * sprite.userData.baseOpacity;
       sprite.material.opacity += (target - sprite.material.opacity) * fadeSpeed;
 
       if (sprite.userData.isDot) {
-        // 光斑沿光轴分布 (从屏幕中心到恒星方向)
+        // v2: 光斑沿世界空间光轴（相机→恒星方向）分布
         const offset = sprite.userData.offsetFactor;
-        sprite.position.set(
-          screenX * offset * 8,
-          screenY * offset * 8,
-          0
+        const distAlong = offset * starDist * 0.3;
+        sprite.position.copy(
+          this._flareDir.clone().multiplyScalar(distAlong)
         );
       } else {
         sprite.position.set(0, 0, 0);

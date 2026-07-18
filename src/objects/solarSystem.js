@@ -100,9 +100,9 @@ export class SolarSystem {
     this.sun = new THREE.Mesh(sunGeo, this.sunMaterial);
     this.group.add(this.sun);
 
-    // 太阳点光源 (v9.0: 场景唯一主光源)
-    // fix: Three.js v0.184 默认物理光照 decay=2 (1/d²)，轨道距离下衰减到几乎为0，行星全黑。
-    //      艺术化太阳系用 decay=0（无衰减），让所有轨道距离的行星都被均匀照亮。
+    // 太阳点光源
+    // decay=0 无距离衰减 — 艺术化太阳系，所有轨道行星亮度均匀
+    // 不用物理衰减(decay=2)因为1100单位外光照≈0，纹理全黑
     const sunLight = new THREE.PointLight(0xfff5e0, cfg.sunLightIntensity || 5.0, cfg.sunLightRange || 25000);
     sunLight.decay = 0;
     sunLight.position.set(0, 0, 0);
@@ -241,10 +241,11 @@ export class SolarSystem {
       roughness: isGas ? 0.35 : 0.5,
       metalness: 0.05,
       color: tex?.map ? 0xffffff : new THREE.Color(pData.color),
-      emissive: tex?.map ? new THREE.Color(0x050505) : new THREE.Color(0x000000),
-      emissiveIntensity: 0.0,
+      // emissive 仅作暗面防死黑用，强度极低以免冲淡纹理
+      emissive: new THREE.Color(0x111111),
+      emissiveIntensity: 0.3,
     };
-    // v15: 火星偏红 emissive
+    // v15: 火星偏红 emissive（比基础稍亮）
     if (pData.name === 'Mars') {
       matOpts.emissive = new THREE.Color(0x110800);
       matOpts.emissiveIntensity = 0.15;
@@ -331,9 +332,17 @@ export class SolarSystem {
     this.group.add(orbitPivot);
 
     const texStatus = tex ? (tex.map ? '纹理OK' : '无纹理') : '未加载';
+    // v25: 诊断日志（仅首次创建时输出，避免刷屏）
+    if (pData.name === 'Earth' || pData.name === 'Mars') {
+      console.log(`[SolarSystem] ${pData.name} 状态:`, texStatus,
+        '| map:', tex?.map ? `存在(尺寸=${tex.map.image?.width}x${tex.map.image?.height})` : 'null',
+        '| normalMap:', tex?.normalMap ? 'OK' : 'null',
+        '| URL:', tex?.map?.image?.src || 'N/A');
+    }
 
     this.planets.push({
       group: planetGroup, orbitPivot, data: pData, mesh, material, moons,
+      labelSprite,  // v25: 标签引用用于距离剔除
       angle: Math.random() * Math.PI * 2, rotAngle: 0,
     });
   }
@@ -710,6 +719,18 @@ export class SolarSystem {
             child.rotation.y += delta * 0.03;
           }
         });
+      }
+
+      // v25: 标签距离剔除 — 太近（贴脸）或太远（看不清）都隐藏
+      // 解决"靠近时标签爆炸成巨大白块"的视觉bug
+      const camPos = this.camera?.position;
+      if (camPos && planet.labelSprite) {
+        const planetPos = new THREE.Vector3();
+        planet.group.getWorldPosition(planetPos);
+        const dist = camPos.distanceTo(planetPos);
+        const minDist = d.radius * 4;  // 太近：能看到行星本体，不需要标签
+        const maxDist = config.solarSystem?.labelMaxDistance ?? 6000;
+        planet.labelSprite.visible = dist > minDist && dist < maxDist;
       }
 
       // 卫星

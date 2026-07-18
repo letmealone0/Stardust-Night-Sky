@@ -6,7 +6,7 @@ import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { config } from '../core/config.js';
 
-/** v13: 统一后处理特效 Shader（引力透镜 + 脉冲噪点 + 闪光 + 星云雾化 + 运动模糊 + 镜头效果） */
+/** v25: 统一后处理特效 Shader（引力透镜 + 脉冲噪点 + 闪光 + 星云雾化 + 运动模糊 + 自动曝光 + 色彩分级） */
 const CelestialEffectsShader = {
   uniforms: {
     tDiffuse: { value: null },
@@ -31,6 +31,10 @@ const CelestialEffectsShader = {
     // v13: 色调映射增强
     uContrast: { value: 1.0 },
     uSaturation: { value: 1.0 },
+    // v25: 自动曝光
+    uExposure: { value: 1.0 },
+    uExposureTarget: { value: 1.0 },
+    uPrevLuminance: { value: 0.5 },
   },
   vertexShader: `
     varying vec2 vUv;
@@ -56,19 +60,39 @@ const CelestialEffectsShader = {
     uniform float uVignetteStrength;
     uniform float uContrast;
     uniform float uSaturation;
+    uniform float uExposure;
     varying vec2 vUv;
 
     float rand(vec2 co) {
       return fract(sin(dot(co, vec2(12.9898, 78.233))) * 43758.5453);
     }
 
+    // v25: ACES 电影色调映射
+    vec3 acesFilm(vec3 x) {
+      float a = 2.51, b = 0.03, c = 2.43, d = 0.59, e = 0.14;
+      return clamp((x * (a * x + b)) / (x * (c * x + d) + e), 0.0, 1.0);
+    }
+
+    // v25: 颜色分级（暖色天体、冷色深空）
+    vec3 colorGrade(vec3 color) {
+      float warmth = dot(color, vec3(0.4, 0.3, 0.3));
+      vec3 coolShift = vec3(0.94, 0.97, 1.06);
+      vec3 warmShift = vec3(1.04, 1.01, 0.94);
+      color = mix(color * coolShift, color * warmShift, smoothstep(0.1, 0.6, warmth));
+      float lum = dot(color, vec3(0.299, 0.587, 0.114));
+      return mix(vec3(lum), color, 1.06);
+    }
+
     void main() {
       vec2 uv = vUv;
 
-      // v19.5: 无任何特效时直接输出，避免无效采样
+      // v19.5: 无任何特效时直接输出
       if (uMotionBlurIntensity < 0.005 && uLensStrength < 0.001 && uNoiseIntensity < 0.001
           && uFlashIntensity < 0.001 && uFogDensity < 0.001 && uChromaticAberration < 0.001) {
-        gl_FragColor = texture2D(tDiffuse, vUv);
+        vec4 col = texture2D(tDiffuse, vUv);
+        // v25: 自动曝光 + 色彩分级始终应用
+        col.rgb = colorGrade(col.rgb);
+        gl_FragColor = vec4(acesFilm(col.rgb * uExposure), col.a);
         return;
       }
 
@@ -86,7 +110,7 @@ const CelestialEffectsShader = {
         }
       }
 
-      // 2. 运动模糊（沿速度方向多次采样混合 — 轻量版）
+      // 2. 运动模糊
       vec4 color = vec4(0.0);
       if (uMotionBlurIntensity > 0.005) {
         vec2 vel = uMotionDir * uMotionBlurIntensity * 0.4;
@@ -100,14 +124,14 @@ const CelestialEffectsShader = {
         color = texture2D(tDiffuse, uv);
       }
 
-      // 3. 色差 (chromatic aberration)
+      // 3. 色差
       if (uChromaticAberration > 0.001) {
         vec2 caDir = (vUv - vec2(0.5)) * uChromaticAberration;
         color.r = texture2D(tDiffuse, clamp(uv + caDir, 0.0, 1.0)).r;
         color.b = texture2D(tDiffuse, clamp(uv - caDir, 0.0, 1.0)).b;
       }
 
-      // 4. 脉冲星噪点干扰
+      // 4. 脉冲星噪点
       if (uNoiseIntensity > 0.001) {
         float noise = rand(vUv * uTime * 100.0) * 2.0 - 1.0;
         float n = noise * uNoiseIntensity;
@@ -116,9 +140,15 @@ const CelestialEffectsShader = {
         color.rgb += vec3(n * 0.5, n * 0.6, n * 0.8);
       }
 
-      // 5. 脉冲星闪光
+      // 5. 脉冲星闪光（v25: 添加 RGB 色散偏移）
       if (uFlashIntensity > 0.001) {
-        color.rgb += vec3(0.8, 0.9, 1.0) * uFlashIntensity;
+        float caOffset = uFlashIntensity * 0.02;
+        color.r += uFlashIntensity * 0.9;
+        color.g += uFlashIntensity * 0.92;
+        color.b += uFlashIntensity;
+        // 轻微 RGB 偏移模拟光学衍射
+        color.r = texture2D(tDiffuse, clamp(uv + vec2(caOffset, 0.0), 0.0, 1.0)).r * uFlashIntensity + color.r * 0.3;
+        color.b = texture2D(tDiffuse, clamp(uv - vec2(caOffset, 0.0), 0.0, 1.0)).b * uFlashIntensity + color.b * 0.3;
       }
 
       // 6. 星云雾化
@@ -130,7 +160,7 @@ const CelestialEffectsShader = {
         color.rgb = mix(color.rgb, vec3(dot(color.rgb, vec3(0.333))), fog * 0.3);
       }
 
-      // 7. 暗角 (vignette)
+      // 7. 暗角
       float vignette = 1.0 - smoothstep(0.3, 0.95, length(vUv - vec2(0.5)) * 1.3);
       color.rgb *= mix(1.0, vignette, uVignetteStrength);
 
@@ -139,10 +169,16 @@ const CelestialEffectsShader = {
       color.rgb = mix(vec3(gray), color.rgb, uSaturation);
       color.rgb = (color.rgb - 0.5) * uContrast + 0.5;
 
-      // v14: 边缘保护 — 防止bloom溢出产生亮线
+      // v25: 颜色分级（冷暖对比）
+      color.rgb = colorGrade(color.rgb);
+
+      // v14: 边缘保护
       float edgeFade = smoothstep(0.0, 0.03, vUv.x) * smoothstep(1.0, 0.97, vUv.x)
                      * smoothstep(0.0, 0.03, vUv.y) * smoothstep(1.0, 0.97, vUv.y);
       color.rgb *= edgeFade;
+
+      // v25: ACES 色调映射 + 自动曝光
+      color.rgb = acesFilm(color.rgb * uExposure);
 
       gl_FragColor = color;
     }
@@ -164,6 +200,9 @@ export class PostProcessingManager {
     this._tempRight = new THREE.Vector3();
     this._tempUp = new THREE.Vector3();
     this._initialized = false;
+    // v25: 自动曝光系统
+    this._currentExposure = 1.0;
+    this._exposureTarget = 1.0;
   }
 
   init() {
@@ -214,6 +253,25 @@ export class PostProcessingManager {
     return this.celestialPass;
   }
 
+  /** v25: 自动曝光更新 — 根据场景亮度动态调整曝光值 */
+  updateExposure(delta) {
+    if (!this.celestialPass) return;
+    const u = this.celestialPass.uniforms;
+
+    // 目标曝光：雾密则暗 → 提曝；闪亮则亮 → 降曝
+    const fogFactor = u.uFogDensity.value;
+    const flashFactor = u.uFlashIntensity.value;
+
+    // 画面偏亮时降低曝光（防止过曝），偏暗时提高曝光
+    const brightness = 0.5 + flashFactor * 2.0 - fogFactor * 0.3;
+    this._exposureTarget = 1.0 / Math.max(0.3, brightness);
+
+    // 平滑过渡（模拟人眼适应，约1.5秒达到目标）
+    const adaptSpeed = 1.5;
+    this._currentExposure += (this._exposureTarget - this._currentExposure) * Math.min(1, delta * adaptSpeed);
+    u.uExposure.value = this._currentExposure;
+  }
+
   /** v13: 更新运动模糊参数（v23: 复用临时变量避免GC） */
   updateMotionBlur(camera, delta) {
     if (!this.celestialPass || !camera) return;
@@ -247,15 +305,23 @@ export class PostProcessingManager {
     this._prevCamPos.copy(camera.position);
   }
 
-  render() {
+  render(delta = 0.016) {
     if (this.celestialPass) {
       this.celestialPass.uniforms.uTime.value = performance.now() * 0.001;
-      // v23: 智能开关 — 所有特效强度为0时禁用pass，跳过全屏采样
+      // v25: 自动曝光
+      this.updateExposure(delta);
+      // v23: 智能开关 — 所有特效强度为0时禁用pass
       const u = this.celestialPass.uniforms;
+      // v25: 自动曝光/色彩分级始终启用（不再完全禁用pass）
       const hasEffects = u.uMotionBlurIntensity.value > 0.005 || u.uLensStrength.value > 0.001
         || u.uNoiseIntensity.value > 0.001 || u.uFlashIntensity.value > 0.001
         || u.uFogDensity.value > 0.001 || u.uChromaticAberration.value > 0.001;
-      this.celestialPass.enabled = hasEffects;
+      // 始终启用以应用曝光+色彩分级
+      this.celestialPass.enabled = true;
+      // 但当完全无效果时标记低开销
+      if (!hasEffects && u.uExposure.value > 0.99 && u.uExposure.value < 1.01) {
+        // 无事可做，保持启用但会快速通过（ACES + 色彩分级仍会执行）
+      }
     }
     if (this.composer) this.composer.render();
   }

@@ -212,12 +212,14 @@ export class NebulaSystem {
 
       const mat = this._createMaterial(def, baseColor, spread, seed + li, stretchData);
       const pts = new THREE.Points(geo, mat);
-      // v23: 视锥剔除 + 宽松包围球 + 软粒子（depthTest=false 避免硬边）
+      // v25: 视锥剔除 + 宽松包围球
       pts.frustumCulled = true;
       geo.boundingSphere = new THREE.Sphere(new THREE.Vector3(0,0,0), spread * 1.4);
       pts.renderOrder = def.renderOrder || 0;
-      // v23: 软粒子效果 — 关闭深度测试，星云始终可见（渲染顺序控制层叠）
-      if (!def.isDust) pts.material.depthTest = false;
+      // fix: 开启depthTest（保留depthWrite=false），依靠深度缓冲实现正确前后遮挡
+      // 行星/恒星在前时星云被正确遮挡，避免星云总是浮在所有物体上方
+      pts.material.depthTest = true;
+      pts.material.depthWrite = false;
       return { points: pts, material: mat, config: def, geometry: geo };
     });
   }
@@ -497,13 +499,22 @@ export class NebulaSystem {
           if (l.material.uniforms.uLightRange1) l.material.uniforms.uLightRange1.value = d.lightRange1 || 400;
           if (l.material.uniforms.uLightRange2) l.material.uniforms.uLightRange2.value = d.lightRange2 || 350;
         }
-        // v23: LOD drawRange（gentler fractions，配合 opacity 淡出）
+        // v25: LOD drawRange 平滑过渡（防止新增粒子突然批量出现造成闪烁）
         if (l.geometry && l.geometry.userData?.totalCount) {
           const total = l.geometry.userData.totalCount;
           const target = Math.max(Math.floor(total * lod.fraction), 150);
-          if (l.geometry.drawRange.count !== target) {
+          const current = l.geometry.drawRange.count;
+
+          // LOD 升级时（target > current）平滑拉升至目标值
+          if (target > current) {
+            const smoothTarget = Math.min(target, Math.floor(current + total * delta * 0.5));
+            l.geometry.setDrawRange(0, Math.max(current, smoothTarget));
+          } else if (target < current) {
+            // LOD 降级时（target < current）直接跳降（远处看不见）
             l.geometry.setDrawRange(0, target);
           }
+          // 存储平滑目标用于下一帧
+          l._lodTarget = target;
         }
       });
     });

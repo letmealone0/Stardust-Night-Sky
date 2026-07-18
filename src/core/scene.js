@@ -157,7 +157,7 @@ export class SceneManager {
 
     try {
       this.objects.nearDust = new NearDust();
-      this.objects.nearDust.init(this.camera);
+      this.objects.nearDust.init(this.camera, this.scene);
     } catch (e) { console.warn('[Scene] 近处微尘初始化失败:', e); }
 
     // v9.0: 微弱环境光 — 仅防暗部死黑，太阳是主光源

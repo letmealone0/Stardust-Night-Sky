@@ -1,16 +1,15 @@
 /**
- * 全方向粒子流系统 v19.1
+ * 全方向粒子流系统 v20
  *
- * 设计原理（参考 Elite Dangerous / No Man's Sky 的粒子流实现）：
- * - 粒子挂载在场景中的跟随 Group（随相机移动+旋转）
- * - Group 每帧同步到相机位置和朝向，Group-local 等效于 camera-local
- * - 世界空间速度通过逆四元数转为 Group-local 方向
- * - 粒子沿 -localVel 方向流动（环境从前方飞向相机再掠过）
- * - 球形全方向分布 + 三层视差
- * - 粒子拉伸拖尾在屏幕上沿速度方向
+ * fix: 修复相机快速转向时粒子"甩动"跳变。
+ * Group 仅同步相机位置（不同步旋转），粒子在固定世界朝向中运动。
+ * 速度方向使用世界空间向量，保证转向时粒子运动平滑连续。
  *
- * 关键教训：不能 camera.add(points)，因为相机不在 scene 树中，
- * renderer.render(scene, camera) 不会遍历相机的子节点！必须挂到 scene 中。
+ * 设计原理：
+ * - 粒子挂载在场景中的跟随 Group（仅随相机移动，不旋转）
+ * - Group 每帧同步到相机世界位置
+ * - 所有粒子位置、速度方向使用世界空间
+ * - 粒子沿世界速度反方向流动
  */
 
 import * as THREE from 'three';
@@ -18,7 +17,7 @@ import { config } from '../core/config.js';
 
 export class ParticleFlow {
   constructor() {
-    this.group = null;        // scene-attached跟随group
+    this.group = null;        // scene-attached跟随group（仅位置，不旋转）
     this.points = null;
     this.geometry = null;
     this.material = null;
@@ -26,10 +25,8 @@ export class ParticleFlow {
     this.count = 10000;
     this.positions = null;
     this.speed = 0;
-    this._localVel = new THREE.Vector3();
     this._worldVel = new THREE.Vector3();
     this._sprintFactor = 0;
-    this._invQuat = new THREE.Quaternion();
   }
 
   init(scene, camera) {
@@ -39,10 +36,9 @@ export class ParticleFlow {
 
     const spread = cfg.spread || 200;
 
-    // 创建跟随 group，添加到场景
+    // v20: 创建跟随 group（仅同步位置，不同步旋转）
     this.group = new THREE.Group();
     this.group.position.copy(camera.position);
-    this.group.quaternion.copy(camera.quaternion);
     scene.add(this.group);
 
     this.positions = new Float32Array(this.count * 3);
@@ -97,7 +93,7 @@ export class ParticleFlow {
         void main() {
           vec3 pos = position;
 
-          // speedFactor归一化 + ×2.5恢复原始满速亮度（原始 80/30=2.67）
+          // speedFactor归一化
           float speedFactor = uMaxSpeed > 1.0 ? min(uSpeed / uMaxSpeed * 2.5, 4.0) : 0.0;
 
           float layerSpeed;
@@ -118,9 +114,9 @@ export class ParticleFlow {
           pos.y += cos(t * 0.7 + aRandom * 6.28) * 0.3;
           pos.z += sin(t * 0.5 + aRandom * 6.28) * 0.3;
 
-          // === 拖尾（动态长度：速度越快越长）===
+          // === v20: 拖尾使用世界空间速度方向 ===
           vec3 flowDir = -uVelocity;
-          float dynStreak = 1.5 + speedFactor * 0.8;  // v19.5: 动态拖尾
+          float dynStreak = 1.5 + speedFactor * 0.8;
           float flowStrength = speedFactor * 6.0 * layerSpeed;
           vec3 streakOffset = flowDir * flowStrength * aRandom * dynStreak * (1.0 + uSprintFactor * 1.5);
 
@@ -130,10 +126,11 @@ export class ParticleFlow {
           vStreakDir = normalize(screenStreak) * length(screenStreak) * 0.2;
 
           // === 透明度 ===
-          float baseAlpha = 0.02;
-          vAlpha = baseAlpha + speedFactor * 0.12;
-          vAlpha *= (0.5 + vSpeedLayer * 0.7);
-          vAlpha *= (1.0 + uSprintFactor * 1.5);
+          // v26: 基础透明度降低 + 整体视觉收敛
+          float baseAlpha = 0.012;
+          vAlpha = baseAlpha + speedFactor * 0.07;
+          vAlpha *= (0.4 + vSpeedLayer * 0.6);
+          vAlpha *= (1.0 + uSprintFactor * 1.2);
           vSprint = uSprintFactor;
 
           // === 粒子大小 ===
@@ -143,7 +140,6 @@ export class ParticleFlow {
           gl_PointSize = clamp(gl_PointSize, 0.5, 12.0);
           gl_Position = projectionMatrix * mvPosition;
 
-          // 传递归一化屏幕坐标用于中心渐隐
           vScreenPos = gl_Position.xy / gl_Position.w;
         }
       `,
@@ -158,7 +154,6 @@ export class ParticleFlow {
         void main() {
           vec2 coord = gl_PointCoord - 0.5;
 
-          // 沿拖尾方向拉伸粒子
           float streakLen = length(vStreakDir);
           if (streakLen > 0.001) {
             vec2 streakAxis = normalize(vStreakDir);
@@ -173,24 +168,23 @@ export class ParticleFlow {
           alpha = max(alpha * 0.4, core * 0.35);
           alpha *= vAlpha;
 
-          // === 中心渐隐：屏幕中心粒子降低透明度，保证视野清晰 ===
+          // v26: 中心区域强烈透明化（消除中心粒子团雾）
+          // 中心几乎不可见，外圈满显
           float centerDist = length(vScreenPos);
-          float centerFade = smoothstep(0.15, 0.55, centerDist); // 0→1 from center to edge
-          alpha *= 0.2 + centerFade * 0.8;
+          float centerFade = smoothstep(0.25, 0.7, centerDist);
+          alpha *= 0.05 + centerFade * 0.95;
 
           alpha = clamp(alpha, 0.0, 1.0);
           if (alpha < 0.002) discard;
 
-          // === 颜色：速度越快越偏暖 ===
-          vec3 slowColor = vec3(0.75, 0.85, 1.0);   // 冷蓝白
-          vec3 fastColor = vec3(0.92, 0.88, 0.8);    // 暖白
-          vec3 sprintColor = vec3(1.0, 0.7, 0.4);    // 暖金
+          // v26: 统一冷蓝白调，去掉暖橙偏移（避免和速度线色彩冲突）
+          vec3 slowColor = vec3(0.55, 0.7, 0.95);
+          vec3 fastColor = vec3(0.75, 0.85, 1.0);
+          vec3 sprintColor = vec3(0.85, 0.95, 1.0);
 
-          vec3 color = mix(slowColor, fastColor, vSprint * 0.6);
-          color = mix(color, sprintColor, vSprint * vSpeedLayer * 0.4);
-
-          // 远景偏蓝、近景偏白
-          color = mix(color, vec3(1.0, 1.0, 1.0), vSpeedLayer * 0.3);
+          vec3 color = mix(slowColor, fastColor, vSprint * 0.5);
+          color = mix(color, sprintColor, vSprint * vSpeedLayer * 0.3);
+          color = mix(color, vec3(0.8, 0.9, 1.0), vSpeedLayer * 0.2);
 
           gl_FragColor = vec4(color, alpha);
         }
@@ -203,7 +197,7 @@ export class ParticleFlow {
     this.points = new THREE.Points(this.geometry, this.material);
     this.group.add(this.points);
 
-    console.log('[ParticleFlow] v19.1 初始化完成，粒子数:', this.count, '分布范围:', spread);
+    console.log('[ParticleFlow] v20 初始化完成（世界空间方向，修复旋转甩动），粒子数:', this.count, '分布范围:', spread);
   }
 
   /**
@@ -266,28 +260,24 @@ export class ParticleFlow {
   update(delta, elapsed, speed, velocity, maxSpeedOverride, sprintMultiplierOverride) {
     this.speed = speed;
 
-    // 同步跟随 group 到相机位置+朝向（group-local = camera-local）
+    // v20: 仅同步跟随group到相机世界位置（不同步旋转，避免粒子甩动）
     this.group.position.copy(this.camera.position);
-    this.group.quaternion.copy(this.camera.quaternion);
 
     if (velocity) {
       this._worldVel.copy(velocity);
     }
 
-    // 世界速度 → group-local 方向
+    // v20: 使用世界空间速度方向（归一化）
     const vLen = this._worldVel.length();
-    if (vLen > 0.01) {
-      this._invQuat.copy(this.group.quaternion).invert();
-      this._localVel.copy(this._worldVel).applyQuaternion(this._invQuat).normalize();
-    } else {
-      this._localVel.set(0, 0, 0);
-    }
+    const worldDir = vLen > 0.01
+      ? this._worldVel.clone().normalize()
+      : new THREE.Vector3(0, 0, 0);
 
     const uniforms = this.material.uniforms;
     const maxSpd = maxSpeedOverride || config.player.maxSpeed;
     uniforms.uSpeed.value = speed;
     uniforms.uMaxSpeed.value = maxSpd;
-    uniforms.uVelocity.value.copy(this._localVel);
+    uniforms.uVelocity.value.copy(worldDir);
     uniforms.uTime.value = elapsed;
 
     const sprintMul = sprintMultiplierOverride || config.player.sprintMultiplier || 3.0;
@@ -303,17 +293,17 @@ export class ParticleFlow {
       const i3 = i * 3;
 
       if (vLen > 0.5) {
-        // 流动速度按 speed/maxSpeed 比例，基准速率 50 还原原始手感
+        // v20: 使用世界空间速度方向推动粒子
         const flowSpeed = (speed / Math.max(maxSpd, 1)) * delta * 50;
-        pos[i3]     -= this._localVel.x * flowSpeed;
-        pos[i3 + 1] -= this._localVel.y * flowSpeed;
-        pos[i3 + 2] -= this._localVel.z * flowSpeed;
+        pos[i3]     -= worldDir.x * flowSpeed;
+        pos[i3 + 1] -= worldDir.y * flowSpeed;
+        pos[i3 + 2] -= worldDir.z * flowSpeed;
 
         const dist = Math.sqrt(
           pos[i3] * pos[i3] + pos[i3 + 1] * pos[i3 + 1] + pos[i3 + 2] * pos[i3 + 2]
         );
         if (dist > spread * 1.3 || dist < 5) {
-          this.resetParticleFlow(i, spread, this._localVel);
+          this.resetParticleFlow(i, spread, worldDir);
         }
       } else {
         const dist = Math.sqrt(

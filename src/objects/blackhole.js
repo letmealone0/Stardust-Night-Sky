@@ -903,7 +903,9 @@ export class BlackHole {
   // ==================== 后处理（v14: 引力透镜平方反比衰减） ====================
   updatePostEffects(uniforms, camera) {
     const cfg = config.blackhole;
-    if (!camera || !this.group) return;
+    if (!camera || !this.group || !uniforms) return;
+    // v25: 防御性检查 — 确保所需 uniform 存在
+    if (!uniforms.uLensStrength || !uniforms.uLensCenter || !uniforms.uLensRadius) return;
     const dist = this.group.position.distanceTo(camera.position);
     const lensingRange = (cfg.distorionRadius || 600) * 1.4;
     if (dist < lensingRange && this.dangerLevel > 0) {
@@ -912,7 +914,6 @@ export class BlackHole {
       const screenY = (this._tempVec.y + 1) * 0.5;
       if (screenX > -0.1 && screenX < 1.1 && screenY > -0.1 && screenY < 1.1) {
         uniforms.uLensCenter.value.set(screenX, screenY);
-        // v14: 平方反比衰减 — 中心强、外围快速减弱，过渡自然
         const maxStrength = (cfg.lensingStrength || 0.35) * 1.5 * this.dangerLevel;
         const screenDist = Math.sqrt(
           (screenX - 0.5) * (screenX - 0.5) + (screenY - 0.5) * (screenY - 0.5)
