@@ -28,60 +28,175 @@
       touch-action: none;
     }
 
-    /* 加载画面 */
-    #loading {
-      position: fixed;
-      top: 0;
-      left: 0;
-      width: 100%;
-      height: 100%;
-      background: #000005;
-      display: flex;
-      flex-direction: column;
-      justify-content: center;
-      align-items: center;
-      z-index: 9999;
-      transition: opacity 0.5s ease;
-    }
+    /* ============ 加载界面：飞船星航系统启动序列 ============ */
 
-    #loading.fade-out {
-      opacity: 0;
+    /* 全息网格 */
+    .hud-grid {
+      position: absolute;
+      top: 0; left: 0; width: 100%; height: 100%;
+      background-image:
+        linear-gradient(rgba(100, 150, 255, 0.03) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(100, 150, 255, 0.03) 1px, transparent 1px);
+      background-size: 40px 40px;
+      background-position: center;
       pointer-events: none;
     }
 
-    #loading h1 {
-      font-size: 2rem;
+    /* CRT 扫描线 */
+    .scanlines {
+      position: absolute;
+      top: 0; left: 0; width: 100%; height: 100%;
+      background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.25) 50%),
+                  linear-gradient(90deg, rgba(255, 0, 0, 0.06), rgba(0, 255, 0, 0.02), rgba(0, 0, 255, 0.06));
+      background-size: 100% 4px, 6px 100%;
+      pointer-events: none;
+      z-index: 2;
+    }
+
+    #loading {
+      position: fixed;
+      top: 0; left: 0; width: 100%; height: 100%;
+      background: #01020a;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      z-index: 9999;
+      clip-path: circle(100% at center);
+      transition: clip-path 1.2s cubic-bezier(0.86, 0, 0.07, 1);
+    }
+
+    #loading.fade-out {
+      clip-path: circle(0% at center);
+      pointer-events: none;
+    }
+
+    .loader-container {
+      display: flex;
+      flex-direction: row;
+      align-items: center;
+      gap: 50px;
+      z-index: 3;
+      max-width: 800px;
+      padding: 20px;
+    }
+
+    /* SVG 星图仪 */
+    .constellation-calibrator {
+      width: 160px;
+      height: 160px;
+      filter: drop-shadow(0 0 8px rgba(100, 180, 255, 0.4));
+    }
+
+    .spin-clockwise {
+      transform-origin: center;
+      animation: spin 8s linear infinite;
+    }
+
+    .spin-counter {
+      transform-origin: center;
+      animation: spin-reverse 12s linear infinite;
+    }
+
+    .pulse-glow {
+      animation: pulse 2.5s ease-in-out infinite;
+    }
+
+    .radar-sweep {
+      transform-origin: center;
+      animation: spin 4s linear infinite;
+    }
+
+    @keyframes spin {
+      from { transform: rotate(0deg); }
+      to { transform: rotate(360deg); }
+    }
+
+    @keyframes spin-reverse {
+      from { transform: rotate(360deg); }
+      to { transform: rotate(0deg); }
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 0.2; }
+      50% { opacity: 0.7; }
+    }
+
+    /* 右侧信息面板 */
+    .loader-info {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-start;
+      font-family: 'JetBrains Mono', 'Fira Code', monospace;
+    }
+
+    .loader-info h1 {
+      font-size: 1.8rem;
       font-weight: 300;
       letter-spacing: 8px;
-      color: rgba(150, 200, 255, 0.8);
-      margin-bottom: 20px;
-      text-shadow: 0 0 30px rgba(100, 150, 255, 0.3);
+      color: rgba(180, 220, 255, 0.95);
+      margin-bottom: 8px;
+      text-shadow: 0 0 15px rgba(100, 180, 255, 0.3);
     }
 
-    #loading p {
-      font-size: 0.9rem;
-      color: rgba(150, 180, 220, 0.6);
+    .status-panel {
+      display: flex;
+      gap: 10px;
+      font-size: 11px;
       letter-spacing: 2px;
+      margin-bottom: 16px;
     }
 
-    .loading-bar {
-      width: 200px;
-      height: 2px;
-      background: rgba(100, 150, 255, 0.2);
-      margin-top: 30px;
-      border-radius: 1px;
+    .status-label {
+      color: rgba(150, 180, 220, 0.5);
+    }
+
+    .status-value {
+      color: #44ccff;
+      text-shadow: 0 0 8px rgba(68, 204, 255, 0.4);
+    }
+
+    /* 遥测日志 */
+    .telemetry-log {
+      width: 320px;
+      height: 90px;
+      background: rgba(10, 20, 45, 0.3);
+      border: 1px solid rgba(100, 150, 255, 0.12);
+      border-radius: 4px;
+      padding: 10px 14px;
       overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      font-size: 10px;
+      color: rgba(160, 200, 255, 0.6);
+      pointer-events: none;
     }
 
-    .loading-bar-inner {
-      width: 0%;
-      height: 100%;
-      background: linear-gradient(90deg, rgba(100, 150, 255, 0.8), rgba(150, 200, 255, 0.9));
-      transition: width 0.3s ease;
-      box-shadow: 0 0 10px rgba(100, 150, 255, 0.5);
+    .log-line {
+      white-space: nowrap;
+      animation: text-blink 0.15s ease-out;
     }
 
-    /* 扫描线动画 */
+    @keyframes text-blink {
+      from { opacity: 0; transform: translateX(-4px); }
+      to { opacity: 1; transform: translateX(0); }
+    }
+
+    /* 移动端适配 */
+    @media (max-width: 600px) {
+      .loader-container {
+        flex-direction: column;
+        gap: 20px;
+        text-align: center;
+      }
+      .loader-info {
+        align-items: center;
+      }
+    }
+
+    /* ============ 游戏内特效 ============ */
+
+    /* 扫描线（游戏中持续） */
     body::before {
       content: '';
       position: fixed;
@@ -149,12 +264,41 @@
   </style>
 </head>
 <body>
-  <!-- 加载画面 -->
+  <!-- 加载画面：飞船星航系统启动序列 -->
   <div id="loading">
-    <h1>深空探索</h1>
-    <p>正在初始化引擎...</p>
-    <div class="loading-bar">
-      <div class="loading-bar-inner" id="loadingBar"></div>
+    <!-- 全息网格与扫描线背景 -->
+    <div class="hud-grid"></div>
+    <div class="scanlines"></div>
+
+    <div class="loader-container">
+      <!-- SVG 全息星图仪旋转加载器 -->
+      <svg class="constellation-calibrator" viewBox="0 0 100 100">
+        <!-- 外圈刻度 -->
+        <circle cx="50" cy="50" r="45" stroke="rgba(100, 180, 255, 0.15)" stroke-width="0.5" fill="none" />
+        <circle cx="50" cy="50" r="45" stroke="rgba(100, 180, 255, 0.4)" stroke-width="1.5" stroke-dasharray="10 30" fill="none" class="spin-clockwise" />
+        <!-- 中圈轨道 -->
+        <circle cx="50" cy="50" r="35" stroke="rgba(100, 180, 255, 0.1)" stroke-width="0.5" fill="none" />
+        <circle cx="50" cy="50" r="35" stroke="rgba(150, 200, 255, 0.5)" stroke-width="1" stroke-dasharray="120 100" fill="none" class="spin-counter" />
+        <!-- 内圈星座点连接线（呼吸脉动） -->
+        <path d="M 50 20 L 65 45 L 35 60 L 50 80 L 65 60 M 35 40 L 50 20" stroke="rgba(100, 150, 255, 0.25)" stroke-width="0.5" fill="none" class="pulse-glow" />
+        <!-- 中心瞄准点 -->
+        <circle cx="50" cy="50" r="3" fill="rgba(200, 220, 255, 0.8)" />
+        <!-- 动态扫描射线 -->
+        <line x1="50" y1="50" x2="50" y2="5" stroke="rgba(100, 180, 255, 0.3)" stroke-width="0.5" class="radar-sweep" />
+      </svg>
+
+      <div class="loader-info">
+        <h1>深空探索</h1>
+        <div class="status-panel">
+          <span class="status-label">SYS_STATUS:</span>
+          <span class="status-value" id="statusPercent">BOOTING_00%</span>
+        </div>
+
+        <!-- 滚动系统遥测日志 -->
+        <div class="telemetry-log" id="telemetryLog">
+          <div class="log-line">> CORE_REACTOR: [READY]</div>
+        </div>
+      </div>
     </div>
   </div>
 

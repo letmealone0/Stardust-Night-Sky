@@ -53,6 +53,7 @@ export class SolarSystem {
     this.camera = null;
     this._hud = null;
     this._tempVec = new THREE.Vector3();
+    this._ssWorldPos = new THREE.Vector3(); // v30: 太阳系世界坐标（轨道线距离淡出）
     this._textures = null; // v9.0: 纹理缓存
     this._ownTextures = []; // v9.0-fix: 本实例创建的纹理（环/标签），dispose 时释放；行星共享纹理由 planetTextures 缓存管理
   }
@@ -363,7 +364,7 @@ export class SolarSystem {
     }
 
     this.planets.push({
-      group: planetGroup, orbitPivot, data: pData, mesh, material, moons,
+      group: planetGroup, orbitPivot, orbitLine, data: pData, mesh, material, moons,
       labelSprite,  // v25: 标签引用用于距离剔除
       angle: Math.random() * Math.PI * 2, rotAngle: 0,
     });
@@ -536,12 +537,17 @@ export class SolarSystem {
     }
     const geometry = new THREE.BufferGeometry();
     geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-    const material = new THREE.LineBasicMaterial({
-      color: 0x446688,
+    // v30: 改用虚线材质 — 星舰导航全息投影质感
+    const material = new THREE.LineDashedMaterial({
+      color: 0x4488aa,
       transparent: true,
-      opacity: 0.2,  // v26.2: 降低轨道线存在感
+      opacity: 0.25,
+      dashSize: 25,
+      gapSize: 18,
     });
-    return new THREE.Line(geometry, material);
+    const line = new THREE.Line(geometry, material);
+    line.computeLineDistances(); // 虚线必须调用
+    return line;
   }
 
   // ==================== 小行星带（v8.0）====================
@@ -749,14 +755,24 @@ export class SolarSystem {
       }
 
       // v25: 标签距离剔除 — 太近（贴脸）或太远（看不清）都隐藏
-      // 解决"靠近时标签爆炸成巨大白块"的视觉bug
       const camPos = this.camera?.position;
       if (camPos && planet.labelSprite) {
         planet.group.getWorldPosition(this._tempVec);
         const dist = camPos.distanceTo(this._tempVec);
-        const minDist = d.radius * 4;  // 太近：能看到行星本体，不需要标签
+        const minDist = d.radius * 4;
         const maxDist = config.solarSystem?.labelMaxDistance ?? 6000;
         planet.labelSprite.visible = dist > minDist && dist < maxDist;
+      }
+
+      // v30: 轨道线距离淡出 — 相机远离太阳系时渐变消失
+      if (camPos && planet.orbitLine) {
+        this.group.getWorldPosition(this._ssWorldPos);
+        const distToSys = camPos.distanceTo(this._ssWorldPos);
+        const fadeIn = 8000;
+        const fadeOut = 18000;
+        const t = 1 - Math.min(1, Math.max(0, (distToSys - fadeIn) / (fadeOut - fadeIn)));
+        planet.orbitLine.material.opacity = t * 0.25;
+        planet.orbitLine.visible = t > 0.01;
       }
 
       // 卫星

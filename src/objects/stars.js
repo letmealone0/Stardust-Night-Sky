@@ -34,7 +34,10 @@ export class StarField {
     const targetGroup = galaxyCenterGroup || scene;
     this.createMilkyWay(scene, targetGroup, spread);
 
-    console.log('[StarField] 星空初始化完成（仅银河系+高亮星）');
+    // v30: 银河核球全息体积辉光
+    this.createGalaxyCoreGlow(targetGroup);
+
+    console.log('[StarField] 星空初始化完成（含核球辉光）');
   }
 
 
@@ -485,6 +488,73 @@ export class StarField {
         if (m.uniforms.uRadiusFalloff) m.uniforms.uRadiusFalloff.value = config.galaxyMotion?.radiusFalloff || 0.00004;
       }
     });
+  }
+
+  // v30: 银河核球全息体积辉光 — 指数衰减 ShaderMaterial 球体
+  createGalaxyCoreGlow(group) {
+    const galaxyCfg = config.stars.galaxy || {};
+    const spread = config.stars.spread || 100000;
+    const galaxyScale = galaxyCfg.scale || 22.0;
+    const galaxyRadius = spread * 0.5 * galaxyScale;
+    const armLength = galaxyRadius * 0.85;
+    const bulgeR = armLength * (galaxyCfg.bulgeRadius || 0.08);
+
+    // 辉光半径至少能覆盖到太阳系附近（相机初始位置在 ≈22k 处可见）
+    const glowRadius = Math.max(bulgeR * 6, 40000);
+    const geometry = new THREE.SphereGeometry(glowRadius, 32, 24);
+    const material = new THREE.ShaderMaterial({
+      uniforms: {
+        uTime: { value: 0 },
+        uColor1: { value: new THREE.Color(0xffdd88) },
+        uColor2: { value: new THREE.Color(0xffaa44) },
+        uGlowPower: { value: 2.0 },
+        uOpacity: { value: 0.3 },
+        uPulseSpeed: { value: 0.3 },
+        uFalloff: { value: 2.5 },
+      },
+      vertexShader: `
+        varying vec3 vNormal;
+        varying vec3 vPosition;
+        varying float vHeight;
+        void main() {
+          vNormal = normalize(normalMatrix * normal);
+          vPosition = (modelViewMatrix * vec4(position, 1.0)).xyz;
+          vHeight = length(position) / ${glowRadius.toFixed(1)};
+          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        }
+      `,
+      fragmentShader: `
+        uniform vec3 uColor1;
+        uniform vec3 uColor2;
+        uniform float uGlowPower;
+        uniform float uOpacity;
+        uniform float uTime;
+        uniform float uPulseSpeed;
+        uniform float uFalloff;
+        varying vec3 vNormal;
+        varying vec3 vPosition;
+        varying float vHeight;
+        void main() {
+          vec3 viewDir = normalize(-vPosition);
+          float rim = 1.0 - max(0.0, dot(viewDir, vNormal));
+          // 体积衰减：指数衰减 + 边缘增强
+          float glow = rim * pow(rim, uGlowPower) * 1.5 + exp(-vHeight * uFalloff) * 1.0;
+          float pulse = 1.0 + 0.06 * sin(uTime * uPulseSpeed);
+          vec3 color = mix(uColor2, uColor1, smoothstep(0.0, 0.6, glow));
+          gl_FragColor = vec4(color * glow * 2.0 * pulse, glow * uOpacity);
+        }
+      `,
+      transparent: true,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+      side: THREE.FrontSide,
+    });
+
+    const mesh = new THREE.Mesh(geometry, material);
+    group.add(mesh);
+    this.meshes.push(mesh);
+    this.materials.push(material);
+    console.log('[StarField] 核球辉光已添加, radius:', glowRadius.toFixed(0));
   }
 
   dispose(scene) {

@@ -502,9 +502,27 @@ export class PlayerController {
     if (!this.camera) return;
     const start = config.camera.startPosition;
     this.camera.position.set(start.x, start.y, start.z);
+    // 视角对准太阳系（直接计算 yaw/pitch，不依赖 lookAt）
+    if (this._solarSystem) {
+      const solarPos = new THREE.Vector3();
+      this._solarSystem.group.getWorldPosition(solarPos);
+      const dir = new THREE.Vector3().subVectors(solarPos, this.camera.position);
+      const len = dir.length();
+      if (len > 0.001) {
+        const yaw = Math.atan2(dir.x, -dir.z);
+        const pitch = Math.asin(Math.max(-1, Math.min(1, dir.y / len)));
+        this.yaw = yaw;
+        this.pitch = pitch;
+        this.targetYaw = yaw;
+        this.targetPitch = pitch;
+        // 同步更新相机四元数，保证 syncOrientation 读取正确朝向
+        const euler = new THREE.Euler(pitch, yaw, 0, 'YXZ');
+        this.camera.quaternion.setFromEuler(euler);
+      }
+    }
     this.velocity.set(0, 0, 0);
     this._shakeOffset.set(0, 0, 0);
-    // 同步内部朝向到当前相机朝向（保持视角方向不跳变）
+    // 同步内部朝向到当前相机朝向
     this.syncOrientation();
   }
 

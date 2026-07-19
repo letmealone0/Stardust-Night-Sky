@@ -95,6 +95,9 @@ export class Engine {
     const defaultMode = config.player.defaultMode || 'close';
     this.player.setMode(defaultMode);
     this.camera.applyMode(defaultMode, false);
+
+    // v30: 初始视角对准太阳系（必须在 player 与 mode 全部就绪后执行）
+    this._lookAtSolarSystem();
     // 注入太阳系引用（替代 window.engine 全局耦合）
     this.player.setSolarSystem(this.scene.objects.solarSystem);
     // v25: 注册额外碰撞体（黑洞、脉冲星、系外行星 → 接近自动限速）
@@ -142,6 +145,37 @@ export class Engine {
     this.bindEvents();
 
     console.log('[Engine] 初始化完成');
+  }
+
+  /**
+   * 将相机初始视角对准太阳系（直接计算 yaw/pitch，绕过 lookAt 与 euler 空间差异）
+   */
+  _lookAtSolarSystem() {
+    if (!this.scene?.objects?.solarSystem || !this.camera?.camera || !this.player) return;
+    const solarPos = new THREE.Vector3();
+    this.scene.objects.solarSystem.group.getWorldPosition(solarPos);
+    const camPos = this.camera.camera.position;
+
+    // 从相机到太阳系的世界方向
+    const dir = new THREE.Vector3().subVectors(solarPos, camPos);
+    const len = dir.length();
+    if (len < 0.001) return;
+
+    // YXZ 欧拉顺序：-Z 为前方向，yaw 绕 Y 轴，pitch 绕 X 轴
+    const yaw = Math.atan2(dir.x, -dir.z);
+    const pitch = Math.asin(Math.max(-1, Math.min(1, dir.y / len)));
+
+    // 更新玩家控制器的内部朝向（避免下一帧被 syncOrientation 覆写）
+    this.player.yaw = yaw;
+    this.player.pitch = pitch;
+    this.player.targetYaw = yaw;
+    this.player.targetPitch = pitch;
+
+    // 直接设置相机四元数，保证本帧渲染使用正确朝向
+    const euler = new THREE.Euler(pitch, yaw, 0, 'YXZ');
+    this.camera.camera.quaternion.setFromEuler(euler);
+
+    console.log('[Engine] 初始视角已对准太阳系  yaw:', yaw.toFixed(3), 'pitch:', pitch.toFixed(3));
   }
 
   /**
