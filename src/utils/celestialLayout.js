@@ -115,23 +115,20 @@ export function generateCelestialLayout(galaxyCenter, solarSystemPos) {
     return sampleDisk(rng, minR, maxR, yComp);
   }
 
-  // ======== 黑洞（v26.2: 放在太阳系附近，距离5000~15000，避免太远看不到） ========
+  // ======== 黑洞（v29: 放在太阳系外部环上，10000~25000，不会太近也不会太远） ========
   const bhCount = bhCfg.count || 1;
-  const sunLocal = localSolar.clone(); // 太阳系在银心局部空间中的位置
+  const sunLocal = localSolar.clone();
   for (let i = 0; i < bhCount; i++) {
-    // 在太阳系周围环上随机放置
-    const bhDist = 5000 + rng() * 10000;
+    // 在太阳系外部随机环上放置，确保在太阳系排除区之外
+    const minDist = bhCfg.distFromCenterMin || 10000;
+    const maxDist = bhCfg.distFromCenterMax || 25000;
+    const bhDist = minDist + rng() * (maxDist - minDist);
     const bhAngle = rng() * Math.PI * 2;
     const pos = new THREE.Vector3(
       sunLocal.x + Math.cos(bhAngle) * bhDist,
-      sunLocal.y + (rng() - 0.5) * bhDist * 0.15,
+      sunLocal.y + (rng() - 0.5) * bhDist * 0.2,
       sunLocal.z + Math.sin(bhAngle) * bhDist
     );
-    // 避开太阳系排除区
-    if (pos.distanceTo(sunLocal) < (layout.solarExclusion || 8000) * 0.8) {
-      const rescale = (layout.solarExclusion || 8000) * 0.8 / Math.max(pos.distanceTo(sunLocal), 1);
-      pos.sub(sunLocal).multiplyScalar(rescale).add(sunLocal);
-    }
     const seed = rng() * 0.5 + 0.25;
     result.blackhole.push({ position: pos, orbitPhase: seed });
     grid.insert(pos, { pos, type: 'blackhole' });

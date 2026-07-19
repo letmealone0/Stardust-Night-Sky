@@ -254,8 +254,8 @@ export const config = {
   // ---- 黑洞系统 ----
   blackhole: {
     count: 1,                   // 数量
-    distFromCenterMin: 20000,   // 距银河中心最小距离
-    distFromCenterMax: 40000,   // v26: 约束在旋臂半径1.1倍内
+    distFromCenterMin: 10000,   // v29: 距太阳系最小距离 (太阳系外部环)
+    distFromCenterMax: 25000,   // v29: 距太阳系最大距离 (不会太远)
     eventHorizonRadius: 25,    // 事件视界半径
     accretionInnerRadius: 40,  // 吸积盘内半径
     accretionOuterRadius: 200, // 吸积盘外半径
@@ -289,7 +289,7 @@ export const config = {
     raytrace: {
       enabled: true,            // 总开关
       steps: 200,               // 每像素测地线步数 (60-400, 越高越精细)
-      enableDistance: 8000,     // raytrace 启用距离（需要主动探索才能发现黑洞）
+      enableDistance: 15000,    // raytrace 启用距离 (BH在10000~25000外, 飞行1~2分钟可见)
       blendNear: 600,           // （保留，屏幕空间模式下不再使用世界距离 blend）
       blendFar: 6000,           // （保留）
       diskInner: 2.2,           // 吸积盘内缘 (RS 单位，留出更多空间让光子环显形)
