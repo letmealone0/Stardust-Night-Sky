@@ -404,9 +404,14 @@ export class HUD {
 
   updateViewMode(mode, name) {
     if (this._modeEl) {
-      const color = mode === 'close'
-        ? 'rgba(255, 180, 120, 0.9)'  // 近景暖色
-        : 'rgba(120, 200, 255, 0.9)'; // 广域冷色
+      let color;
+      if (mode === 'orbit') {
+        color = 'rgba(100, 255, 200, 0.95)';  // 低轨环绕：青绿色
+      } else if (mode === 'close') {
+        color = 'rgba(255, 180, 120, 0.9)';   // 近景：暖橙色
+      } else {
+        color = 'rgba(120, 200, 255, 0.9)';   // 广域：冷蓝色
+      }
       this._modeEl.textContent = `模式: ${name || mode}`;
       this._modeEl.style.color = color;
     }

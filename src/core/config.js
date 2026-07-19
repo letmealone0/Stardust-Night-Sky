@@ -26,6 +26,12 @@ export const config = {
         far: 200000,
         name: '广域巡游',
       },
+      orbit: { // v29: 低轨环绕 — 超广角贴地飞行，巨行星遮天蔽日
+        fov: 90,
+        near: 0.1,
+        far: 150000,
+        name: '低轨环绕',
+      },
     },
   },
 
@@ -58,6 +64,18 @@ export const config = {
         cameraShake: true,
         shakeAmplitude: 1.5,
         shakeFrequency: 10.0,
+      },
+      orbit: { // v29: 低轨环绕 — 低速高惯性，超广角巨物沉浸感
+        accel: 15,
+        decelDamping: 0.96,
+        maxSpeed: 8,
+        sprintMultiplier: 2.5,
+        sprintFovBoost: 12,
+        mouseSensitivity: 0.001,
+        lookSmoothTime: 0.08,
+        cameraShake: true,
+        shakeAmplitude: 0.15,
+        shakeFrequency: 5.0,
       },
     },
 

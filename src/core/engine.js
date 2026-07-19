@@ -587,7 +587,11 @@ export class Engine {
    */
   _toggleViewMode() {
     const currentMode = this.player.getMode();
-    const nextMode = currentMode === 'close' ? 'wide' : 'close';
+    // v29: 三档循环 — wide → close → orbit → wide
+    let nextMode;
+    if (currentMode === 'wide') nextMode = 'close';
+    else if (currentMode === 'close') nextMode = 'orbit';
+    else nextMode = 'wide';
 
     this.player.setMode(nextMode);
     this.camera.applyMode(nextMode, true);
@@ -596,8 +600,64 @@ export class Engine {
     this.hud.showMessage(`视角模式：${modeName}`, 2000);
     this.hud.updateViewMode(nextMode, modeName);
 
-    // 通知场景子系统切换模式（用于小行星场等 LOD/数量调整）
+    // v29: 切入低轨模式时自动部署到最近天体表面
+    if (nextMode === 'orbit') this._deployToClosestOrbit();
+
     this.scene.setViewMode(nextMode);
+  }
+
+  /** v29: 搜索全宇宙最近天体，将玩家无缝部署到其低轨临界高度 */
+  _deployToClosestOrbit() {
+    const objs = this.scene.objects;
+    const playerPos = this.camera.camera.position;
+    const bodyPos = new THREE.Vector3();
+    let closest = null;
+    let closestDist = Infinity;
+
+    // 1. 收集所有带世界坐标的天体候选
+    const candidates = [];
+    if (objs.solarSystem?.sun) {
+      candidates.push({ mesh: objs.solarSystem.sun, radius: config.solarSystem.sunRadius || 120, name: '太阳' });
+    }
+    if (objs.solarSystem?.planets) {
+      objs.solarSystem.planets.forEach(p => {
+        candidates.push({ mesh: p.group, radius: p.data.radius, name: p.data.name });
+      });
+    }
+    objs.blackholes.forEach((bh, i) => {
+      candidates.push({ mesh: bh.group, radius: config.blackhole.accretionOuterRadius || 200, name: `黑洞 ${i + 1}` });
+    });
+    objs.pulsars.forEach((psr, i) => {
+      candidates.push({ mesh: psr.group, radius: (config.pulsar.radius || 8) * 3, name: `脉冲星 ${i + 1}` });
+    });
+    if (objs.planets?.getPlanets) {
+      objs.planets.getPlanets().forEach((p, i) => {
+        candidates.push({ mesh: p, radius: p.userData?.radius || 50, name: `系外行星 ${i + 1}` });
+      });
+    }
+
+    if (candidates.length === 0) return;
+
+    // 2. 找最近的天体
+    candidates.forEach(c => {
+      c.mesh.getWorldPosition(bodyPos);
+      const d = playerPos.distanceTo(bodyPos);
+      if (d < closestDist) { closestDist = d; closest = c; }
+    });
+
+    // 3. 部署到低轨临界高度（表面 + 3 单位，留呼吸空间避免 near clip）
+    if (closest) {
+      closest.mesh.getWorldPosition(bodyPos);
+      const dir = new THREE.Vector3().subVectors(playerPos, bodyPos).normalize();
+      if (dir.lengthSq() < 0.1) dir.set(0, 1, 0);
+
+      const deployDist = closest.radius + 3;
+      this.camera.camera.position.copy(bodyPos).addScaledVector(dir, deployDist);
+      this.camera.camera.lookAt(bodyPos);
+      this.player.syncOrientation();
+
+      this.hud.showMessage(`低轨环绕：${closest.name}`, 4000);
+    }
   }
 
   /**

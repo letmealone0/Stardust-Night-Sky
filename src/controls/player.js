@@ -404,43 +404,66 @@ export class PlayerController {
     }
   }
 
-  /** v9.0: 接近天体表面自动限速（v25: 扩展至黑洞、脉冲星、系外行星） */
+  /** v29: 动态半径减速 + 贴地滑行 — 替代硬编码 500 阈值 */
   applyProximitySlowdown(delta, currentMaxSpeed) {
-    let minDistToSurface = Infinity;
+    let minSurfDist = Infinity;
+    let closestRadius = 20;
+    let closestWorldPos = null;
 
-    // 太阳系行星
+    // 1. 太阳系行星
     if (this._solarSystem?.planets) {
       this._solarSystem.planets.forEach(p => {
         p.group.getWorldPosition(this._tempPlanetPos);
         const dist = this.camera.position.distanceTo(this._tempPlanetPos);
         const surfDist = dist - p.data.radius;
-        if (surfDist < minDistToSurface) minDistToSurface = surfDist;
+        if (surfDist < minSurfDist) {
+          minSurfDist = surfDist;
+          closestRadius = p.data.radius;
+          if (!closestWorldPos) closestWorldPos = new THREE.Vector3();
+          closestWorldPos.copy(this._tempPlanetPos);
+        }
       });
     }
 
-    // v25: 额外检测天体
+    // 2. 额外天体（黑洞、脉冲星等）
     if (this._extraBodies) {
       for (const body of this._extraBodies) {
         const pos = body.group?.getWorldPosition
           ? body.group.getWorldPosition(this._tempPlanetPos)
           : body.getWorldPosition?.(this._tempPlanetPos);
         if (!pos) continue;
-        const dist = this.camera.position.distanceTo(this._tempPlanetPos);
-        const surfDist = dist - (body.radius || 20);
-        if (surfDist < minDistToSurface) minDistToSurface = surfDist;
+        const radius = body.radius || 20;
+        const surfDist = this.camera.position.distanceTo(this._tempPlanetPos) - radius;
+        if (surfDist < minSurfDist) {
+          minSurfDist = surfDist;
+          closestRadius = radius;
+          if (!closestWorldPos) closestWorldPos = new THREE.Vector3();
+          closestWorldPos.copy(this._tempPlanetPos);
+        }
       }
     }
 
-    if (minDistToSurface < 500) {
-      // 距表面越近限速越严；穿入天体(surfDist<0)时强制极低速，避免"刹不住车"
-      const factor = minDistToSurface > 0
-        ? Math.max(0.08, minDistToSurface / 500)
-        : 0.08;
+    if (!closestWorldPos || minSurfDist > closestRadius * 2.0) return;
+
+    // 3. 表面滑行防穿透：锁死在最小高度上
+    const minAltitude = 1.5;
+    if (minSurfDist < minAltitude) {
+      const normal = new THREE.Vector3().subVectors(this.camera.position, closestWorldPos).normalize();
+      this.camera.position.copy(closestWorldPos).addScaledVector(normal, closestRadius + minAltitude);
+      // 消除冲向地心的速度分量，只保留切向滑行
+      const radialV = this.velocity.dot(normal);
+      if (radialV < 0) this.velocity.addScaledVector(normal, -radialV);
+      minSurfDist = minAltitude;
+    }
+
+    // 4. 动态限速：越近越慢
+    const slowdownThreshold = closestRadius * 2.0;
+    if (minSurfDist < slowdownThreshold) {
+      const t = Math.max(0, minSurfDist / slowdownThreshold);
+      const factor = THREE.MathUtils.lerp(0.15, 1.0, t);
       const speedLimit = currentMaxSpeed * factor;
       const vLen = this.velocity.length();
-      if (vLen > speedLimit) {
-        this.velocity.multiplyScalar(speedLimit / vLen);
-      }
+      if (vLen > speedLimit) this.velocity.multiplyScalar(speedLimit / vLen);
     }
   }
 
