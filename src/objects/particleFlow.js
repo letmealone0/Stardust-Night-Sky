@@ -22,6 +22,7 @@ export class ParticleFlow {
     this.geometry = null;
     this.material = null;
     this.camera = null;
+    this._tmpDir = new THREE.Vector3(); // v29-fix: 复用，避免每帧 GC
     this.count = 10000;
     this.positions = null;
     this.speed = 0;
@@ -270,8 +271,8 @@ export class ParticleFlow {
     // v20: 使用世界空间速度方向（归一化）
     const vLen = this._worldVel.length();
     const worldDir = vLen > 0.01
-      ? this._worldVel.clone().normalize()
-      : new THREE.Vector3(0, 0, 0);
+      ? this._tmpDir.copy(this._worldVel).normalize()
+      : this._tmpDir.set(0, 0, 0);
 
     const uniforms = this.material.uniforms;
     const maxSpd = maxSpeedOverride || config.player.maxSpeed;

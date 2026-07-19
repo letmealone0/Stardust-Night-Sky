@@ -40,6 +40,7 @@ export class NearDust {
     this._dustTex = null;
     // v4: 每个粒子的运行时状态
     this._particles = []; // { life: 0..1, speed: float, radius: float, angle: float, y0: float }
+    this._tmpNorm = new THREE.Vector3(); // v29-fix: 复用，避免每帧 GC
   }
 
   init(camera, scene) {
@@ -132,10 +133,10 @@ export class NearDust {
     const spread = this.spread;
     const dt = Math.min(delta, 0.1);
 
-    // v4: 获取世界空间速度方向（用于粒子流动方向偏移）
+    // v29-fix: 获取世界空间速度方向（复用 _tmpNorm，避免每帧 clone）
     const velNorm = speed > 0.5 && velocity
-      ? velocity.clone().normalize()
-      : new THREE.Vector3(0, 0, 1); // 默认前方
+      ? this._tmpNorm.copy(velocity).normalize()
+      : this._tmpNorm.set(0, 0, 1);
 
     for (let i = 0; i < this.count; i++) {
       const p = this._particles[i];

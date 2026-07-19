@@ -36,8 +36,8 @@ export class RendererManager {
     this.renderer.setSize(window.innerWidth, window.innerHeight);
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
-    // toneMapping 在 PostProcessingManager 中统一设置（ACESFilmicToneMapping）
-    this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    // v29-fix: NoToneMapping — CelestialEffectsShader 手动做 ACES，避免双重色调映射
+    this.renderer.toneMapping = THREE.NoToneMapping;
     this.renderer.toneMappingExposure = config.renderer.toneMappingExposure || 1.2;
 
     console.log('[RendererManager] 渲染器初始化完成');

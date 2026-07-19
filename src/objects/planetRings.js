@@ -20,6 +20,7 @@ class PlanetRing {
     this.orbitData = [];
     this.planetRadius = planetRadius;
     this.planetGroup = planetGroup;
+    this._dummy = new THREE.Object3D(); // v29-fix: 复用，避免每帧 new
 
     // 粒子数与行星半径成比例：大行星 → 更多粒子
     const referenceRadius = 50;
@@ -101,7 +102,7 @@ class PlanetRing {
     if (this.meshes.length === 0) return;
 
     const iData = this.orbitData;
-    const dummy = new THREE.Object3D();
+    const dummy = this._dummy;  // v29-fix: 复用成员变量，避免每帧 GC
 
     let idx = 0;
     for (const mesh of this.meshes) {

@@ -329,6 +329,10 @@ export class HUD {
     return this._mapHeightInput ? parseInt(this._mapHeightInput.value, 10) : 500000;
   }
 
+  setMapSunVisible(visible) {  // v29-fix: 太阳在相机后方时隐藏
+    if (this.elements.mapSunMarker) this.elements.mapSunMarker.style.display = visible ? '' : 'none';
+  }
+
   updateMapSunMarker(screenX, screenY) {
     if (this.elements.mapSunMarker) {
       const cx = Math.max(10, Math.min(window.innerWidth - 10, screenX));

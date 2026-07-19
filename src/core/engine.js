@@ -42,6 +42,9 @@ export class Engine {
     this._sunPos = new THREE.Vector3();
     this._tmpFwdVel = new THREE.Vector3();
     this._tmpLatVel = new THREE.Vector3();
+    this._prevCamPos = new THREE.Vector3();
+    this._worldVel = new THREE.Vector3();  // v29-fix: 构造函数初始化，避免热路径 GC
+    this._camFwd = new THREE.Vector3();
     // 银河系俯瞰地图模式
     this._isMapMode = false;
     this._mapBlend = 1.0;
@@ -433,6 +436,8 @@ export class Engine {
       const sunWorldPos = new THREE.Vector3();
       this.scene.objects.solarSystem?.sun?.getWorldPosition(sunWorldPos);
       const sunScreenPos = sunWorldPos.clone().project(this.camera.camera);
+      // v29-fix: 太阳在相机后方时隐藏标记
+      this.hud.setMapSunVisible(sunScreenPos.z <= 1.0 && sunScreenPos.z >= 0.0);
       const screenX = (sunScreenPos.x + 1) * 0.5 * window.innerWidth;
       const screenY = (-sunScreenPos.y + 1) * 0.5 * window.innerHeight;
       this.hud.updateMapSunMarker(screenX, screenY);
@@ -447,11 +452,7 @@ export class Engine {
       return;
     }
 
-    // v19.5: 计算世界空间速度 — 相机方向即时响应鼠标，位置差捕捉侧飞
-    if (!this._prevCamPos) this._prevCamPos = new THREE.Vector3();
-    if (!this._worldVel) this._worldVel = new THREE.Vector3();
-    if (!this._camFwd) this._camFwd = new THREE.Vector3();
-
+    // v29-fix: 计算世界空间速度（_prevCamPos/_worldVel/_camFwd 已在 constructor 初始化）
     // 位置差速度（准确但滞后一帧）
     const deltaVel = this._worldVel.copy(this.camera.camera.position)
       .sub(this._prevCamPos).divideScalar(Math.max(delta, 0.0001));
@@ -871,6 +872,7 @@ export class Engine {
 
     // v29-fix: 盘面世界空间基底（把世界射线变换到盘局部空间，盘面在 y=0）
     if (targetBH._diskContainer) {
+      targetBH._diskContainer.updateMatrixWorld(true); // 确保矩阵最新，避免滞后抖动
       const me = targetBH._diskContainer.matrixWorld.elements;
       const e0 = new THREE.Vector3(me[0], me[1], me[2]);  // 局部 X → 世界
       const e1 = new THREE.Vector3(me[4], me[5], me[6]);  // 局部 Y → 世界 (盘面法线)
