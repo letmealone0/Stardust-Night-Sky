@@ -86,6 +86,9 @@ export const BLACKHOLE_RAY_SHADER = {
 
     #define RS 1.0
 
+    // v29-fix: GLSL 兼容的有限值判断（WebGL 1/2 均无 isfinite/isFinite 内置函数）
+    bool safeFinite(float v) { return (v == v) && (abs(v) < 1e38); }
+
     // ---------------------------------------------------------------- hashes
     float hash13(vec3 p) {
       p = fract(p * 0.1031);
@@ -245,7 +248,9 @@ export const BLACKHOLE_RAY_SHADER = {
     }
 
     void main() {
-      if (uEnabled < 0.5) {
+      // v29-fix: NaN/Infinity 防护 — uniform 异常时透传
+      if (uEnabled < 0.5 || !safeFinite(uEnabled) || !safeFinite(uSizeScale) ||
+          !safeFinite(uFovScale) || !safeFinite(uBHWorldPos.x) || !safeFinite(uBHScreenPos.x)) {
         gl_FragColor = texture2D(tDiffuse, vUv);
         return;
       }

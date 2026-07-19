@@ -64,6 +64,10 @@ const CelestialEffectsShader = {
     uniform float uExposure;
     varying vec2 vUv;
 
+    // v29-fix: GLSL 兼容的有限值判断（WebGL 1/2 均无 isfinite/isFinite 内置函数）
+    bool safeFinite(float v) { return (v == v) && (abs(v) < 1e38); }
+
+
     float rand(vec2 co) {
       return fract(sin(dot(co, vec2(12.9898, 78.233))) * 43758.5453);
     }
@@ -86,6 +90,14 @@ const CelestialEffectsShader = {
 
     void main() {
       vec2 uv = vUv;
+
+      // v29-fix: NaN/Infinity 防御 — uniform 出现非有限值时强制输出原始场景
+      if (uNoiseIntensity < 0.0 || !safeFinite(uNoiseIntensity) ||
+          uFlashIntensity < 0.0 || !safeFinite(uFlashIntensity) ||
+          !safeFinite(uChromaticAberration) || !safeFinite(uExposure)) {
+        gl_FragColor = texture2D(tDiffuse, vUv);
+        return;
+      }
 
       // v19.5: 无任何特效时直接输出
       if (uMotionBlurIntensity < 0.005 && uLensStrength < 0.001 && uNoiseIntensity < 0.001
@@ -130,24 +142,16 @@ const CelestialEffectsShader = {
         color.b = texture2D(tDiffuse, clamp(uv - caDir, 0.0, 1.0)).b;
       }
 
-      // 4. 脉冲星噪点
+      // 4. 脉冲星噪点 — 极轻微 CRT 质感（权重 0.06）
       if (uNoiseIntensity > 0.001) {
         float noise = rand(vUv * uTime * 100.0) * 2.0 - 1.0;
         float n = noise * uNoiseIntensity;
-        float scanline = sin(vUv.y * 800.0 + uTime * 20.0) * 0.5 + 0.5;
-        n += scanline * uNoiseIntensity * 0.15;
-        color.rgb += vec3(n * 0.5, n * 0.6, n * 0.8);
+        color.rgb += vec3(n * 0.06);
       }
 
-      // 5. 脉冲星闪光（v25: 添加 RGB 色散偏移）
+      // 5. 脉冲星闪光 — 极轻微暖白闪光（权重 0.15）
       if (uFlashIntensity > 0.001) {
-        float caOffset = uFlashIntensity * 0.02;
-        color.r += uFlashIntensity * 0.9;
-        color.g += uFlashIntensity * 0.92;
-        color.b += uFlashIntensity;
-        // 轻微 RGB 偏移模拟光学衍射
-        color.r = texture2D(tDiffuse, clamp(uv + vec2(caOffset, 0.0), 0.0, 1.0)).r * uFlashIntensity + color.r * 0.3;
-        color.b = texture2D(tDiffuse, clamp(uv - vec2(caOffset, 0.0), 0.0, 1.0)).b * uFlashIntensity + color.b * 0.3;
+        color.rgb += vec3(uFlashIntensity * 0.15, uFlashIntensity * 0.14, uFlashIntensity * 0.13);
       }
 
       // 6. 星云雾化
