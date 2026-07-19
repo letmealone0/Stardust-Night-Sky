@@ -115,24 +115,42 @@ export function generateCelestialLayout(galaxyCenter, solarSystemPos) {
     return sampleDisk(rng, minR, maxR, yComp);
   }
 
-  // ======== 黑洞（v29: 放在太阳系外部环上，10000~25000，不会太近也不会太远） ========
+  // ======== 黑洞（v29-fix: 在整个银河盘中随机放置，靠近太阳系但不在内部） ========
   const bhCount = bhCfg.count || 1;
-  const sunLocal = localSolar.clone();
+  // 在太阳系附近环上搜索合法位置：距离太阳系 10000~25000，避开所有排除区
+  const minDist = layout.minBodyDistance || 3000;
   for (let i = 0; i < bhCount; i++) {
-    // 在太阳系外部随机环上放置，确保在太阳系排除区之外
-    const minDist = bhCfg.distFromCenterMin || 10000;
-    const maxDist = bhCfg.distFromCenterMax || 25000;
-    const bhDist = minDist + rng() * (maxDist - minDist);
-    const bhAngle = rng() * Math.PI * 2;
-    const pos = new THREE.Vector3(
-      sunLocal.x + Math.cos(bhAngle) * bhDist,
-      sunLocal.y + (rng() - 0.5) * bhDist * 0.2,
-      sunLocal.z + Math.sin(bhAngle) * bhDist
-    );
+    let pos = null;
+    for (let attempt = 0; attempt < 200; attempt++) {
+      const angle = rng() * Math.PI * 2;
+      const dist = 10000 + rng() * 15000;
+      const testPos = new THREE.Vector3(
+        localSolar.x + Math.cos(angle) * dist,
+        (rng() - 0.5) * dist * 0.15,
+        localSolar.z + Math.sin(angle) * dist
+      );
+      // 在太阳系排除区之外 + 不与其它天体重叠
+      let ok = true;
+      for (const ex of exclusionRegions) {
+        if (testPos.distanceTo(ex.pos) < ex.radius * 0.9) { ok = false; break; }
+      }
+      if (!ok) continue;
+      if (!grid.isClear(testPos, minDist)) continue;
+      pos = testPos;
+      break;
+    }
+    if (!pos) {
+      // fallback：直接随机环
+      const fAngle = rng() * Math.PI * 2;
+      const fDist = 10000 + rng() * 15000;
+      pos = new THREE.Vector3(localSolar.x + Math.cos(fAngle) * fDist,
+        (rng() - 0.5) * fDist * 0.15, localSolar.z + Math.sin(fAngle) * fDist);
+    }
     const seed = rng() * 0.5 + 0.25;
     result.blackhole.push({ position: pos, orbitPhase: seed });
     grid.insert(pos, { pos, type: 'blackhole' });
     exclusionRegions.push({ pos, radius: bhCfg.eventHorizonRadius * 10 || 250, label: 'bh' + i });
+    console.log(`[CelestialLayout] BH${i} placed at [${pos.x.toFixed(0)},${pos.y.toFixed(0)},${pos.z.toFixed(0)}]`);
   }
 
   // ======== 脉冲星（v26.2: 第1个放太阳系附近，其余随机分布） ========
