@@ -371,17 +371,12 @@ export class PlayerController {
       this.applyProximitySlowdown(delta, currentMaxSpeed);
     }
 
-    // v29: 6-DOF 太空飞行 — 用相机四元数直接变换方向，不再受限于水平面
-    // 支持 config.player.flightMode: '6dof'(默认) | 'fps'(传统水平飞行)
-    if ((config.player.flightMode || '6dof') === '6dof') {
-      this._tmpVec.set(-this.velocity.x, this.velocity.y, -this.velocity.z);
-      this._tmpVec.applyQuaternion(this.camera.quaternion);
-      this.camera.position.addScaledVector(this._tmpVec, delta);
-    } else {
-      this.controls.moveRight(-this.velocity.x * delta);
-      this.controls.moveForward(-this.velocity.z * delta);
-      this.camera.position.y += this.velocity.y * delta;
-    }
+    // v29: 6-DOF 太空飞行 — 相机局部坐标直接变换到世界空间
+    // 速度约定: velocity.z<0=前进, velocity.x<0=右, velocity.y>0=上升
+    // 相机局部: +X=右, +Y=上, -Z=前
+    this._tmpVec.set(-this.velocity.x, this.velocity.y, this.velocity.z);
+    this._tmpVec.applyQuaternion(this.camera.quaternion);
+    this.camera.position.addScaledVector(this._tmpVec, delta);
 
     // 动态FOV (速度线性映射: 基础FOV + 冲刺增量)
     const speedFraction = Math.min(this.velocity.length() / currentMaxSpeed, 1.0);

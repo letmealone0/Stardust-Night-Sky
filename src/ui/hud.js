@@ -164,7 +164,7 @@ export class HUD {
       border: '1px solid rgba(100, 150, 255, 0.08)',
       borderRadius: '2px',
     });
-    hint.innerHTML = 'WASD 移动 · 鼠标 视角 · Shift 冲刺 · V 视角 · M 地图 · T 跟踪 · R 回起点 · P 暂停';
+    hint.innerHTML = 'WASD 6-DOF飞行 · Space/C 升降 · 鼠标 视角 · Shift 冲刺 · M 地图 · T 跟踪 · R 回起点 · P 暂停';
     document.body.appendChild(hint);
     this.elements.hint = hint;
   }
@@ -576,7 +576,7 @@ export class HUD {
       backdropFilter: 'blur(4px)', display: 'none', whiteSpace: 'nowrap',
       textShadow: '0 0 10px rgba(100,150,255,0.4)',
     });
-    bar.innerHTML = '<span id="tracking-name">--</span> · <span style="color:rgba(150,180,220,0.6)">鼠标环绕 · 滚轮缩放 · Tab 切换 · Esc 返回</span>';
+    bar.innerHTML = '<span id="tracking-name">--</span> · <span style="color:rgba(150,180,220,0.6)">鼠标环绕 · 滚轮缩放 · Tab/Shift+Tab 切换 · Esc 返回</span>';
     document.body.appendChild(bar);
     this.elements.trackingStatus = bar;
   }

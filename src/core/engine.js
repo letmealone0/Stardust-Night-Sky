@@ -194,7 +194,7 @@ export class Engine {
       this._trackingJustExited = false;  // v29-fix: 锁定成功，清除保护标志
       // v-latest: 锁定后同步内部朝向，避免从地图模式返回或初始进入时视角跳变
       if (this.player) this.player.syncOrientation();
-      this.hud.showMessage('已锁定鼠标 - WASD移动 Shift冲刺 C下降 空格上升');
+      this.hud.showMessage('已锁定 · W指哪飞哪 · Space上升 C下降 · Shift冲刺');
     };
     this.player.controls.addEventListener('lock', this.onLockBound);
 
