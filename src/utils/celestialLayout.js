@@ -115,9 +115,9 @@ export function generateCelestialLayout(galaxyCenter, solarSystemPos) {
     return sampleDisk(rng, minR, maxR, yComp);
   }
 
-  // ======== 黑洞（v29-fix: 在整个银河盘中随机放置，靠近太阳系但不在内部） ========
+  // ======== 黑洞（v29-fix: 在太阳系外部环上搜索合法位置） ========
   const bhCount = bhCfg.count || 1;
-  // 在太阳系附近环上搜索合法位置：距离太阳系 10000~25000，避开所有排除区
+  const sunLocal = localSolar.clone(); // 太阳系在银心局部空间中的位置 (供 BH/脉冲星共用)
   const minDist = layout.minBodyDistance || 3000;
   for (let i = 0; i < bhCount; i++) {
     let pos = null;
