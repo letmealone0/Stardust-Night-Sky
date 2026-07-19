@@ -1234,7 +1234,7 @@ export class BlackHole {
   getDangerLevel() { return this.dangerLevel; }
 
   dispose(scene) {
-    scene.remove(this.group);
+    if (this.group.parent) this.group.parent.remove(this.group);  // v29-fix: 天体挂在嵌套 Group 下
     this.group.traverse((child) => {
       if (child.geometry) child.geometry.dispose();
       if (child.material) child.material.dispose();

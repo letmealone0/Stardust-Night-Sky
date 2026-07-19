@@ -266,10 +266,10 @@ export const BLACKHOLE_RAY_SHADER = {
         return;
       }
 
-      // v29: 构建相机射线（世界空间）— 缩窄 FOV 让黑洞视觉放大 uSizeScale 倍
+      // v29-fix: 构建相机射线 — UV.y=1=顶部，应映射到 +uCamUp
       vec3 rd = normalize(
         uCamRight * ((vUv.x - 0.5) * 2.0 * uAspect * uFovScale / uSizeScale) +
-        uCamUp * ((0.5 - vUv.y) * 2.0 * uFovScale / uSizeScale) +
+        uCamUp * ((vUv.y - 0.5) * 2.0 * uFovScale / uSizeScale) +
         uCamDir
       );
 

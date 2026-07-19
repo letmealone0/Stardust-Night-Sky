@@ -539,7 +539,7 @@ export class NebulaSystem {
   }
 
   dispose(scene) {
-    scene.remove(this.group);
+    if (this.group.parent) this.group.parent.remove(this.group);  // v29-fix
     this.nebulae.forEach(n => n.traverse(c => { if (c.geometry) c.geometry.dispose(); if (c.material) c.material.dispose(); }));
     this.nebulae = [];
   }

@@ -339,15 +339,15 @@ export class PlanetSystem {
       if (data.lod) data.lod.update(this.camera);
       if (data.atmLod) data.atmLod.update(this.camera);
 
-      // 自转
-      const rot = data.rotationSpeed * ms;
+      // v29-fix: 自转 * delta 解耦帧率
+      const rot = data.rotationSpeed * ms * delta;
       if (data.lod) for (let i = 0; i < data.lod.levels.length; i++) {
         const m = data.lod.levels[i].object; if (m) m.rotation.y += rot;
       }
 
-      // v19.6: 绕宿主恒星或原始位置公转
+      // v29-fix: 公转 * delta 解耦帧率
       if (!data.isRogue && data.orbitSpeed > 0) {
-        data.orbitAngle += data.orbitSpeed * ms;
+        data.orbitAngle += data.orbitSpeed * ms * delta;
         const center = data.originalPosition;
         planet.position.x = center.x + Math.cos(data.orbitAngle) * data.orbitRadius;
         planet.position.z = center.z + Math.sin(data.orbitAngle) * data.orbitRadius;
@@ -431,7 +431,7 @@ export class PlanetSystem {
 
   dispose(scene) {
     this.ringSystem.dispose();
-    scene.remove(this.group);
+    if (this.group.parent) this.group.parent.remove(this.group);  // v29-fix
     this.planets.forEach((planet) => { planet.traverse((child) => {
       if (child.geometry) child.geometry.dispose();
       if (child.material) { if (child.material.map) child.material.map.dispose(); if (child.material.normalMap) child.material.normalMap.dispose(); child.material.dispose(); }

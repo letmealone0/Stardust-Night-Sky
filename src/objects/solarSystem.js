@@ -1196,7 +1196,7 @@ export class SolarSystem {
 
   dispose(scene) {
     this.ringSystem.dispose();
-    if (scene) scene.remove(this.group);
+    if (this.group.parent) this.group.parent.remove(this.group);  // v29-fix
     // 释放本实例创建的几何体与材质（材质仅 dispose 本身，不释放其共享的行星缓存纹理）
     this.group.traverse((child) => {
       if (child.geometry) child.geometry.dispose();

@@ -98,12 +98,10 @@ export class NearDust {
   _spawnParticle(i, posArr, sizeArr, spread) {
     const i3 = i * 3;
     const theta = Math.random() * Math.PI * 2;
-    // v5: 半径偏向中远距离（中心 r<0.35*spread 的区域不放粒子）
     const rFrac = 0.4 + Math.random() * 0.6;
     const r = spread * rFrac;
     const x = r * Math.cos(theta);
     const y = r * Math.sin(theta) * 0.55;
-    // 深度变化：远→近都有分布
     const z = -spread * (0.3 + Math.random() * 0.7);
 
     posArr[i3] = x;
@@ -116,8 +114,8 @@ export class NearDust {
     }
     this._particles[i].life = Math.random();
     this._particles[i].speed = 0.06 + Math.random() * 0.18;
-    this._particles[i].driftX = (Math.random() - 0.5) * 0.2;
-    this._particles[i].driftY = (Math.random() - 0.5) * 0.2;
+    this._particles[i].angle = theta;         // v29-fix: 存储角度
+    this._particles[i].radiusFrac = rFrac;    // v29-fix: 存储极径比例
   }
 
   update(delta, velocity) {
@@ -156,10 +154,11 @@ export class NearDust {
       // Z 位置：从 -spread（远处）→ +5（接近相机后方）线性映射
       const z = -spread + p.life * (spread + 5);
 
-      // X/Y 位置：略微向外扩散（远处窄、近处宽），配合漂移
+      // v29-fix: XY位置 — 用存储的角度和极径保持圆环中空分布
       const spreadFactor = 0.15 + p.life * 0.85;
-      const baseX = p.driftX * spread * spreadFactor;
-      const baseY = p.driftY * spread * spreadFactor * 0.6;
+      const r = spread * p.radiusFrac * spreadFactor;
+      const baseX = r * Math.cos(p.angle);
+      const baseY = r * Math.sin(p.angle) * 0.55;
 
       // 速度方向偏移（高速时粒子沿速度方向偏转，模拟吹拂感）
       const flowOffset = speed * dt * 0.15;

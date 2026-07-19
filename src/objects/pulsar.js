@@ -21,6 +21,7 @@ export class Pulsar {
     this._flashDecay = 0;
     this._tmpCamDir = new THREE.Vector3();
     this._tmpBeamDir = new THREE.Vector3();
+    this._worldPos = new THREE.Vector3();  // v29-fix: 世界坐标
     this._tmpUp = new THREE.Vector3(0, 1, 0);
   }
 
@@ -514,9 +515,10 @@ export class Pulsar {
       if (mat?.uniforms) mat.uniforms.uTime.value = elapsed;
     });
 
-    // 靠近显示信息
+    // v29-fix: 靠近显示信息 — 用世界坐标
     if (this.camera) {
-      const dist = this.group.position.distanceTo(this.camera.position);
+      this.group.getWorldPosition(this._worldPos);
+      const dist = this._worldPos.distanceTo(this.camera.position);
       const infoDist = cfg.infoDistance || 500;
       if (dist < infoDist) {
         this._showInfo(cfg, dist);
@@ -534,10 +536,12 @@ export class Pulsar {
     // v28: 防御性检查 — 确保所需 uniform 存在再操作
     if (uniforms.uFlashIntensity === undefined && uniforms.uNoiseIntensity === undefined) return;
 
-    const dist = this.group.position.distanceTo(camera.position);
+    // v29-fix: 用世界坐标（pulsar 在 galaxyCenterGroup 下有父级偏移）
+    this.group.getWorldPosition(this._worldPos);
+    const dist = this._worldPos.distanceTo(camera.position);
 
     // v27.5: 射束扫过检测 — 使用倾斜后的磁轴方向计算真实扫过
-    this._tmpCamDir.subVectors(camera.position, this.group.position).normalize();
+    this._tmpCamDir.subVectors(camera.position, this._worldPos).normalize();
     const rotY = this.group.rotation.y;
     const tiltRad = THREE.MathUtils.degToRad(cfg.magneticTilt || 25);
     // 磁轴方向：先绕X偏转，再随group绕Y自转 → 在空间中画圆锥
@@ -598,7 +602,7 @@ export class Pulsar {
   setLayoutPosition(pos) { this.group.position.copy(pos); }
 
   dispose(scene) {
-    scene.remove(this.group);
+    if (this.group.parent) this.group.parent.remove(this.group);  // v29-fix
     // 递归释放所有子节点（_magneticGroup 下的中子星/光束/磁场线、_diskGroup 下的盘/环、shell）
     // 原 forEach 只遍历直接子节点（均为 Group，无 geometry/material），导致大量资源泄漏
     this.group.traverse((child) => {
