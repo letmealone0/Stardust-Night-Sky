@@ -250,6 +250,22 @@ export const BLACKHOLE_RAY_SHADER = {
         return;
       }
 
+      // ==================== v29-fix: 物理透视公式 + 像素早退 ====================
+      // 基于真实透视投影：物体在屏幕上的投影半径 = R_world / (dist * tan(fov/2))
+      float worldDist = max(1.0, length(uCamPos - uBHWorldPos));
+      float diskOuterWorld = uDout / uInvScale;
+      float physicalScreenRadius = diskOuterWorld / max(worldDist * uFovScale, 1.0);
+      // NDC → UV 转换系数 0.5，uSizeScale 提供视觉放大
+      float transitionZone = min(1.5, physicalScreenRadius * 0.5) * uSizeScale;
+      float screenDist = length(vUv - uBHScreenPos);
+      float blend = 1.0 - smoothstep(transitionZone * 0.3, transitionZone * 1.5, screenDist);
+
+      // 像素不在黑洞投影区内 → 直接输出场景颜色，跳过下方昂贵的 Schwarzschild 积分
+      if (blend < 0.001) {
+        gl_FragColor = texture2D(tDiffuse, vUv);
+        return;
+      }
+
       // v29: 构建相机射线（世界空间）— 缩窄 FOV 让黑洞视觉放大 uSizeScale 倍
       vec3 rd = normalize(
         uCamRight * ((vUv.x - 0.5) * 2.0 * uAspect * uFovScale / uSizeScale) +
@@ -341,19 +357,9 @@ export const BLACKHOLE_RAY_SHADER = {
         }
       }
 
-      // v29: 屏幕空间混合 — 从远处 BH 只占几像素（自动显示为亮点），靠近铺满屏幕
+      // v29-fix: 屏幕空间混合（transitionZone 和 blend 已在 main 开头基于物理透视公式计算）
+      // 引擎层已处理相机后方检测 → screenPos 设为 (-999,-999) → screenDist 极大 → blend=0
       vec4 sceneColor = texture2D(tDiffuse, vUv);
-      float screenDist = length(vUv - uBHScreenPos);
-
-      // 动态过渡区：远距离小区域、近距离大区域，按 uSizeScale 放大
-      float worldDist = length(uCamPos - uBHWorldPos);
-      float transitionZone = (0.03 + 1.0 / max(worldDist * 0.15, 1.0)) * uSizeScale;
-      float blend = 1.0 - smoothstep(transitionZone * 0.3, transitionZone * 1.5, screenDist);
-
-      // BH 离屏时降回场景
-      if (uBHScreenPos.x < -0.1 || uBHScreenPos.x > 1.1 ||
-          uBHScreenPos.y < -0.1 || uBHScreenPos.y > 1.1) blend = 0.0;
-
       gl_FragColor = vec4(mix(sceneColor.rgb, col, blend), 1.0);
     }
   `,

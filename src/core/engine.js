@@ -861,12 +861,19 @@ export class Engine {
     targetBH.group.getWorldPosition(bhWorldPos);
     u.uBHWorldPos.value.copy(bhWorldPos);
 
-    // 投影到屏幕空间
+    // v29-fix: 投影到屏幕空间 + 检查黑洞是否在相机后方
     const bhScreen = new THREE.Vector3().copy(bhWorldPos).project(cam);
-    u.uBHScreenPos.value.set(
-      (bhScreen.x + 1.0) * 0.5,
-      (bhScreen.y + 1.0) * 0.5
-    );
+    // NDC z > 1.0 → 物体在视锥体后方（透视投影会映射出对称坐标）
+    // NDC z < 0.0 → 物体在近平面外侧
+    if (bhScreen.z > 1.0 || bhScreen.z < 0.0) {
+      // 将屏幕坐标推到极远处，shader 不会触发混合
+      u.uBHScreenPos.value.set(-999.0, -999.0);
+    } else {
+      u.uBHScreenPos.value.set(
+        (bhScreen.x + 1.0) * 0.5,
+        (bhScreen.y + 1.0) * 0.5
+      );
+    }
 
     u.uInvScale.value = 1.0 / config.blackhole.eventHorizonRadius;
 

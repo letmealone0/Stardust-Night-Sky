@@ -45,6 +45,11 @@ export class BlackHole {
     this._ehReflectionMat = null; // v28: 事件视界倒影
     this._absorbColor = new THREE.Color(1.0, 0.4, 0.05);
     this._hud = null;
+    // v29-fix: 预分配世界坐标临时向量，避免热路径 GC（黑洞在 galaxyCenterGroup 下，局部≠世界）
+    this._worldPosA = new THREE.Vector3();
+    this._worldPosB = new THREE.Vector3();
+    this._worldPosC = new THREE.Vector3();
+    this._worldPosD = new THREE.Vector3();
   }
 
   init(scene, camera, planetSystem) {
@@ -893,11 +898,11 @@ export class BlackHole {
       this._diskContainer.rotation.z += wobble * dt * motionScale;
     }
 
-    // v28-fix: 黑洞 LOD — 始终保持全亮度，由 shader 自身的 gl_PointSize + alpha 测试处理远距离衰减
-    // （v20 的 .opacity 实际上无效，v28 用 uGlobalOpacity 真正生效后反而把黑洞变暗了）
+    // v29-fix: 黑洞 LOD — 用世界坐标计算距离（BH 在 galaxyCenterGroup 下有父级偏移）
     if (this.camera) {
-      const dist = this.group.position.distanceTo(this.camera.position);
-      const lodOpacity = 1.0;  // v28-fix: 保持全亮，由 shader 内部处理距离衰减
+      this.group.getWorldPosition(this._worldPosA);
+      const dist = this._worldPosA.distanceTo(this.camera.position);
+      const lodOpacity = 1.0;
 
       // 吸积盘粒子数（保守削减，保证至少绘制一个粒子）
       if (this.accretionDisk) {
@@ -959,14 +964,15 @@ export class BlackHole {
     // 碎片
     this.updateDebris(cfg, dt);
 
-    // 引力 + 重生 + 信息
+    // v29-fix: 引力 + 重生 + 信息 — 用世界坐标（BH 在 galaxyCenterGroup 下有父级偏移）
     if (this.camera) {
-      const dist = this.group.position.distanceTo(this.camera.position);
+      this.group.getWorldPosition(this._worldPosB);
+      const dist = this._worldPosB.distanceTo(this.camera.position);
       if (dist < cfg.dangerRadius) {
         this.dangerLevel = Math.max(0, Math.min(1, 1.0 - (dist - cfg.pullRadius) / (cfg.dangerRadius - cfg.pullRadius)));
         if (cfg.gravityEnabled !== false && dist < cfg.pullRadius && dist > cfg.eventHorizonRadius * 2) {
           const pullForce = (1 - dist / cfg.pullRadius) * cfg.pullStrength * dt;
-          if (this._tempVec.subVectors(this.group.position, this.camera.position).lengthSq() > 1e-8) {
+          if (this._tempVec.subVectors(this._worldPosB, this.camera.position).lengthSq() > 1e-8) {
             this._tempVec.normalize();
             this.camera.position.addScaledVector(this._tempVec, pullForce);
           }
@@ -990,9 +996,10 @@ export class BlackHole {
   updateMatterStreams(cfg, dt, elapsed, motionScale) {
     if (!this._matterStreams) return;
 
-    // v28: 远距离完全禁用物质流线更新
+    // v29-fix: 远距离完全禁用物质流线更新 — 用世界坐标
     if (this.camera) {
-      const dist = this.group.position.distanceTo(this.camera.position);
+      this.group.getWorldPosition(this._worldPosC);
+      const dist = this._worldPosC.distanceTo(this.camera.position);
       if (dist > 15000) {
         if (this._matterStreams.visible) this._matterStreams.visible = false;
         return;
@@ -1079,13 +1086,14 @@ export class BlackHole {
     if (!camera || !this.group || !uniforms) return;
     // v25: 防御性检查 — 确保所需 uniform 存在
     if (!uniforms.uLensStrength || !uniforms.uLensCenter || !uniforms.uLensRadius) return;
-    const dist = this.group.position.distanceTo(camera.position);
+    this.group.getWorldPosition(this._worldPosD);  // v29-fix: 世界坐标
+    const dist = this._worldPosD.distanceTo(camera.position);
     const lensingRange = (cfg.distorionRadius || 600) * 1.4;
 
     // 先算目标值（不直接写 uniforms）
     let targetX = 0.5, targetY = 0.5, targetStrength = 0, targetRadius = 0.16;
     if (dist < lensingRange && this.dangerLevel > 0) {
-      this._tempVec.copy(this.group.position).project(camera);
+      this._tempVec.copy(this._worldPosD).project(camera);
       const screenX = (this._tempVec.x + 1) * 0.5;
       const screenY = (this._tempVec.y + 1) * 0.5;
       if (screenX > -0.1 && screenX < 1.1 && screenY > -0.1 && screenY < 1.1) {
@@ -1119,12 +1127,16 @@ export class BlackHole {
   updatePlanetAbsorption(cfg, dt, elapsed) {
     if (!this.planetSystem) return;
     const planets = this.planetSystem.getPlanets();
-    const bhPos = this.group.position;
+    // v29-fix: 用世界坐标（BH 在 galaxyCenterGroup 下有父级偏移，planet.position 是世界坐标）
+    this.group.getWorldPosition(this._worldPosA);
+    const bhPos = this._worldPosA;
     const stretchFactor = cfg.tidalStretchFactor || 3.0;
 
     for (let i = planets.length - 1; i >= 0; i--) {
       const planet = planets[i];
-      const dist = bhPos.distanceTo(planet.position);
+      // v29-fix: 用世界坐标（planet 在 solarSystem.group 下也有父级偏移）
+      planet.getWorldPosition(this._worldPosB);
+      const dist = bhPos.distanceTo(this._worldPosB);
       if (dist < cfg.absorbRadius) {
         const data = planet.userData;
         if (!data.beingAbsorbed) {
