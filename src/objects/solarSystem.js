@@ -108,8 +108,8 @@ export class SolarSystem {
     sunLight.position.set(0, 0, 0);
     this.group.add(sunLight);
 
-    // v26.2: 太阳光晕缩小至3倍半径（原4倍），平滑指数衰减
-    const glowGeo = new THREE.SphereGeometry(cfg.sunRadius * 3, 32, 32);
+    // v29-fix: 外层弥散光晕放大至 3.6 倍，边缘平滑羽化
+    const glowGeo = new THREE.SphereGeometry(cfg.sunRadius * 3.6, 32, 32);
     const glowMat = new THREE.ShaderMaterial({
       uniforms: { uTime: { value: 0 } },
       vertexShader: `varying vec3 vNormal; varying vec3 vWorldPos; varying float vCamDist; varying float vRadius; void main() { vNormal = normalize(normalMatrix * normal); vWorldPos = (modelMatrix * vec4(position,1.0)).xyz; vec3 center = (modelMatrix * vec4(0.0,0.0,0.0,1.0)).xyz; vCamDist = length(cameraPosition - center); vRadius = length(position); gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
@@ -121,26 +121,32 @@ export class SolarSystem {
           return mix(mix(mix(hash(i),hash(i+vec3(1,0,0)),f.x),mix(hash(i+vec3(0,1,0)),hash(i+vec3(1,1,0)),f.x),f.y),
                      mix(mix(hash(i+vec3(0,0,1)),hash(i+vec3(1,0,1)),f.x),mix(hash(i+vec3(0,1,1)),hash(i+vec3(1,1,1)),f.x),f.y),f.z); }
         void main() {
-          float rim = 1.0 - max(0.0, dot(vNormal, vec3(0,0,1)));
-          // v26.2: 平滑指数衰减，消除硬边界；亮白→浅黄→淡橙自然过渡
-          float alpha = exp(-rim * 3.5) * 0.9;  // 中心不透明，外层自然淡出
-          float n = noise(vWorldPos * 0.015 + uTime * 0.05) * 0.2;
+          float rim = 1.0 - max(0.0, dot(normalize(vNormal), vec3(0,0,1)));
+          // v29-fix: (1.0-rim) 确保几何边缘处 alpha=0，消除硬边界
+          float alpha = pow(1.0 - rim, 3.2) * 0.85;
+          float n = noise(vWorldPos * 0.01 + uTime * 0.03) * 0.15;
           float total = alpha * (1.0 + n);
-          // 相机进入光晕球体时淡出，避免遮挡镜头（跟踪行星靠近太阳时）
           float camFade = smoothstep(vRadius * 0.7, vRadius * 1.3, vCamDist);
           total *= camFade;
-          vec3 c = mix(vec3(1.0, 1.0, 0.85), vec3(1.0, 0.85, 0.4), smoothstep(0.3, 0.7, rim));
-          c = mix(c, vec3(0.9, 0.5, 0.15), smoothstep(0.6, 1.0, rim));
-          gl_FragColor = vec4(c * total, total * 0.8);
+          vec3 c = mix(vec3(1.0, 1.0, 0.9), vec3(1.0, 0.75, 0.3), smoothstep(0.1, 0.6, rim));
+          c = mix(c, vec3(0.8, 0.35, 0.08), smoothstep(0.5, 1.0, rim));
+          gl_FragColor = vec4(c * total * 1.2, total * 0.65);
         }
       `,
-      blending: THREE.AdditiveBlending, side: THREE.BackSide, transparent: true, depthWrite: false,
+      // v29-fix: CustomBlending 锁定 Alpha 通道 — RGB 加法混合 + Alpha 拒绝写入
+      blending: THREE.CustomBlending,
+      blendSrc: THREE.SrcAlphaFactor,
+      blendDst: THREE.OneFactor,
+      blendEquation: THREE.AddEquation,
+      blendSrcAlpha: THREE.ZeroFactor,
+      blendDstAlpha: THREE.OneFactor,
+      side: THREE.BackSide, transparent: true, depthWrite: false,
     });
     this.glowMaterial = glowMat;
     this.group.add(new THREE.Mesh(glowGeo, glowMat));
 
-    // v26.2: 日冕缩小至3倍半径（原6倍），平滑自然弥散
-    const coronaGeo = new THREE.SphereGeometry(cfg.sunRadius * 3, 32, 32);
+    // v29-fix: 内层日冕缩至 2.4 倍，边缘归零 + 湍流噪声
+    const coronaGeo = new THREE.SphereGeometry(cfg.sunRadius * 2.4, 32, 32);
     this.coronaMaterial = new THREE.ShaderMaterial({
       uniforms: { uTime: { value: 0 } },
       vertexShader: `
@@ -209,25 +215,29 @@ export class SolarSystem {
         }
 
         void main() {
-          float rim = 1.0 - max(0.0, dot(vNormal, vec3(0.0, 0.0, 1.0)));
-          float intensity = pow(rim, 3.0);
-          // v15: 双频脉动 (快+慢)
+          float rim = 1.0 - max(0.0, dot(normalize(vNormal), vec3(0.0, 0.0, 1.0)));
+          // v29-fix: pow(1.0-rim, 2.4) — 靠近日轮表面最强，向外至边界平滑归零
+          float intensity = pow(1.0 - rim, 2.4);
           float pulse = 0.75 + sin(uTime * 0.5) * 0.15 + sin(uTime * 1.7) * 0.1;
-          // v15: 4层 FBM 湍流
-          float n1 = snoise(vWorldPos * 0.03 + uTime * 0.06) * 0.5 + 0.5;
-          float n2 = snoise(vWorldPos * 0.08 + uTime * 0.12) * 0.5 + 0.5;
-          float n3 = snoise(vWorldPos * 0.2 + uTime * 0.2) * 0.5 + 0.5;
-          float n4 = snoise(vWorldPos * 0.5 + uTime * 0.35) * 0.5 + 0.5;
-          float granMix = n1 * 0.4 + n2 * 0.3 + n3 * 0.2 + n4 * 0.1;
-          // v15: 三段颜色渐变(亮黄→橙→暗红)
-          vec3 c = mix(vec3(1.0, 0.95, 0.6), vec3(1.0, 0.6, 0.15), granMix);
-          c = mix(c, vec3(0.8, 0.15, 0.02), pow(rim, 4.0));
-          // 相机进入日冕球体时淡出，避免遮挡镜头
+          // 3层 FBM 湍流
+          float n1 = snoise(vWorldPos * 0.035 + uTime * 0.06) * 0.5 + 0.5;
+          float n2 = snoise(vWorldPos * 0.09 + uTime * 0.12) * 0.5 + 0.5;
+          float n3 = snoise(vWorldPos * 0.22 + uTime * 0.22) * 0.5 + 0.5;
+          float granMix = n1 * 0.5 + n2 * 0.3 + n3 * 0.2;
+          vec3 c = mix(vec3(1.0, 0.98, 0.75), vec3(1.0, 0.50, 0.10), granMix);
+          c = mix(c, vec3(0.75, 0.15, 0.02), rim);
           float camFade = smoothstep(vRadius * 0.7, vRadius * 1.3, vCamDist);
-          gl_FragColor = vec4(c, intensity * 0.3 * pulse * camFade);
+          gl_FragColor = vec4(c * intensity * 1.5, intensity * 0.55 * pulse * camFade);
         }
       `,
-      blending: THREE.AdditiveBlending, side: THREE.BackSide, transparent: true, depthWrite: false,
+      // v29-fix: CustomBlending 锁定 Alpha 通道 — RGB 加法混合 + Alpha 拒绝写入
+      blending: THREE.CustomBlending,
+      blendSrc: THREE.SrcAlphaFactor,
+      blendDst: THREE.OneFactor,
+      blendEquation: THREE.AddEquation,
+      blendSrcAlpha: THREE.ZeroFactor,
+      blendDstAlpha: THREE.OneFactor,
+      side: THREE.BackSide, transparent: true, depthWrite: false,
     });
     this.group.add(new THREE.Mesh(coronaGeo, this.coronaMaterial));
   }

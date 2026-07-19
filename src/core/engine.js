@@ -477,6 +477,10 @@ export class Engine {
     // v-latest: 相机FOV/near/far平滑过渡
     this.camera.update(delta);
 
+    // v29-fix: 冻结时表现层速度归零，速度线/粒子流/跃迁特效淡出隐去
+    const effectiveSpeed = this.isMotionFrozen ? 0 : speed;
+    const effectiveVelocity = this.isMotionFrozen ? null : this._worldVel;
+
     // 更新系统
     this.player.update(delta);
     const currentMaxSpeed = this.player.maxSpeed;
@@ -484,8 +488,8 @@ export class Engine {
     this.scene.update(
       this.isMotionFrozen ? 0 : delta,
       elapsed,
-      speed,
-      this._worldVel,
+      effectiveSpeed,
+      effectiveVelocity,
       currentMaxSpeed,
       currentSprintMultiplier
     );
@@ -508,9 +512,9 @@ export class Engine {
       this.hud.updateDanger(maxDanger);
     }
 
-    // 更新跃迁特效（使用当前模式maxSpeed）
-    this.hud.updateWarpEffect(this.player.getSpeed(), currentMaxSpeed);
-    this.hud.updateSprint(this.player.isSprinting());
+    // v29-fix: 冻结时跃迁白光、冲刺指示强制关闭
+    this.hud.updateWarpEffect(effectiveSpeed, currentMaxSpeed);
+    this.hud.updateSprint(this.isMotionFrozen ? false : this.player.isSprinting());
 
     // v11: 更新天体后处理特效（提取为方法，第一人称/跟踪共用）
     this._applyCelestialPostEffects(delta);
@@ -861,10 +865,14 @@ export class Engine {
       for (const psr of this.scene.objects.pulsars) {
         psr.updatePostEffects(u, this.camera.camera, delta);
       }
-      u.uNoiseIntensity.value = Math.max(prevNoise, u.uNoiseIntensity.value);
-      u.uFlashIntensity.value = Math.max(prevFlash, u.uFlashIntensity.value);
+      // v29-fix: NaN/Infinity 防护 — 任何 uniform 出现非有限值都强制归零（Math.max(NaN, x) = NaN 永远不恢复）
+      const nVal = u.uNoiseIntensity.value;
+      const fVal = u.uFlashIntensity.value;
+      const caVal = u.uChromaticAberration.value;
+      u.uNoiseIntensity.value = isFinite(nVal) ? Math.min(Math.max(prevNoise, nVal), 1.0) : 0;
+      u.uFlashIntensity.value = isFinite(fVal) ? Math.min(Math.max(prevFlash, fVal), 1.0) : 0;
       if (u.uChromaticAberration) {
-        u.uChromaticAberration.value = Math.max(prevCA, u.uChromaticAberration.value);
+        u.uChromaticAberration.value = isFinite(caVal) ? Math.min(Math.max(prevCA, caVal), 0.2) : 0;
       }
     }
     // 星云雾化
@@ -921,8 +929,13 @@ export class Engine {
     targetBH.group.getWorldPosition(bhWorldPos);
     u.uBHWorldPos.value.copy(bhWorldPos);
 
-    // v29-fix: 投影到屏幕空间
+    // v29-fix: 投影到屏幕空间 + NaN 防御（矩阵未初始化时 project 可能返回 NaN）
     const bhScreen = new THREE.Vector3().copy(bhWorldPos).project(cam);
+    if (isNaN(bhScreen.x) || isNaN(bhScreen.y) || isNaN(bhScreen.z)) {
+      u.uBHScreenPos.value.set(-999.0, -999.0);
+      u.uEnabled.value = 0.0; // 强制关闭 raytrace，避免 shader 全屏 NaN
+      return;
+    }
 
     u.uInvScale.value = 1.0 / config.blackhole.eventHorizonRadius;
 

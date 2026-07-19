@@ -359,8 +359,9 @@ export const config = {
     beamSweepAngle: 0.25,      // 射束扫过触发角度 (cos阈值, ~15°)
     flashIntensity: 0.8,       // 屏幕闪光最大强度
     flashDecay: 4.0,           // 闪光衰减速度
-    noiseDistance: 400,        // 噪点干扰生效距离
-    maxNoiseIntensity: 0.5,    // 最大噪点强度
+    noiseDistance: 200,        // v29-fix: 噪点只贴近时才生效（原 400）
+    maxNoiseIntensity: 0.15,   // v29-fix: 进一步压低（原 0.25）
+    flashIntensity: 0.3,       // v29-fix: 降低最大闪光（原 0.8）
     infoDistance: 500,         // 靠近显示信息距离
   },
 

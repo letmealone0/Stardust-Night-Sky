@@ -573,13 +573,14 @@ export class Pulsar {
       uniforms.uContrast.value = config.renderer?.contrast ?? 1.0;
     }
 
-    // v27: 噪点分层
+    // v29-fix: 噪点分层 — NaN/Infinity 防护，限制最大强度
     const noiseRange = cfg.noiseDistance || 400;
     if (dist < noiseRange && uniforms.uNoiseIntensity !== undefined) {
-      const noiseStrength = (1 - dist / noiseRange) * (cfg.maxNoiseIntensity || 0.5);
-      uniforms.uNoiseIntensity.value = noiseStrength;
+      const safeDist = isFinite(dist) ? dist : noiseRange;
+      const noiseStrength = Math.min((1 - safeDist / noiseRange) * (cfg.maxNoiseIntensity || 0.5), 0.5);
+      uniforms.uNoiseIntensity.value = isFinite(noiseStrength) ? noiseStrength : 0;
       if (uniforms.uChromaticAberration !== undefined) {
-        uniforms.uChromaticAberration.value = noiseStrength * 0.03;
+        uniforms.uChromaticAberration.value = isFinite(noiseStrength) ? noiseStrength * 0.03 : 0;
       }
     } else if (uniforms.uNoiseIntensity !== undefined) {
       uniforms.uNoiseIntensity.value = 0;
