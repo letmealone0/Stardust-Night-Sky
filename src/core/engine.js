@@ -818,6 +818,18 @@ export class Engine {
         });
       });
     }
+    // 星云
+    if (objs.nebula?.nebulae) {
+      objs.nebula.nebulae.forEach((neb, i) => {
+        targets.push({
+          name: `${neb.userData?.nebType === 'emission' ? '发射' : neb.userData?.nebType === 'reflection' ? '反射' : '暗'}星云 ${i + 1}`,
+          type: 'nebula',
+          getWorldPos: (v) => neb.getWorldPosition(v),
+          // 云团本体半径约为 scale，使用较小跟踪半径让玩家进入云层内部观察丝状结构
+          radius: (neb.userData?.scale || config.nebula?.scale || 2000) * 0.28,
+        });
+      });
+    }
     // 黑洞
     objs.blackholes.forEach((bh, i) => {
       targets.push({

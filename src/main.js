@@ -109,13 +109,15 @@ async function init() {
     window.engine = engine;
 
     // 隐藏加载画面
+    const activeEngine = engine;
     setTimeout(() => {
+      if (!activeEngine || activeEngine !== engine || !activeEngine.hud) return;
       hideLoading();
       // 显示欢迎消息
-      const warning = engine.initializationWarnings?.length
-        ? ` · 警告：${engine.initializationWarnings.join('、')}加载失败`
+      const warning = activeEngine.initializationWarnings?.length
+        ? ` · 警告：${activeEngine.initializationWarnings.join('、')}加载失败`
         : '';
-      engine.hud.showMessage(`欢迎来到深空探索 · 点击屏幕开始 · WASD移动 Shift冲刺 V切视角 M看地图 R回起点 P暂停${warning}`, 6000);
+      activeEngine.hud.showMessage(`欢迎来到深空探索 · 点击屏幕开始 · WASD移动 Shift冲刺 V切视角 M看地图 R回起点 P暂停${warning}`, 6000);
     }, 500);
 
     console.log('[Main] 初始化完成');

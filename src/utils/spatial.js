@@ -83,28 +83,28 @@ export function collectAllPositions(sceneObjects) {
   // 黑洞（v25: 支持多个）
   if (sceneObjects.blackholes) {
     sceneObjects.blackholes.forEach(bh => {
-      if (bh.group) positions.push(bh.group.position.clone());
+      if (bh.group) positions.push(bh.group.getWorldPosition(new THREE.Vector3()));
     });
   }
 
   // 脉冲星（v25: 支持多个）
   if (sceneObjects.pulsars) {
     sceneObjects.pulsars.forEach(psr => {
-      if (psr.group) positions.push(psr.group.position.clone());
+      if (psr.group) positions.push(psr.group.getWorldPosition(new THREE.Vector3()));
     });
   }
 
   // 随机行星
   if (sceneObjects.planets && sceneObjects.planets.planets) {
     sceneObjects.planets.planets.forEach(p => {
-      if (p && p.position) positions.push(p.position.clone());
+      if (p?.getWorldPosition) positions.push(p.getWorldPosition(new THREE.Vector3()));
     });
   }
 
   // 星云
   if (sceneObjects.nebula && sceneObjects.nebula.nebulae) {
     sceneObjects.nebula.nebulae.forEach(n => {
-      if (n && n.position) positions.push(n.position.clone());
+      if (n?.getWorldPosition) positions.push(n.getWorldPosition(new THREE.Vector3()));
     });
   }
 

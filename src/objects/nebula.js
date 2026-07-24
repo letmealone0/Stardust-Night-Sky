@@ -63,12 +63,12 @@ function _cpuFbm(x, y, z, octaves = 4) {
 // ---- LOD 配置（v23: 平滑淡出替代硬截断）----
 const LOD_LEVELS = [
   { maxDist: 4000,  fraction: 1.0  },  // 近景：全粒子
-  { maxDist: 8000,  fraction: 0.65 },  // 中景：65%
-  { maxDist: Infinity, fraction: 0.35 }, // 远景：35%
+  { maxDist: 9000,  fraction: 0.55 },  // 中景：55%
+  { maxDist: Infinity, fraction: 0.18 }, // 远景：18%，由软云晕承担轮廓
 ];
 // LOD 淡出区间（世界单位）
-const LOD_FADE_START = 3500;
-const LOD_FADE_END   = 9000;
+const LOD_FADE_START = 7000;
+const LOD_FADE_END   = 26000;
 
 // JS 版 smoothstep
 function _smoothstep(edge0, edge1, x) {
@@ -82,6 +82,8 @@ export class NebulaSystem {
     this.group = new THREE.Group();
     this._insideNebula = null;
     this._hud = null;
+    this._worldPos = new THREE.Vector3();
+    this._haloTexture = null;
   }
 
   init(scene, layoutPositions = []) {
@@ -93,6 +95,7 @@ export class NebulaSystem {
       const nebType = types[i % types.length];
       const colorCfg = (cfg.typeColors && cfg.typeColors[nebType]) || { r:0.42, g:0.10, b:0.55 };
       const baseColor = new THREE.Color(colorCfg.r, colorCfg.g, colorCfg.b);
+      const typeStyle = this._getTypeStyle(nebType, baseColor);
 
       const nebGroup = new THREE.Group();
 
@@ -102,7 +105,7 @@ export class NebulaSystem {
       ).normalize();
       const stretchAmount = 0.25 + Math.random() * 0.45;
 
-      const layers = this._createLayers(cfg, baseColor, nebType, i, { stretchAxis, stretchAmount });
+      const layers = this._createLayers(cfg, typeStyle, nebType, i, { stretchAxis, stretchAmount });
       layers.forEach(l => nebGroup.add(l.points));
 
       // v25: 使用布局位置（如果提供），否则回退到随机位置
@@ -117,6 +120,19 @@ export class NebulaSystem {
 
       // v23: 虚拟光源位置（星云内部新恒星照亮气体）
       const scale = cfg.scale || 2000;
+      if (!this._haloTexture) this._haloTexture = this._createHaloTexture();
+      const halo = new THREE.Sprite(new THREE.SpriteMaterial({
+        map: this._haloTexture,
+        color: typeStyle.haloColor,
+        transparent: true,
+        opacity: typeStyle.haloOpacity,
+        depthWrite: false,
+        depthTest: false,
+        blending: THREE.AdditiveBlending,
+      }));
+      halo.scale.setScalar(scale * 1.8);
+      halo.renderOrder = -10;
+      nebGroup.add(halo);
       const light1 = new THREE.Vector3(
         (Math.random()-0.5)*scale*0.35, (Math.random()-0.5)*scale*0.25, (Math.random()-0.5)*scale*0.35
       );
@@ -125,7 +141,8 @@ export class NebulaSystem {
       );
 
       nebGroup.userData = {
-        layers, nebType, baseColor,
+        layers, nebType, baseColor, typeStyle, halo,
+        haloBaseOpacity: typeStyle.haloOpacity,
         scale,
         rotSpeed: 0.08 + Math.random() * 0.22,        // rad/s，配合 delta 使用
         turbulence: 0.25 + Math.random() * 0.4,
@@ -144,18 +161,70 @@ export class NebulaSystem {
     console.log('[NebulaSystem] v25 深空摄影星云初始化完成，共', count, '团（固定布局）');
   }
 
+  _getTypeStyle(nebType, baseColor) {
+    if (nebType === 'reflection') {
+      return {
+        color: baseColor.clone().lerp(new THREE.Color(0.08, 0.38, 1.0), 0.65),
+        haloColor: new THREE.Color(0.12, 0.34, 1.0),
+        opacityMultiplier: 0.72,
+        haloOpacity: 0.11,
+        mode: 1,
+      };
+    }
+    if (nebType === 'dark') {
+      return {
+        color: baseColor.clone().lerp(new THREE.Color(0.10, 0.045, 0.035), 0.65),
+        haloColor: new THREE.Color(0.16, 0.07, 0.045),
+        opacityMultiplier: 0.28,
+        haloOpacity: 0.08,
+        mode: 2,
+      };
+    }
+    return {
+      color: baseColor.clone().lerp(new THREE.Color(0.95, 0.10, 0.42), 0.28),
+      haloColor: new THREE.Color(0.75, 0.08, 0.52),
+      opacityMultiplier: 1.0,
+      haloOpacity: 0.16,
+      mode: 0,
+    };
+  }
+
+  _createHaloTexture() {
+    const canvas = document.createElement('canvas');
+    canvas.width = 256;
+    canvas.height = 256;
+    const ctx = canvas.getContext('2d');
+    ctx.clearRect(0, 0, 256, 256);
+    ctx.globalCompositeOperation = 'lighter';
+    const blobs = [
+      [128, 128, 92, 0.18], [82, 108, 88, 0.20], [172, 96, 70, 0.15],
+      [104, 168, 74, 0.15], [184, 154, 58, 0.13], [58, 146, 46, 0.09],
+    ];
+    blobs.forEach(([x, y, radius, alpha]) => {
+      const gradient = ctx.createRadialGradient(x, y, 0, x, y, radius);
+      gradient.addColorStop(0, `rgba(255,255,255,${alpha})`);
+      gradient.addColorStop(0.42, `rgba(255,255,255,${alpha * 0.42})`);
+      gradient.addColorStop(1, 'rgba(255,255,255,0)');
+      ctx.fillStyle = gradient;
+      ctx.fillRect(x - radius, y - radius, radius * 2, radius * 2);
+    });
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.colorSpace = THREE.SRGBColorSpace;
+    return texture;
+  }
+
   // ==================== 创建多层粒子（v23: 统一 stretchAxis，新增 dustMid） ====================
-  _createLayers(cfg, baseColor, nebType, seed, stretchData) {
+  _createLayers(cfg, typeStyle, nebType, seed, stretchData) {
     const scale = cfg.scale || 2000;
     const { stretchAxis, stretchAmount } = stretchData;
     // v23: 新增 dustMid（外层和中层之间，MultiplyBlending 气体内暗纹）
     //       外层 opacity-30%，中层-25%，内层-22%
     const defs = [
-      { name:'dustBg',  count:5000,  spMul:1.1,  opacity:0.50, size:12.0, noiseTh:0.24, turbMul:0.30, isDust:true,  renderOrder:0 },
-      { name:'outer',   count:6000,  spMul:1.0,  opacity:0.20, size:8.5,  noiseTh:0.18, turbMul:0.50, isDust:false, renderOrder:1 },
-      { name:'dustMid', count:3500,  spMul:0.55, opacity:0.40, size:9.0,  noiseTh:0.22, turbMul:0.35, isDust:true,  renderOrder:2 },
-      { name:'mid',     count:8000,  spMul:0.65, opacity:0.42, size:11.0, noiseTh:0.28, turbMul:0.80, isDust:false, renderOrder:3 },
-      { name:'inner',   count:4000,  spMul:0.35, opacity:0.58, size:15.0, noiseTh:0.40, turbMul:1.2,  isDust:false, renderOrder:4 },
+      { name:'dustBg',  count:3000,  spMul:1.1,  opacity:0.50, size:12.0, noiseTh:0.24, turbMul:0.30, isDust:true,  renderOrder:0 },
+      { name:'outer',   count:3600,  spMul:1.0,  opacity:0.20, size:8.5,  noiseTh:0.18, turbMul:0.50, isDust:false, renderOrder:1 },
+      { name:'dustMid', count:2000,  spMul:0.55, opacity:0.32, size:12.0, noiseTh:0.22, turbMul:0.35, isDust:true,  renderOrder:5 },
+      { name:'mid',     count:4800,  spMul:0.65, opacity:0.36, size:11.0, noiseTh:0.28, turbMul:0.80, isDust:false, renderOrder:3 },
+      { name:'inner',   count:2400,  spMul:0.35, opacity:0.38, size:14.0, noiseTh:0.40, turbMul:1.2,  isDust:false, renderOrder:4 },
     ];
 
     return defs.map((def, li) => {
@@ -210,7 +279,7 @@ export class NebulaSystem {
       // v23: 存储总粒子数用于 LOD
       geo.userData = { totalCount: count };
 
-      const mat = this._createMaterial(def, baseColor, spread, seed + li, stretchData);
+      const mat = this._createMaterial(def, typeStyle, spread, seed + li, stretchData);
       const pts = new THREE.Points(geo, mat);
       // v25: 视锥剔除 + 宽松包围球
       pts.frustumCulled = true;
@@ -225,7 +294,7 @@ export class NebulaSystem {
   }
 
   // ==================== Shader 材质（v23: 统一拉伸+纤维+LOD淡出+动态光源） ====================
-  _createMaterial(def, baseColor, spread, seed, stretchData) {
+  _createMaterial(def, typeStyle, spread, seed, stretchData) {
     const isDust = def.isDust === true;
     const { stretchAxis, stretchAmount } = stretchData;
 
@@ -240,9 +309,9 @@ export class NebulaSystem {
         uniforms: {
           uTime: { value: 0 }, uDelta: { value: 0.016 },
           uScale: { value: spread * 2 },
-          uOpacity: { value: def.opacity },
+          uOpacity: { value: def.opacity * typeStyle.opacityMultiplier },
           uLodFade: { value: 1.0 },
-          uColor: { value: dustColor },
+          uColor: { value: dustColor.clone().lerp(typeStyle.color, 0.55) },
           uPixelRatio: { value: Math.min(window.devicePixelRatio, 2) },
           uStretchAxis: { value: stretchAxis.clone() },
           uStretchAmount: { value: stretchAmount },
@@ -304,7 +373,8 @@ export class NebulaSystem {
           }
         `,
         transparent: true, depthWrite: false,
-        blending: THREE.MultiplyBlending,
+        // MultiplyBlending 在黑色深空背景上几乎不可见；NormalBlending 让尘埃能在发光气体上形成暗带
+        blending: THREE.NormalBlending,
         premultipliedAlpha: true,
       });
     }
@@ -318,10 +388,13 @@ export class NebulaSystem {
     return new THREE.ShaderMaterial({
       uniforms: {
         uTime: { value: 0 }, uDelta: { value: 0.016 },
-        uScale: { value: spread * 2 }, uOpacity: { value: def.opacity },
+        uScale: { value: spread * 2 }, uOpacity: { value: def.opacity * typeStyle.opacityMultiplier },
         uLodFade: { value: 1.0 },
-        uColor1: { value: cCore }, uColor2: { value: cInner },
+        uColor1: { value: cCore.clone().lerp(typeStyle.color, 0.72) },
+        uColor2: { value: cInner.clone().lerp(typeStyle.color, 0.62) },
         uColor3: { value: cDust }, uColor4: { value: cMid }, uColor5: { value: cEdge },
+        uTypeColor: { value: typeStyle.color.clone() },
+        uTypeMode: { value: typeStyle.mode },
         uTurbulence: { value: 0.3 }, uTurbMul: { value: def.turbMul || 1.0 },
         uPixelRatio: { value: Math.min(window.devicePixelRatio, 2) },
         uStretchAxis: { value: stretchAxis.clone() },
@@ -404,6 +477,7 @@ export class NebulaSystem {
         varying float vLight1; varying float vLight2;
         uniform vec3 uColor1; uniform vec3 uColor2; uniform vec3 uColor3;
         uniform vec3 uColor4; uniform vec3 uColor5;
+        uniform vec3 uTypeColor; uniform float uTypeMode;
         uniform vec3 uLightColor1; uniform vec3 uLightColor2;
         uniform vec3 uStretchAxis;
         uniform float uTime; uniform float uScale;
@@ -433,6 +507,9 @@ export class NebulaSystem {
           col = mix(col, uColor4, smoothstep(0.35, 0.55, ct));
           col = mix(col, uColor5, smoothstep(0.52, 0.88, ct));
 
+          // 类型化色彩：发射星云偏暖紫红，反射星云偏冷蓝，暗星云保留低亮尘埃轮廓
+          col *= mix(vec3(1.0), uTypeColor * 1.35 + vec3(0.08), 0.38);
+
           // 亮度扰动
           float brightNoise = fbm3(vWPos / (uScale * 0.035) + 13.0);
           float brightness = 0.52 + brightNoise * 0.48;
@@ -444,8 +521,16 @@ export class NebulaSystem {
           brightness += lightInfluence;
 
           col *= brightness;
-
           float a = da * vAlpha;
+
+          if (uTypeMode > 1.5) {
+            col *= 0.42;
+            a *= 0.72;
+          } else if (uTypeMode > 0.5) {
+            col *= 0.82;
+            a *= 0.82;
+          }
+
           a = clamp(a, 0.0, 1.0);
           if (a < 0.0012) discard;
           gl_FragColor = vec4(col, a);
@@ -470,11 +555,12 @@ export class NebulaSystem {
     let closest = null, closestD = Infinity;
     this.nebulae.forEach((neb, idx) => {
       const d = neb.userData;
-      const dist = neb.position.distanceTo(camera.position);
       const ns = d.scale || cfg.scale || 2000;
-      // v25: 无重生，固定位置
-      if (dist < ns * 0.5 && dist < closestD) { closestD = dist; closest = neb; }
       if (d.driftDir) neb.position.addScaledVector(d.driftDir, 0.4 * delta * ms);
+      neb.getWorldPosition(this._worldPos);
+      const dist = this._worldPos.distanceTo(camera.position);
+      // v25: 无重生，固定布局；距离统一使用世界坐标
+      if (dist < ns * 0.5 && dist < closestD) { closestD = dist; closest = neb; }
 
       // v23: 宏观自转 × delta（帧率解耦）
       neb.rotation.y += delta * (d.rotSpeed || 0.12) * ms;
@@ -482,6 +568,9 @@ export class NebulaSystem {
       // v23: LOD 分级 + 平滑淡出
       const lod = LOD_LEVELS.find(l => dist < l.maxDist) || LOD_LEVELS[LOD_LEVELS.length-1];
       const lodFade = 1.0 - _smoothstep(LOD_FADE_START, LOD_FADE_END, dist);
+      if (d.halo?.material) {
+        d.halo.material.opacity = (d.haloBaseOpacity || 0.1) * (0.35 + lodFade * 0.65);
+      }
 
       d.layers.forEach(l => {
         if (l.material?.uniforms) {
@@ -529,7 +618,9 @@ export class NebulaSystem {
   updatePostEffects(uniforms, camera) {
     if (!camera || !this._insideNebula) { uniforms.uFogDensity.value = 0; return; }
     const cfg = config.nebula || {}, d = this._insideNebula.userData;
-    const ns = d.scale || cfg.scale || 2000, dist = this._insideNebula.position.distanceTo(camera.position);
+    const ns = d.scale || cfg.scale || 2000;
+    this._insideNebula.getWorldPosition(this._worldPos);
+    const dist = this._worldPos.distanceTo(camera.position);
     const fd = cfg.fogDistance || 400, md = cfg.fogDensity || 0.5;
     uniforms.uFogDensity.value = Math.max(0, Math.min(md, (1 - dist / (ns * 0.5)) * md));
     const t = d.nebType;
@@ -541,6 +632,10 @@ export class NebulaSystem {
   dispose(scene) {
     if (this.group.parent) this.group.parent.remove(this.group);  // v29-fix
     this.nebulae.forEach(n => n.traverse(c => { if (c.geometry) c.geometry.dispose(); if (c.material) c.material.dispose(); }));
+    if (this._haloTexture) {
+      this._haloTexture.dispose();
+      this._haloTexture = null;
+    }
     this.nebulae = [];
   }
 }

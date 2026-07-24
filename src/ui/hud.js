@@ -545,11 +545,11 @@ export class HUD {
     this._trackingGrid.innerHTML = '';
     const typeLabels = {
       star: '恒星', planet: '行星', moon: '卫星',
-      comet: '彗星', blackhole: '黑洞', pulsar: '脉冲星', exoplanet: '系外行星',
+      comet: '彗星', nebula: '星云', blackhole: '黑洞', pulsar: '脉冲星', exoplanet: '系外行星',
     };
     const typeColors = {
       star: '#ffaa55', planet: '#66aaff', moon: '#cccccc',
-      comet: '#aa88ff', blackhole: '#ff6644', pulsar: '#55ddff', exoplanet: '#88dd88',
+      comet: '#aa88ff', nebula: '#dd88ff', blackhole: '#ff6644', pulsar: '#55ddff', exoplanet: '#88dd88',
     };
     this._trackingTargets.forEach((t, i) => {
       const card = document.createElement('div');
