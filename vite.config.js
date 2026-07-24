@@ -6,6 +6,13 @@ export default defineConfig({
   build: {
     outDir: 'dist',
     target: 'esnext',
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          three: ['three'],
+        },
+      },
+    },
   },
   server: {
     port: 3000,

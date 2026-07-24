@@ -236,20 +236,24 @@ export class PostProcessingManager {
     this.composer.addPass(this.bloomPass);
 
     // Pass 2.5: v29 Gargantua 黑洞光线追踪（Bloom 之后、Celestial 之前）
-    this.bhRayPass = new ShaderPass(BLACKHOLE_RAY_SHADER);
-    this.bhRayPass.uniforms.uSteps.value = config.blackhole.raytrace.steps;
-    this.bhRayPass.uniforms.uDin.value = config.blackhole.raytrace.diskInner;
-    this.bhRayPass.uniforms.uDout.value = config.blackhole.raytrace.diskOuter;
-    this.bhRayPass.uniforms.uDopMax.value = config.blackhole.raytrace.dopplerMax;
-    this.bhRayPass.uniforms.uOpNear.value = config.blackhole.raytrace.opacityNear;
-    this.bhRayPass.uniforms.uOpFar.value = config.blackhole.raytrace.opacityFar;
-    this.bhRayPass.uniforms.uDiskBright.value = config.blackhole.raytrace.diskBrightness;
-    this.bhRayPass.uniforms.uStarBright.value = config.blackhole.raytrace.starBrightness;
-    this.bhRayPass.uniforms.uSkyFloor.value = config.blackhole.raytrace.skyFloor;
-    this.bhRayPass.uniforms.uRotSpeed.value = config.blackhole.raytrace.rotSpeed;
-    this.bhRayPass.uniforms.uSizeScale.value = config.blackhole.raytrace.sizeScale || 3.0;
-    this.bhRayPass.uniforms.uDebug.value = config.blackhole.raytrace.debug;
-    this.composer.addPass(this.bhRayPass);
+    const raytraceCfg = config.blackhole?.raytrace;
+    if (config.blackhole?.renderMode === 'raytrace' && raytraceCfg?.enabled !== false) {
+      this.bhRayPass = new ShaderPass(BLACKHOLE_RAY_SHADER);
+      this.bhRayPass.uniforms.uSteps.value = raytraceCfg.steps;
+      this.bhRayPass.uniforms.uDin.value = raytraceCfg.diskInner;
+      this.bhRayPass.uniforms.uDout.value = raytraceCfg.diskOuter;
+      this.bhRayPass.uniforms.uDopMax.value = raytraceCfg.dopplerMax;
+      this.bhRayPass.uniforms.uOpNear.value = raytraceCfg.opacityNear;
+      this.bhRayPass.uniforms.uOpFar.value = raytraceCfg.opacityFar;
+      this.bhRayPass.uniforms.uDiskBright.value = raytraceCfg.diskBrightness;
+      this.bhRayPass.uniforms.uStarBright.value = raytraceCfg.starBrightness;
+      this.bhRayPass.uniforms.uSkyFloor.value = raytraceCfg.skyFloor;
+      this.bhRayPass.uniforms.uRotSpeed.value = raytraceCfg.rotSpeed;
+      this.bhRayPass.uniforms.uSizeScale.value = raytraceCfg.sizeScale || 3.0;
+      this.bhRayPass.uniforms.uDebug.value = raytraceCfg.debug;
+      this.bhRayPass.enabled = false;
+      this.composer.addPass(this.bhRayPass);
+    }
 
     // Pass 3: 天体效果 + 运动模糊 + 镜头效果 + 色调增强
     this.celestialPass = new ShaderPass(CelestialEffectsShader);

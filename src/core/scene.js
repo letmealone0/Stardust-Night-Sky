@@ -41,6 +41,7 @@ export class SceneManager {
     // 兼容旧代码的 blackhole/pulsar 引用（指向第一个实例）
     this._layout = null;
     this._sunWorldPos = new THREE.Vector3();
+    this.initErrors = [];
   }
 
   /**
@@ -75,7 +76,7 @@ export class SceneManager {
     try {
       this.objects.stars = new StarField();
       this.objects.stars.init(this.galaxyGroup, this.galaxyCenterGroup);
-    } catch (e) { console.warn('[Scene] 星空初始化失败:', e); }
+    } catch (e) { this._recordInitError('星空', e); }
 
     try {
       this.objects.planets = new PlanetSystem();
@@ -86,23 +87,23 @@ export class SceneManager {
       if (this._layout.planet.length) {
         this.objects.planets.setLayoutPositions(this._layout.planet);
       }
-    } catch (e) { console.warn('[Scene] 行星初始化失败:', e); }
+    } catch (e) { this._recordInitError('行星', e); }
 
     try {
       this.objects.nebula = new NebulaSystem();
       this.objects.nebula.init(this.galaxyCenterGroup, this._layout.nebula);
-    } catch (e) { console.warn('[Scene] 星云初始化失败:', e); }
+    } catch (e) { this._recordInitError('星云', e); }
 
     try {
       this.objects.speedLines = new SpeedLines();
       this.objects.speedLines.init(this.scene, camera);
-    } catch (e) { console.warn('[Scene] 速度线初始化失败:', e); }
+    } catch (e) { this._recordInitError('速度线', e); }
 
     try {
       this.objects.cosmicDust = new CosmicDust();
       this.objects.cosmicDust.init(this.galaxyGroup);
       this.objects.cosmicDust.setCamera(camera);
-    } catch (e) { console.warn('[Scene] 宇宙尘埃初始化失败:', e); }
+    } catch (e) { this._recordInitError('宇宙尘埃', e); }
 
     // ======== 黑洞（v25: 支持多个，固定布局位置） ========
     try {
@@ -114,7 +115,7 @@ export class SceneManager {
         this.galaxyCenterGroup.add(bh.group);
         this.objects.blackholes.push(bh);
       }
-    } catch (e) { console.warn('[Scene] 黑洞初始化失败:', e); }
+    } catch (e) { this._recordInitError('黑洞', e); }
 
     // ======== 脉冲星（v25: 支持多个，固定布局位置） ========
     try {
@@ -127,7 +128,7 @@ export class SceneManager {
         this.galaxyCenterGroup.add(psr.group);
         this.objects.pulsars.push(psr);
       }
-    } catch (e) { console.warn('[Scene] 脉冲星初始化失败:', e); }
+    } catch (e) { this._recordInitError('脉冲星', e); }
 
     try {
       this.objects.solarSystem = new SolarSystem();
@@ -141,24 +142,24 @@ export class SceneManager {
         this.objects.comets = new CometSystem();
         this.objects.comets.init(this.objects.solarSystem.group);
         this.objects.comets.setCamera(camera);
-      } catch (e) { console.warn('[Scene] 彗星系统初始化失败:', e); }
-    } catch (e) { console.warn('[Scene] 太阳系初始化失败:', e); }
+      } catch (e) { this._recordInitError('彗星', e); }
+    } catch (e) { this._recordInitError('太阳系', e); }
 
     try {
       this.objects.particleFlow = new ParticleFlow();
       this.objects.particleFlow.init(this.scene, camera);
-    } catch (e) { console.warn('[Scene] 粒子流初始化失败:', e); }
+    } catch (e) { this._recordInitError('粒子流', e); }
 
     // v13: 镜头光晕系统
     try {
       this.objects.lensFlare = new LensFlareSystem();
       this.objects.lensFlare.init(this.scene);
-    } catch (e) { console.warn('[Scene] 镜头光晕初始化失败:', e); }
+    } catch (e) { this._recordInitError('镜头光晕', e); }
 
     try {
       this.objects.nearDust = new NearDust();
       this.objects.nearDust.init(this.camera, this.scene);
-    } catch (e) { console.warn('[Scene] 近处微尘初始化失败:', e); }
+    } catch (e) { this._recordInitError('近处微尘', e); }
 
     // v9.0: 微弱环境光 — 仅防暗部死黑，太阳是主光源
     this.ambientLight = new THREE.AmbientLight(0x111133, config.solarSystem.ambientIntensity || 0.05);
@@ -200,6 +201,11 @@ export class SceneManager {
    */
   setViewMode(mode) {
     // nearDust 不依赖场景模式切换
+  }
+
+  _recordInitError(name, error) {
+    this.initErrors.push({ name, error });
+    console.warn(`[Scene] ${name}初始化失败:`, error);
   }
 
   /**

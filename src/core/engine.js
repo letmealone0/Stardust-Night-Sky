@@ -15,7 +15,8 @@ import { TrackingController } from '../controls/tracking.js';
 
 export class Engine {
   constructor() {
-    this.clock = new THREE.Clock();
+    this.clock = new THREE.Timer();
+    this.clock.connect(document);
     this.isRunning = false;
     this.isPaused = false;
 
@@ -96,8 +97,6 @@ export class Engine {
     this.player.setMode(defaultMode);
     this.camera.applyMode(defaultMode, false);
 
-    // v30: 初始视角对准太阳系（必须在 player 与 mode 全部就绪后执行）
-    this._lookAtSolarSystem();
     // 注入太阳系引用（替代 window.engine 全局耦合）
     this.player.setSolarSystem(this.scene.objects.solarSystem);
     // v25: 注册额外碰撞体（黑洞、脉冲星、系外行星 → 接近自动限速）
@@ -135,11 +134,17 @@ export class Engine {
     // 创建跟踪视角控制器
     this.tracking = new TrackingController(this.camera.camera, this.renderer.renderer.domElement);
     this.tracking.init();
+    // v30: 跟踪控制器构造会初始化相机朝向，因此必须在其之后对准太阳系
+    this._lookAtSolarSystem();
     this.tracking.setTargets(this._collectTrackTargets());
     this.tracking.setOnExit(() => this._onTrackingExit());
     this.hud.setTrackingTargets(this.tracking.getTargets());
     this.hud.setOnTrackSelect((i) => this._enterTracking(i));
     this.hud.setOnMenuClose(() => this._closeTrackingMenu());
+    this.initializationWarnings = this.scene.initErrors?.map(({ name }) => name) || [];
+    if (this.initializationWarnings.length > 0) {
+      console.warn('[Engine] 部分场景系统初始化失败:', this.initializationWarnings.join(', '));
+    }
 
     // 绑定事件
     this.bindEvents();
@@ -214,7 +219,7 @@ export class Engine {
 
     // 锁定/解锁鼠标（地图模式下不锁定，保持鼠标指针可见）
     this.onDocumentClickBound = () => {
-      if (this._isMapMode) return;
+      if (this._isMapMode || this._mapBlend < 1.0) return;
       // 跟踪模式或菜单打开时不锁定鼠标（OrbitControls/菜单需要自由鼠标）
       if (this.tracking?.isActive() || this.hud?.isMenuOpen()) return;
       if (this.player && this.player.controls && !this.player.controls.isLocked) {
@@ -265,16 +270,20 @@ export class Engine {
         this.hud.showMessage(this.isMotionFrozen ? '⏸ 天体运动已暂停' : '▶ 天体运动已恢复');
       }
       if (e.code === 'KeyM') {
+        if (this.tracking?.isActive() || this.hud?.isMenuOpen() || this._mapBlend < 1.0) return;
         this._startMapTransition(!this._isMapMode);
       }
       if (e.code === 'KeyV') {
+        if (this._isMapMode || this.tracking?.isActive() || this._mapBlend < 1.0) return;
         this._toggleViewMode();
       }
-      if (e.code === 'KeyR' && !this._isMapMode && !this.tracking?.isActive() && this.player) {
+      if (e.code === 'KeyR' && !this._isMapMode && !this.tracking?.isActive() && this._mapBlend >= 1.0 && this.player) {
         this.player.resetToStart();
+        this.isPaused = false;
         this.hud.showMessage('已返回起始位置', 2000);
+        if (!this.player.controls.isLocked) this.player.requestLock();
       }
-      if (e.code === 'KeyT' && !this._isMapMode) {
+      if (e.code === 'KeyT' && !this._isMapMode && !this.tracking?.isActive() && this._mapBlend >= 1.0) {
         this._toggleTrackingMenu();
       }
       if (e.code === 'Tab') {
@@ -287,6 +296,8 @@ export class Engine {
       if (e.code === 'Escape') {
         if (this.hud?.isMenuOpen()) {
           this._closeTrackingMenu();
+        } else if (this._isMapMode && this._mapBlend >= 1.0) {
+          this._startMapTransition(false);
         } else if (this.tracking?.isActive()) {
           this.tracking.exit();
         }
@@ -340,8 +351,9 @@ export class Engine {
 
   _animateFrame() {
     // Delta clamping: 防止 Tab 切换或掉帧导致大跳跃
+    this.clock.update();
     const delta = Math.min(this.clock.getDelta(), 0.1);
-    const elapsed = this.clock.getElapsedTime();
+    const elapsed = this.clock.getElapsed();
 
     // 更新 FPS
     this.frameCount++;
@@ -605,6 +617,12 @@ export class Engine {
         if (q < 0.6) cPass.uniforms.uMotionBlurIntensity.value = 0;
         if (q < 0.5) cPass.uniforms.uChromaticAberration.value = 0;
       }
+      // v30: 自适应降低黑洞光线追踪步数，避免低帧率时全屏测地线计算持续占用 GPU
+      const bhRayPass = this.postprocessing?.getBhRayPass();
+      const rayCfg = config.blackhole?.raytrace;
+      if (bhRayPass?.uniforms?.uSteps && rayCfg?.steps) {
+        bhRayPass.uniforms.uSteps.value = Math.max(60, Math.floor(rayCfg.steps * (0.4 + q * 0.6)));
+      }
       // v26: 低画质削减银河银晕/雾气粒子数
       if (q < 0.7 && this.scene.objects.stars?.hazePoints) {
         const total = this.scene.objects.stars.hazePoints.geometry.attributes.position.count;
@@ -703,6 +721,10 @@ export class Engine {
    * @param {boolean} toMap - true=进入地图, false=返回探索
    */
   _startMapTransition(toMap) {
+    if (this._mapBlend < 1.0) return;
+    if (toMap && this.tracking?.isActive()) return;
+    if (!toMap && !this._isMapMode) return;
+
     // 记录当前相机位置作为动画起点
     this._mapFromPos.copy(this.camera.camera.position);
     this._mapFromQuat.copy(this.camera.camera.quaternion);
@@ -728,6 +750,8 @@ export class Engine {
       if (this.player.controls.isLocked) {
         this.player.controls.unlock();
       }
+      this.player.resetKeys();
+      this.player.velocity.set(0, 0, 0);
       this.isPaused = true;
       this._isMapMode = true;
       this.hud.showMessage('🗺 银河系俯瞰 · 按 M 返回探索 · 拖动右侧滑块调整高度', 0);
@@ -825,17 +849,22 @@ export class Engine {
 
   _enterTracking(index) {
     if (!this.tracking) return;
+    if (this._isMapMode || this._mapBlend < 1.0 || this.tracking.isActive()) return;
     // 解锁鼠标（OrbitControls 需要自由鼠标）
     if (this.player.controls.isLocked) {
       this.player.controls.unlock();
     }
+    this.player.resetKeys();
+    this.player.velocity.set(0, 0, 0);
     this.tracking.enter(index);
+    this.isPaused = false;
     this.hud.hideTrackingMenu();
     this.hud.updateTrackingStatus(this.tracking.getCurrentName());
     this.hud.showMessage(`跟踪：${this.tracking.getCurrentName()}`, 2000);
   }
 
   _toggleTrackingMenu() {
+    if (this._isMapMode || this._mapBlend < 1.0 || this.tracking?.isActive()) return;
     if (this.hud.isMenuOpen()) {
       this._closeTrackingMenu();
     } else {
@@ -881,9 +910,11 @@ export class Engine {
       activeBH.updatePostEffects(u, this.camera.camera);
     } else if (this.scene.objects.blackholes.length > 0) {
       let nearest = this.scene.objects.blackholes[0];
-      let nd = nearest.group.position.distanceTo(this.camera.camera.position);
+      nearest.group.getWorldPosition(this._sunPos);
+      let nd = this._sunPos.distanceTo(this.camera.camera.position);
       for (const bh of this.scene.objects.blackholes) {
-        const d = bh.group.position.distanceTo(this.camera.camera.position);
+        bh.group.getWorldPosition(this._sunPos);
+        const d = this._sunPos.distanceTo(this.camera.camera.position);
         if (d < nd) { nd = d; nearest = bh; }
       }
       nearest.updatePostEffects(u, this.camera.camera);
@@ -934,11 +965,11 @@ export class Engine {
     const bhPass = this.postprocessing.getBhRayPass();
     if (!bhPass) return;
     const cfg = config.blackhole.raytrace;
-    if (!cfg.enabled) { bhPass.uniforms.uEnabled.value = 0; return; }
+    if (!cfg.enabled) { bhPass.enabled = false; bhPass.uniforms.uEnabled.value = 0; return; }
 
     // 找到最近的（或 dangerLevel 最高的）黑洞
     const bhs = this.scene.objects.blackholes;
-    if (bhs.length === 0) { bhPass.uniforms.uEnabled.value = 0; return; }
+    if (bhs.length === 0) { bhPass.enabled = false; bhPass.uniforms.uEnabled.value = 0; return; }
 
     let targetBH = bhs[0];
     let minDist = Infinity;
@@ -952,6 +983,7 @@ export class Engine {
     // v29: 大范围启用（50000），屏幕空间混合自动处理远近
     const enableDist = cfg.enableDistance;
     const enabled = minDist < enableDist ? 1.0 : 0.0;
+    bhPass.enabled = enabled > 0.5;
     bhPass.uniforms.uEnabled.value = enabled;
     if (enabled < 0.5) return;
 
@@ -968,6 +1000,7 @@ export class Engine {
     if (isNaN(bhScreen.x) || isNaN(bhScreen.y) || isNaN(bhScreen.z)) {
       u.uBHScreenPos.value.set(-999.0, -999.0);
       u.uEnabled.value = 0.0; // 强制关闭 raytrace，避免 shader 全屏 NaN
+      bhPass.enabled = false;
       return;
     }
 
@@ -1050,5 +1083,6 @@ export class Engine {
     if (this.tracking) this.tracking.dispose();
     if (this.camera) this.camera.dispose();
     if (this.renderer) this.renderer.dispose();
+    if (this.clock) this.clock.dispose();
   }
 }

@@ -536,7 +536,8 @@ export class StarField {
         varying float vHeight;
         void main() {
           vec3 viewDir = normalize(-vPosition);
-          float rim = 1.0 - max(0.0, dot(viewDir, vNormal));
+          // 相机位于辉光球内部时，BackSide 的法线与视线相反；使用绝对值只保留掠射角边缘，避免整屏被加法混合刷白
+          float rim = 1.0 - abs(dot(viewDir, vNormal));
           // 体积衰减：指数衰减 + 边缘增强
           float glow = rim * pow(rim, uGlowPower) * 1.5 + exp(-vHeight * uFalloff) * 1.0;
           float pulse = 1.0 + 0.06 * sin(uTime * uPulseSpeed);
@@ -547,7 +548,7 @@ export class StarField {
       transparent: true,
       blending: THREE.AdditiveBlending,
       depthWrite: false,
-      side: THREE.FrontSide,
+      side: THREE.BackSide,
     });
 
     const mesh = new THREE.Mesh(geometry, material);

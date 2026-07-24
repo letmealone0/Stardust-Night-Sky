@@ -10,6 +10,7 @@ export class CosmicDust {
     this.layers = [];      // v11: [{ points, geometry, material, positions, initialPositions, phaseOffsets, layerCfg }]
     this.camera = null;
     this._centerPos = new THREE.Vector3();
+    this._positionAccumulator = 0;
   }
 
   setCamera(camera) {
@@ -153,6 +154,9 @@ export class CosmicDust {
       vx = velocity.x / speed; vy = velocity.y / speed; vz = velocity.z / speed;
     }
     const speedFactor = Math.min(speed / 50, 1.0);
+    this._positionAccumulator += delta;
+    const updatePositions = this._positionAccumulator >= 1 / 30;
+    if (updatePositions) this._positionAccumulator = 0;
 
     // 重居中检测
     if (this.camera) {
@@ -175,7 +179,7 @@ export class CosmicDust {
       const et2 = elapsed * 0.008 * layerSpeed;
       const et3 = elapsed * 0.006 * layerSpeed;
 
-      for (let i = 0, i3 = 0; i < pos.length / 3; i++, i3 += 3) {
+      if (updatePositions) for (let i = 0, i3 = 0; i < pos.length / 3; i++, i3 += 3) {
         const p = phases[i];
         const drift = 0.5 + Math.sin(et1 * 0.5 + p * 0.1) * 0.5;
         const drift10 = drift * 10 * turbulence;

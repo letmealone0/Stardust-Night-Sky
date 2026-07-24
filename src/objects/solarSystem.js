@@ -714,10 +714,11 @@ export class SolarSystem {
       this.glowMaterial.uniforms.uTime.value = elapsed;
     }
     // v13: 更新大气层太阳位置
+    if (this.sun) this.sun.getWorldPosition(this._ssWorldPos);
     this.planets.forEach(planet => {
       planet.group.traverse(child => {
         if (child.material?.uniforms?.uSunPos) {
-          child.material.uniforms.uSunPos.value.set(0, 0, 0);
+          child.material.uniforms.uSunPos.value.copy(this._ssWorldPos);
         }
       });
     });

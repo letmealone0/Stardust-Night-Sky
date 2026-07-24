@@ -70,6 +70,7 @@ export class PlayerController {
     // 依赖注入：天文对象引用（替代 window.engine 全局耦合）
     this._solarSystem = null;
     this._tempPlanetPos = new THREE.Vector3();
+    this._keyboardFallback = false;
   }
 
   /**
@@ -90,6 +91,7 @@ export class PlayerController {
 
     // PointerLock 中断时重置按键状态并清空速度（防止解锁后继续漂移）
     this.onPointerLockChangeBound = () => {
+      if (this.controls.isLocked) this._keyboardFallback = false;
       if (!this.controls.isLocked) {
         this.resetKeys();
         this.velocity.set(0, 0, 0); // fix: 清空速度向量，防止解锁后玩家持续漂移
@@ -98,6 +100,11 @@ export class PlayerController {
       }
     };
     document.addEventListener('pointerlockchange', this.onPointerLockChangeBound);
+    this.onPointerLockErrorBound = () => {
+      this._keyboardFallback = true;
+      console.warn('[PlayerController] Pointer Lock 不可用，启用键盘飞行回退');
+    };
+    document.addEventListener('pointerlockerror', this.onPointerLockErrorBound);
 
     // 从相机初始朝向同步 yaw/pitch，保证宇宙倾斜度与初始视角不变
     this.syncOrientation();
@@ -148,18 +155,21 @@ export class PlayerController {
    * 部分浏览器不支持 unadjustedMovement，捕获 Promise 拒绝后回退到普通锁定。
    */
   requestLock() {
-    const unadjusted = config.player.unadjustedMovement !== false;
-    let p;
+    // 优先使用标准 Pointer Lock 请求。带 unadjustedMovement 选项在部分浏览器/嵌入式页面中
+    // 会触发 pointerlockerror，且异步回退已经失去用户激活，导致普通锁定也无法执行。
     try {
-      p = this.controls.lock(unadjusted);
+      const request = this.controls?.domElement?.requestPointerLock;
+      if (typeof request !== 'function') {
+        this._keyboardFallback = true;
+        return;
+      }
+      const result = request.call(this.controls.domElement);
+      if (result && typeof result.catch === 'function') {
+        result.catch(() => { this._keyboardFallback = true; });
+      }
     } catch (e) {
-      try { this.controls.lock(false); } catch (_) {}
-      return;
-    }
-    if (p && typeof p.catch === 'function') {
-      p.catch(() => {
-        try { this.controls.lock(false); } catch (_) {}
-      });
+      this._keyboardFallback = true;
+      console.warn('[PlayerController] Pointer Lock 请求失败:', e);
     }
   }
 
@@ -286,7 +296,7 @@ export class PlayerController {
    * v9.0: 惯性飞行 — 加速度+阻尼模型
    */
   update(delta) {
-    if (!this.controls.isLocked) {
+    if (!this.controls.isLocked && !this._keyboardFallback) {
       // 未锁定时清空抖动偏移与鼠标累积，避免恢复后误减/误转
       this._shakeOffset.set(0, 0, 0);
       this._mouseDX = 0;
@@ -552,6 +562,7 @@ export class PlayerController {
     if (this.onKeyDownBound) window.removeEventListener('keydown', this.onKeyDownBound);
     if (this.onKeyUpBound) window.removeEventListener('keyup', this.onKeyUpBound);
     if (this.onPointerLockChangeBound) document.removeEventListener('pointerlockchange', this.onPointerLockChangeBound);
+    if (this.onPointerLockErrorBound) document.removeEventListener('pointerlockerror', this.onPointerLockErrorBound);
     if (this.controls) this.controls.dispose();
   }
 }
